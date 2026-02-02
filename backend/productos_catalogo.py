@@ -6,8 +6,11 @@ Catálogo de productos desde carpeta de red (QNAP).
 - En un directorio producto: se usa el Excel más nuevo para datos técnicos (D31, D28); PDF más nuevo = visual.
 - El Excel más nuevo del directorio con "visual" o "datasheet" en el nombre puede ser el visual Excel.
 """
+from __future__ import annotations
+
 import os
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -192,11 +195,21 @@ def _walk_and_collect(
     base_path: Path,
     path_parts: list[str],
     out: list[dict],
+    on_directory: Callable[[str], None] | None = None,
 ) -> None:
     """
     Recorre recursivamente. Solo se considera producto un directorio que tenga al menos un Excel
     con "visual" en el nombre (insensible a mayúsculas). Si no, se entra en cada subcarpeta y se repite.
+    on_directory(path_rel) se llama al entrar en cada directorio para reportar progreso.
     """
+    if on_directory:
+        try:
+            rel = current.relative_to(base_path)
+            path_rel = str(rel).replace("\\", "/")
+        except ValueError:
+            path_rel = current.name or str(current)
+        on_directory(path_rel or ".")
+
     try:
         entries = list(current.iterdir())
     except (OSError, PermissionError):
@@ -212,14 +225,18 @@ def _walk_and_collect(
         if not e.is_dir():
             continue
         new_parts = path_parts + [e.name]
-        _walk_and_collect(e, base_path, new_parts, out)
+        _walk_and_collect(e, base_path, new_parts, out, on_directory)
 
 
-def get_productos_catalogo(base_path: str | Path) -> list[dict]:
+def get_productos_catalogo(
+    base_path: str | Path,
+    on_directory: Callable[[str], None] | None = None,
+) -> list[dict]:
     """
     Escanea la ruta base recursivamente. Solo se considera producto un directorio que contenga al menos un Excel
     cuyo nombre incluya "visual" (insensible a mayúsculas). En ese directorio: Excel más nuevo = datos técnicos (D31, D28);
     PDF más nuevo = visual; Excel con "visual"/"datasheet" en nombre = visual Excel opcional.
+    on_directory(path_rel) se invoca al entrar en cada directorio para mostrar progreso en tiempo real.
     """
     if not base_path or not str(base_path).strip():
         return []
@@ -232,5 +249,5 @@ def get_productos_catalogo(base_path: str | Path) -> list[dict]:
 
     base = _normalize_path(base)
     out = []
-    _walk_and_collect(base, base, [], out)
+    _walk_and_collect(base, base, [], out, on_directory)
     return out
