@@ -975,6 +975,16 @@
 .configuracion-actions {
   margin-top: 1.25rem;
 }
+.configuracion-subtitle {
+  font-size: 1.1rem;
+  margin: 1.5rem 0 0.5rem;
+  color: var(--text-heading);
+}
+
+.configuracion-reset .configuracion-desc {
+  margin-bottom: 0.75rem;
+}
+
 .configuracion-ok {
   margin-top: 1rem;
   font-size: 0.9rem;
@@ -1512,6 +1522,17 @@
 .btn-secondary:hover:not(:disabled) {
   background: #d4d4d4;
   border-color: #d4d4d4;
+}
+
+.btn-danger {
+  background: #c0392b;
+  color: #fff;
+  border: 1px solid #a93226;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #a93226;
+  border-color: #922b21;
 }
 
 .sync-form-upload {

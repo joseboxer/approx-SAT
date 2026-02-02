@@ -20,6 +20,10 @@ function Configuracion() {
   const [error, setError] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [mensaje, setMensaje] = useState(null)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [resetMensaje, setResetMensaje] = useState(null)
+  const [resetError, setResetError] = useState(null)
 
   const cargar = useCallback(() => {
     setCargando(true)
@@ -40,6 +44,26 @@ function Configuracion() {
   useEffect(() => {
     cargar()
   }, [cargar])
+
+  const recargarRmaConfirm = () => {
+    setResetting(true)
+    setResetError(null)
+    setResetMensaje(null)
+    fetch(`${API_URL}/api/productos/sync-reset`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    })
+      .then((res) => {
+        if (!res.ok) return res.json().then((e) => { throw new Error(e.detail || 'Error al recargar') })
+        return res.json()
+      })
+      .then((data) => {
+        setShowResetConfirm(false)
+        setResetMensaje(data.mensaje + (data.cargados != null ? ` Registros cargados: ${data.cargados}.` : ''))
+      })
+      .catch((err) => setResetError(err.message))
+      .finally(() => setResetting(false))
+  }
 
   const guardar = () => {
     setGuardando(true)
@@ -125,6 +149,63 @@ function Configuracion() {
 
         {mensaje && <p className="configuracion-ok">{mensaje}</p>}
       </section>
+
+      <section className="configuracion-form configuracion-reset" aria-label="Recargar lista RMA">
+        <h2 className="configuracion-subtitle">Recargar lista RMA desde Excel</h2>
+        <p className="configuracion-desc">
+          Borra todos los registros RMA y vuelve a cargar la lista entera desde el archivo Excel configurado arriba.
+          Cada registro tendrá su número de fila (orden por antigüedad). Se pierden estados, fechas editadas y ocultos.
+        </p>
+        <div className="configuracion-actions">
+          <button
+            type="button"
+            className="btn btn-danger"
+            onClick={() => { setResetError(null); setResetMensaje(null); setShowResetConfirm(true); }}
+            disabled={resetting}
+          >
+            Recargar lista RMA desde Excel
+          </button>
+        </div>
+        {resetMensaje && <p className="configuracion-ok">{resetMensaje}</p>}
+        {resetError && <p className="error-msg">{resetError}</p>}
+      </section>
+
+      {showResetConfirm && (
+        <div
+          className="modal-overlay"
+          onClick={() => !resetting && setShowResetConfirm(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reset-modal-title"
+        >
+          <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
+            <h2 id="reset-modal-title" className="modal-titulo">¿Recargar lista RMA?</h2>
+            <p className="modal-confirm-text">
+              Se borrarán <strong>todos</strong> los registros RMA y se volverán a cargar desde el Excel configurado.
+              Los estados (abonado, reparado…), fechas editadas y registros ocultos se perderán. Esta acción no se puede deshacer.
+            </p>
+            {resetError && <p className="error-msg">{resetError}</p>}
+            <div className="modal-pie modal-pie-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => !resetting && setShowResetConfirm(false)}
+                disabled={resetting}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={recargarRmaConfirm}
+                disabled={resetting}
+              >
+                {resetting ? 'Recargando...' : 'Recargar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

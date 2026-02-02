@@ -29,6 +29,7 @@ from database import (
     set_setting,
     insert_rma_item,
     rma_item_exists,
+    delete_all_rma_items,
     update_estado_by_rma_number,
     update_estado_by_rma_numbers,
     update_fecha_recogida_by_rma_number,
@@ -186,6 +187,63 @@ async def sincronizar_excel(file: UploadFile = File(None)):
             added += 1
 
     return {"mensaje": "Sincronización completada", "añadidos": added}
+
+
+@app.post("/api/productos/sync-reset")
+async def recargar_rma_desde_excel(username: str = Depends(get_current_username)):
+    """
+    Borra todos los registros RMA y vuelve a cargar la lista entera desde el Excel
+    configurado (EXCEL_SYNC_PATH). Cada registro tendrá su número de fila (excel_row).
+    Requiere autenticación. Usar solo cuando se quiera resetear la base RMA.
+    """
+    with get_connection() as conn:
+        excel_path = _get_excel_sync_path(conn)
+    path = Path(excel_path)
+    if not path.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se encuentra el archivo Excel en la ruta configurada: {path}",
+        )
+    try:
+        df = pd.read_excel(path, sheet_name=0)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error al leer el Excel: {e}")
+
+    df = df.replace({np.nan: None})
+    col_map = _excel_row_to_columns(df)
+    if "rma_number" not in col_map:
+        raise HTTPException(
+            status_code=400,
+            detail="El Excel debe tener una columna tipo 'Nº DE RMA'",
+        )
+
+    with get_connection() as conn:
+        delete_all_rma_items(conn)
+        loaded = 0
+        for idx, row in df.iterrows():
+            rma = _value(row.get(col_map.get("rma_number")))
+            serial = _value(row.get(col_map.get("serial"))) if col_map.get("serial") else None
+            if not rma:
+                continue
+            excel_row = int(idx) + 2
+            insert_rma_item(
+                conn,
+                rma_number=rma,
+                product=_value(row.get(col_map.get("product"))) if col_map.get("product") else None,
+                serial=serial,
+                client_name=_value(row.get(col_map.get("client_name"))) if col_map.get("client_name") else None,
+                client_email=_value(row.get(col_map.get("client_email"))) if col_map.get("client_email") else None,
+                client_phone=_value(row.get(col_map.get("client_phone"))) if col_map.get("client_phone") else None,
+                date_received=_value(row.get(col_map.get("date_received"))) if col_map.get("date_received") else None,
+                averia=_value(row.get(col_map.get("averia"))) if col_map.get("averia") else None,
+                observaciones=_value(row.get(col_map.get("observaciones"))) if col_map.get("observaciones") else None,
+                date_pickup=_value(row.get(col_map.get("date_pickup"))) if col_map.get("date_pickup") else None,
+                date_sent=_value(row.get(col_map.get("date_sent"))) if col_map.get("date_sent") else None,
+                excel_row=excel_row,
+            )
+            loaded += 1
+
+    return {"mensaje": "Lista RMA recargada desde Excel. Todos los registros tienen número de fila.", "cargados": loaded}
 
 
 class EstadoBody(BaseModel):

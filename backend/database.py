@@ -233,6 +233,12 @@ def rma_item_exists(conn: sqlite3.Connection, rma_number: str, serial: str) -> b
     return cur.fetchone() is not None
 
 
+def delete_all_rma_items(conn: sqlite3.Connection) -> int:
+    """Borra todos los registros de rma_items. Devuelve el número de filas borradas."""
+    cur = conn.execute("DELETE FROM rma_items")
+    return cur.rowcount
+
+
 def insert_rma_item(
     conn: sqlite3.Connection,
     rma_number: str,
