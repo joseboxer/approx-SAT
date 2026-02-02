@@ -132,12 +132,13 @@ def _process_product_dir(
     path_parts: list[str],
 ) -> dict | None:
     """
-    Procesa un directorio que contiene al menos un Excel (producto).
-    Usa el Excel más nuevo para datos técnicos; el PDF más nuevo como visual; el Excel visual más nuevo si hay.
+    Procesa un directorio producto. Solo se abre el Excel con "visual"/"datasheet" en el nombre
+    (datos técnicos D31/D28 y enlace visual), para no cargar Excels que no sean del producto.
     path_parts = componentes de la ruta relativa (ej. ["PRODUCTOS APPROX", "APP500LITE"]).
     """
     folder = _normalize_path(folder)
-    technical_excel = _newest_excel_in_dir(folder)
+    # Usar solo el Excel visual para leer D31/D28: no abrir otros Excels de la carpeta
+    technical_excel = _newest_visual_excel_in_dir(folder)
     if not technical_excel:
         return None
 
@@ -167,13 +168,12 @@ def _process_product_dir(
             visual_pdf = pdf_file.name
 
     visual_excel = None
-    excel_visual_file = _newest_visual_excel_in_dir(folder)
-    if excel_visual_file:
-        try:
-            rel = excel_visual_file.relative_to(base_path)
-            visual_excel = str(rel).replace("\\", "/")
-        except ValueError:
-            visual_excel = excel_visual_file.name
+    # Mismo Excel que technical_excel (ya es el visual); ruta relativa para enlace
+    try:
+        rel = technical_excel.relative_to(base_path)
+        visual_excel = str(rel).replace("\\", "/")
+    except ValueError:
+        visual_excel = technical_excel.name
 
     brand = path_parts[0] if path_parts else folder.name
     product_type = path_parts[1] if len(path_parts) >= 3 else None
@@ -190,17 +190,37 @@ def _process_product_dir(
     }
 
 
+def _count_directory_visits(current: Path) -> int:
+    """
+    Cuenta cuántos directorios se visitarán en el recorrido (misma lógica que _walk_and_collect).
+    Sirve para calcular el total y mostrar porcentaje en tiempo real.
+    """
+    try:
+        entries = list(current.iterdir())
+    except (OSError, PermissionError):
+        return 0
+    if _dir_has_visual_excel(current):
+        return 1
+    total = 1
+    for e in entries:
+        if e.is_dir():
+            total += _count_directory_visits(e)
+    return total
+
+
 def _walk_and_collect(
     current: Path,
     base_path: Path,
     path_parts: list[str],
     out: list[dict],
-    on_directory: Callable[[str], None] | None = None,
+    on_directory: Callable[[str, int, int], None] | None = None,
+    current_index: list[int] | None = None,
+    total_visits: int = 0,
 ) -> None:
     """
     Recorre recursivamente. Solo se considera producto un directorio que tenga al menos un Excel
     con "visual" en el nombre (insensible a mayúsculas). Si no, se entra en cada subcarpeta y se repite.
-    on_directory(path_rel) se llama al entrar en cada directorio para reportar progreso.
+    on_directory(path_rel, current, total) se llama al entrar en cada directorio para progreso en tiempo real.
     """
     if on_directory:
         try:
@@ -208,13 +228,19 @@ def _walk_and_collect(
             path_rel = str(rel).replace("\\", "/")
         except ValueError:
             path_rel = current.name or str(current)
-        on_directory(path_rel or ".")
+        if current_index is not None:
+            current_index[0] += 1
+            on_directory(path_rel or ".", current_index[0], total_visits)
+        else:
+            on_directory(path_rel or ".", 0, 0)
 
     try:
         entries = list(current.iterdir())
     except (OSError, PermissionError):
         return
 
+    # Si tiene Excel "visual", este directorio es el del producto (hoja), no un contenedor de productos.
+    # Se procesa y se sale: no se entra en subcarpetas (ese directorio ya está comprobado al completo).
     if _dir_has_visual_excel(current):
         product = _process_product_dir(current, base_path, path_parts)
         if product:
@@ -225,18 +251,19 @@ def _walk_and_collect(
         if not e.is_dir():
             continue
         new_parts = path_parts + [e.name]
-        _walk_and_collect(e, base_path, new_parts, out, on_directory)
+        _walk_and_collect(e, base_path, new_parts, out, on_directory, current_index, total_visits)
 
 
 def get_productos_catalogo(
     base_path: str | Path,
-    on_directory: Callable[[str], None] | None = None,
+    on_directory: Callable[[str, int, int], None] | None = None,
 ) -> list[dict]:
     """
     Escanea la ruta base recursivamente. Solo se considera producto un directorio que contenga al menos un Excel
     cuyo nombre incluya "visual" (insensible a mayúsculas). En ese directorio: Excel más nuevo = datos técnicos (D31, D28);
     PDF más nuevo = visual; Excel con "visual"/"datasheet" en nombre = visual Excel opcional.
-    on_directory(path_rel) se invoca al entrar en cada directorio para mostrar progreso en tiempo real.
+    on_directory(path_rel, current, total) se invoca al entrar en cada directorio: current/total permite mostrar % en tiempo real.
+    Si on_directory está definido, se hace un primer pase para contar directorios y así poder dar porcentaje aproximado.
     """
     if not base_path or not str(base_path).strip():
         return []
@@ -249,5 +276,10 @@ def get_productos_catalogo(
 
     base = _normalize_path(base)
     out = []
-    _walk_and_collect(base, base, [], out, on_directory)
+    total_visits = 0
+    current_index: list[int] | None = None
+    if on_directory:
+        total_visits = _count_directory_visits(base)
+        current_index = [0]
+    _walk_and_collect(base, base, [], out, on_directory, current_index, total_visits)
     return out

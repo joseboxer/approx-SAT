@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useGarantia } from '../../context/GarantiaContext'
 import { POR_PAGINA } from '../../constants'
 import {
@@ -39,6 +39,10 @@ function ListaOculta() {
     if (key === '__estado__') return getEstadoLabel(estadoRma[getRmaId(p)])
     return getValorOrden(p, key === 'NÂº DE RMA' ? key : key)
   }
+
+  useEffect(() => {
+    setPagina(1)
+  }, [valorFiltro, columnaFiltro])
 
   const filtrados = useMemo(() => {
     if (!valorFiltro.trim()) return hiddenRmas

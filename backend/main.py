@@ -499,12 +499,16 @@ def listar_productos_catalogo():
 
 
 def _run_catalog_refresh_task(task_id: str, catalog_path: str) -> None:
-    """Escanea QNAP, guarda en caché y actualiza progreso (directorio actual en tiempo real)."""
+    """Escanea QNAP, guarda en caché y actualiza progreso (directorio + % en tiempo real)."""
     try:
-        _update_task(task_id, percent=0, message="Iniciando escaneo...")
+        _update_task(task_id, percent=0, message="Contando directorios...")
 
-        def on_dir(path_rel: str) -> None:
-            _update_task(task_id, message=path_rel or ".")
+        def on_dir(path_rel: str, current: int, total: int) -> None:
+            if total > 0:
+                pct = min(89, int(90 * current / total))
+                _update_task(task_id, percent=pct, message=path_rel or ".")
+            else:
+                _update_task(task_id, message=path_rel or ".")
 
         productos = get_productos_catalogo(catalog_path, on_directory=on_dir)
         _update_task(task_id, percent=90, message="Guardando en caché...")

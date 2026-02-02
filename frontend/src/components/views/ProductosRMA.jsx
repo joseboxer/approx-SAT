@@ -169,6 +169,7 @@ function ProductosRMA() {
   }, [refetch])
 
   useEffect(() => {
+    setPagina(1)
     setPaginaSinFecha(1)
   }, [filtroSerial, filtroProducto, filtroGarantia, filtroPrimeraDesde, filtroPrimeraHasta, filtroUltimaDesde, filtroUltimaHasta, filtroCountMin, filtroClientes])
 

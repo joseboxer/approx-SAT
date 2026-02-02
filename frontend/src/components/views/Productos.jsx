@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { API_URL, AUTH_STORAGE_KEY, POR_PAGINA } from '../../constants'
 import { compararValores } from '../../utils/garantia'
 import Paginacion from '../Paginacion'
 import ProgressBar from '../ProgressBar'
+import { useCatalogRefresh } from '../../context/CatalogRefreshContext'
 
 function getAuthHeaders() {
   try {
@@ -23,16 +24,24 @@ function Productos({ productoDestacado }) {
   const [scannedAt, setScannedAt] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshProgress, setRefreshProgress] = useState(0)
-  const [refreshProgressMessage, setRefreshProgressMessage] = useState('')
   const [filtroMarca, setFiltroMarca] = useState('')
   const [filtroSerie, setFiltroSerie] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [columnaOrden, setColumnaOrden] = useState('base_serial')
   const [ordenAsc, setOrdenAsc] = useState(true)
   const [pagina, setPagina] = useState(1)
-  const refreshPollRef = useRef(null)
+
+  const {
+    taskId: refreshTaskId,
+    percent: refreshProgress,
+    message: refreshProgressMessage,
+    status: refreshStatus,
+    result: refreshResult,
+    error: refreshError,
+    startCatalogRefresh,
+    clearResult: clearRefreshResult,
+  } = useCatalogRefresh()
+  const refreshing = !!refreshTaskId
 
   const refetch = useCallback(() => {
     setCargando(true)
@@ -63,60 +72,24 @@ function Productos({ productoDestacado }) {
     refetch()
   }, [refetch])
 
-  useEffect(() => () => {
-    if (refreshPollRef.current) clearInterval(refreshPollRef.current)
-  }, [])
+  // Aplicar resultado de la actualización en segundo plano (aunque hayas cambiado de apartado)
+  useEffect(() => {
+    if (refreshStatus === 'done' && refreshResult?.productos != null) {
+      setCatalogo(refreshResult.productos)
+      setCached(true)
+      setCatalogError(null)
+      clearRefreshResult()
+    }
+  }, [refreshStatus, refreshResult, clearRefreshResult])
 
   const refreshCatalog = useCallback(() => {
-    setRefreshing(true)
-    setRefreshProgress(0)
-    setRefreshProgressMessage('Iniciando...')
     setCatalogError(null)
-    fetch(`${API_URL}/api/productos-catalogo/refresh`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-    })
-      .then((res) => {
-        if (!res.ok) return res.json().then((e) => { throw new Error(e.detail || 'Error al actualizar') })
-        return res.json()
-      })
-      .then((data) => {
-        const taskId = data.task_id
-        if (!taskId) {
-          setRefreshing(false)
-          return
-        }
-        const poll = () => {
-          fetch(`${API_URL}/api/tasks/${taskId}`, { headers: getAuthHeaders() })
-            .then((r) => r.json())
-            .then((t) => {
-              setRefreshProgress(t.percent ?? 0)
-              setRefreshProgressMessage(t.message ?? '')
-              if (t.status === 'done') {
-                if (refreshPollRef.current) clearInterval(refreshPollRef.current)
-                refreshPollRef.current = null
-                const prods = t.result?.productos ?? []
-                setCatalogo(prods)
-                setCached(true)
-                setCatalogError(null)
-                setRefreshing(false)
-              } else if (t.status === 'error') {
-                if (refreshPollRef.current) clearInterval(refreshPollRef.current)
-                refreshPollRef.current = null
-                setCatalogError(t.message || 'Error al actualizar')
-                setRefreshing(false)
-              }
-            })
-            .catch(() => {})
-        }
-        poll()
-        refreshPollRef.current = setInterval(poll, 400)
-      })
-      .catch((err) => {
-        setCatalogError(err.message)
-        setRefreshing(false)
-      })
-  }, [])
+    startCatalogRefresh()
+  }, [startCatalogRefresh])
+
+  useEffect(() => {
+    setPagina(1)
+  }, [filtroMarca, filtroSerie, filtroTipo])
 
   const getValor = (p, key) => (p[key] ?? '')
 
@@ -192,14 +165,14 @@ function Productos({ productoDestacado }) {
         />
       )}
 
-      {!cached && catalogo.length === 0 && !catalogError && (
+      {!cached && catalogo.length === 0 && !catalogError && !refreshError && (
         <p className="productos-catalogo-hint">
           No hay caché. Pulsa <strong>Actualizar catálogo</strong> para escanear la carpeta de red (QNAP).
         </p>
       )}
-      {catalogError && (
+      {(catalogError || refreshError) && (
         <div className="productos-catalogo-error" role="alert">
-          No se pudo cargar el catálogo: {catalogError}. Comprueba la ruta en <strong>Configuración</strong> (ej. \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS). El servidor debe tener acceso a la carpeta de red.
+          No se pudo cargar el catálogo: {catalogError || refreshError}. Comprueba la ruta en <strong>Configuración</strong> (ej. \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS). El servidor debe tener acceso a la carpeta de red.
         </div>
       )}
 

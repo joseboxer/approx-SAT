@@ -43,6 +43,10 @@ function Clientes({ clienteDestacado }) {
     refetchGrupos()
   }, [refetchGrupos])
 
+  useEffect(() => {
+    setPagina(1)
+  }, [valorFiltro, columnaFiltro])
+
   // Mapa (nombre, email) de miembro -> (nombre, email) canónico
   const memberToCanonical = useMemo(() => {
     const map = new Map()

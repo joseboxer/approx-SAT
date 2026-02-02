@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useEffect } from 'react'
 import { useGarantia } from '../../context/GarantiaContext'
 import { POR_PAGINA, OPCIONES_ESTADO, API_URL, AUTH_STORAGE_KEY } from '../../constants'
 import {
@@ -52,6 +52,10 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
     () => getColumnasFiltroRma(claveSerieReal),
     [claveSerieReal]
   )
+
+  useEffect(() => {
+    setPagina(1)
+  }, [valorFiltro, columnaFiltro, estadoFiltro, filtroFechaRecogidaDesde, filtroFechaRecogidaHasta])
 
   const grupos = useMemo(() => {
     const byId = {}

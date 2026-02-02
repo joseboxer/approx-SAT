@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { GarantiaProvider } from './context/GarantiaContext'
+import { CatalogRefreshProvider } from './context/CatalogRefreshContext'
 import Layout from './components/Layout'
 import LoginRegister from './components/LoginRegister'
 import Inicio from './components/views/Inicio'
@@ -74,7 +75,9 @@ function App() {
   if (!user) return <LoginRegister />
   return (
     <GarantiaProvider>
-      <AppContent />
+      <CatalogRefreshProvider>
+        <AppContent />
+      </CatalogRefreshProvider>
     </GarantiaProvider>
   )
 }
