@@ -1,0 +1,63 @@
+/*
+ * Paleta SAT (Servicio de Asistencia Técnica): gris oscuro + azul.
+ * Rojo reservado para cliente; azul para SAT.
+ */
+:root {
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #2d2d2d;
+  background-color: #f5f5f5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* SAT: gris oscuro + azul */
+  --color-aqprox-grey: #2d2d2d;
+  --color-sat-blue: #0ea5e9;
+  --color-sat-blue-hover: #0284c7;
+  --color-sat-blue-light: #e0f2fe;
+
+  --color-primary: var(--color-sat-blue);
+  --color-primary-hover: var(--color-sat-blue-hover);
+  --color-primary-light: var(--color-sat-blue-light);
+  --color-nav-bg: var(--color-aqprox-grey);
+  --color-nav-text: #f8fafc;
+  --color-nav-hover: rgba(255, 255, 255, 0.08);
+  --color-nav-active: var(--color-sat-blue);
+  --color-card-bg: #ffffff;
+  --color-border: #e5e5e5;
+  --color-border-light: #f0f0f0;
+  --color-error: #dc2626;
+  --color-error-bg: #fef2f2;
+  --color-success: #16a34a;
+  --text-muted: #64748b;
+  --text-heading: var(--color-aqprox-grey);
+
+  /* Sombras */
+  --shadow-sm: 0 1px 2px rgba(45, 45, 45, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(45, 45, 45, 0.08), 0 2px 4px -2px rgba(45, 45, 45, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(45, 45, 45, 0.08), 0 4px 6px -4px rgba(45, 45, 45, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(45, 45, 45, 0.08), 0 8px 10px -6px rgba(45, 45, 45, 0.04);
+
+  --radius: 10px;
+  --radius-lg: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 100%);
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
