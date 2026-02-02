@@ -1,9 +1,10 @@
 """
 Catálogo de productos desde carpeta de red (QNAP).
-- Se recorre la estructura recursivamente hasta encontrar directorios que contengan al menos un Excel.
-- Solo entonces se considera "producto": se usa el Excel más nuevo del directorio para datos técnicos (D31, D28).
-- El PDF más nuevo del mismo directorio es el visual que se puede abrir desde la app.
-- El Excel más nuevo del directorio (o el que tenga "visual"/"datasheet" en nombre) puede ser el visual Excel.
+- Se recorre la estructura recursivamente. Solo se considera "producto" un directorio que contenga al menos un Excel
+  cuyo nombre incluya la palabra "visual" (insensible a mayúsculas). Si no hay ningún Excel con "visual", se ignora
+  el directorio y se revisan el resto (subcarpetas).
+- En un directorio producto: se usa el Excel más nuevo para datos técnicos (D31, D28); PDF más nuevo = visual.
+- El Excel más nuevo del directorio con "visual" o "datasheet" en el nombre puede ser el visual Excel.
 """
 import os
 from pathlib import Path
@@ -57,6 +58,18 @@ def _dir_has_excel(folder: Path) -> bool:
         for e in folder.iterdir():
             if e.is_file() and e.suffix.lower() in (".xlsx", ".xls"):
                 return True
+    except (OSError, PermissionError):
+        pass
+    return False
+
+
+def _dir_has_visual_excel(folder: Path) -> bool:
+    """True si el directorio contiene al menos un Excel cuyo nombre incluya 'visual' (insensible a mayúsculas)."""
+    try:
+        for e in folder.iterdir():
+            if e.is_file() and e.suffix.lower() in (".xlsx", ".xls"):
+                if "visual" in e.name.lower():
+                    return True
     except (OSError, PermissionError):
         pass
     return False
@@ -181,15 +194,15 @@ def _walk_and_collect(
     out: list[dict],
 ) -> None:
     """
-    Recorre recursivamente. Si el directorio actual tiene al menos un Excel, es un producto y se procesa.
-    Si no, se entra en cada subcarpeta y se repite.
+    Recorre recursivamente. Solo se considera producto un directorio que tenga al menos un Excel
+    con "visual" en el nombre (insensible a mayúsculas). Si no, se entra en cada subcarpeta y se repite.
     """
     try:
         entries = list(current.iterdir())
     except (OSError, PermissionError):
         return
 
-    if _dir_has_excel(current):
+    if _dir_has_visual_excel(current):
         product = _process_product_dir(current, base_path, path_parts)
         if product:
             out.append(product)
@@ -204,8 +217,9 @@ def _walk_and_collect(
 
 def get_productos_catalogo(base_path: str | Path) -> list[dict]:
     """
-    Escanea la ruta base recursivamente. Solo se considera producto un directorio que contenga al menos un Excel.
-    En ese directorio: Excel más nuevo = datos técnicos (D31, D28); PDF más nuevo = visual; Excel visual más nuevo = opcional.
+    Escanea la ruta base recursivamente. Solo se considera producto un directorio que contenga al menos un Excel
+    cuyo nombre incluya "visual" (insensible a mayúsculas). En ese directorio: Excel más nuevo = datos técnicos (D31, D28);
+    PDF más nuevo = visual; Excel con "visual"/"datasheet" en nombre = visual Excel opcional.
     """
     if not base_path or not str(base_path).strip():
         return []

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { API_URL, AUTH_STORAGE_KEY, POR_PAGINA, COLUMNAS_PRODUCTOS_RMA } from '../../constants'
 import { compararValores } from '../../utils/garantia'
 import Paginacion from '../Paginacion'
+import ProgressBar from '../ProgressBar'
 
 function getAuthHeaders() {
   try {
@@ -330,7 +331,11 @@ function ProductosRMA() {
     filtroCountMin ||
     filtroClientes
 
-  if (cargando) return <p className="loading">Cargando...</p>
+  if (cargando) return (
+    <div className="loading-wrap">
+      <ProgressBar percent={null} message="Cargando productos RMA..." />
+    </div>
+  )
   if (error) return <div className="error-msg">Error: {error}</div>
 
   return (

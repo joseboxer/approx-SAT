@@ -156,12 +156,17 @@ def _run_sync_reset_task(task_id: str, excel_path: str) -> None:
         with get_connection() as conn:
             delete_all_rma_items(conn)
         loaded = 0
+        seen: set[tuple[str, str]] = set()  # (rma_number, serial) para evitar duplicados del Excel
         with get_connection() as conn:
             for idx, row in df.iterrows():
                 rma = _value(row.get(col_map.get("rma_number")))
                 serial = _value(row.get(col_map.get("serial"))) if col_map.get("serial") else None
+                serial_key = (serial or "").strip()
                 if not rma:
                     continue
+                if (rma, serial_key) in seen:
+                    continue  # Duplicado en el Excel: misma combinación RMA + serie
+                seen.add((rma, serial_key))
                 pct = 5 + int(90 * (idx + 1) / total) if total else 95
                 _update_task(task_id, percent=min(pct, 95), message=f"Insertando fila {idx + 2}...")
                 excel_row = int(idx) + 2
@@ -245,15 +250,20 @@ def _run_sync_task(task_id: str, excel_path: str | None, file_content: bytes | N
             return
         total = len(df)
         added = 0
+        seen: set[tuple[str, str]] = set()  # (rma_number, serial) para no insertar duplicados del Excel
         with get_connection() as conn:
             for idx, row in df.iterrows():
                 rma = _value(row.get(col_map.get("rma_number")))
                 serial = _value(row.get(col_map.get("serial"))) if col_map.get("serial") else None
+                serial_key = (serial or "").strip()
                 if not rma:
                     continue
+                if (rma, serial_key) in seen:
+                    continue
+                seen.add((rma, serial_key))
                 pct = int(100 * (idx + 1) / total) if total else 100
                 _update_task(task_id, percent=pct, message=f"Procesando fila {idx + 2}...")
-                if rma_item_exists(conn, rma, serial or ""):
+                if rma_item_exists(conn, rma, serial_key):
                     continue
                 excel_row = int(idx) + 2
                 insert_rma_item(
