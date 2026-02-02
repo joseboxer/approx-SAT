@@ -2,7 +2,9 @@
 Base de datos SQLite para la aplicación.
 - users: usuarios (correo @approx.es).
 - rma_items: líneas RMA (productos, clientes, estado, ocultos). Sincronización con Excel añade solo registros nuevos.
+- catalog_cache: caché del catálogo de productos (QNAP) para no rescanearlo cada vez.
 """
+import json
 import math
 import sqlite3
 from contextlib import contextmanager
@@ -94,6 +96,11 @@ def _init_db(conn: sqlite3.Connection):
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
+        );
+        CREATE TABLE IF NOT EXISTS catalog_cache (
+            key TEXT PRIMARY KEY,
+            scanned_at TEXT NOT NULL,
+            data TEXT NOT NULL
         );
     """)
     # Migración: añadir hidden_by y hidden_at si no existen (BD ya creada)
@@ -645,4 +652,36 @@ def set_setting(conn: sqlite3.Connection, key: str, value: str | None) -> None:
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (k, v),
+    )
+
+
+# --- Caché catálogo productos (QNAP) ---
+
+_CATALOG_CACHE_KEY = "default"
+
+
+def get_catalog_cache(conn: sqlite3.Connection) -> tuple[str | None, list[dict]]:
+    """Devuelve (scanned_at, lista de productos) si hay caché; si no, (None, [])."""
+    cur = conn.execute(
+        "SELECT scanned_at, data FROM catalog_cache WHERE key = ?",
+        (_CATALOG_CACHE_KEY,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None, []
+    try:
+        data = json.loads(row[1]) if row[1] else []
+        return row[0], data
+    except (TypeError, json.JSONDecodeError):
+        return None, []
+
+
+def set_catalog_cache(conn: sqlite3.Connection, productos: list[dict]) -> None:
+    """Guarda la lista de productos en caché con la fecha/hora actual."""
+    scanned_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    data = json.dumps(productos, ensure_ascii=False)
+    conn.execute(
+        """INSERT INTO catalog_cache (key, scanned_at, data) VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET scanned_at = excluded.scanned_at, data = excluded.data""",
+        (_CATALOG_CACHE_KEY, scanned_at, data),
     )

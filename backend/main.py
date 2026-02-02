@@ -2,9 +2,12 @@
 API Garantías: usuarios (auth), RMA/productos/clientes en base de datos.
 Carga de Excel: contrasta con la BD y solo añade registros nuevos.
 El Excel de sincronización puede ser una ruta fija (p. ej. QNAP) o subida manual.
+Tareas largas (sync, sync-reset, catalog refresh) devuelven task_id y reportan progreso vía GET /api/tasks/{task_id}.
 """
 import io
 import os
+import threading
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -27,6 +30,8 @@ from database import (
     get_productos_rma,
     get_setting,
     set_setting,
+    get_catalog_cache,
+    set_catalog_cache,
     insert_rma_item,
     rma_item_exists,
     delete_all_rma_items,
@@ -51,6 +56,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Tareas en segundo plano (sync, sync-reset, catalog refresh) con progreso en tiempo real
+_tasks: dict[str, dict] = {}
+_tasks_lock = threading.Lock()
+
+
+def _update_task(task_id: str, **kwargs) -> None:
+    with _tasks_lock:
+        if task_id in _tasks:
+            _tasks[task_id] = {**_tasks[task_id], **kwargs}
+
 
 # Mapeo de posibles nombres de columna en Excel a nuestras claves internas
 _EXCEL_COLUMNS = {
@@ -124,77 +140,63 @@ def leer_productos():
         return get_all_rma_items(conn)
 
 
-@app.post("/api/productos/sync")
-async def sincronizar_excel(file: UploadFile = File(None)):
-    """
-    Sincroniza con la BD leyendo el Excel desde la ruta configurada (EXCEL_SYNC_PATH,
-    por defecto productos.xlsx del proyecto; en producción la ruta del QNAP) o desde
-    el archivo subido si se envía. Solo se insertan filas nuevas (mismo Nº RMA + Nº serie no se duplican).
-    """
-    if file and file.filename:
-        if not file.filename.lower().endswith((".xlsx", ".xls")):
-            raise HTTPException(status_code=400, detail="Debe subir un archivo Excel (.xlsx o .xls)")
-        content = await file.read()
-        try:
-            df = pd.read_excel(io.BytesIO(content), sheet_name=0)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Error al leer el Excel: {e}")
-    else:
-        with get_connection() as conn:
-            excel_path = _get_excel_sync_path(conn)
+def _run_sync_reset_task(task_id: str, excel_path: str) -> None:
+    """Ejecuta sync-reset en segundo plano y actualiza progreso en _tasks[task_id]."""
+    try:
         path = Path(excel_path)
-        if not path.is_file():
-            raise HTTPException(status_code=400, detail=f"No se encuentra el archivo Excel en la ruta configurada: {path}")
-        try:
-            df = pd.read_excel(path, sheet_name=0)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Error al leer el Excel: {e}")
-
-    df = df.replace({np.nan: None})
-    col_map = _excel_row_to_columns(df)
-    if "rma_number" not in col_map:
-        raise HTTPException(
-            status_code=400,
-            detail="El Excel debe tener una columna tipo 'Nº DE RMA'",
+        _update_task(task_id, percent=0, message="Leyendo Excel...")
+        df = pd.read_excel(path, sheet_name=0)
+        df = df.replace({np.nan: None})
+        col_map = _excel_row_to_columns(df)
+        if "rma_number" not in col_map:
+            _update_task(task_id, status="error", percent=0, message="Excel sin columna Nº DE RMA", result=None)
+            return
+        total = len(df)
+        _update_task(task_id, percent=5, message="Borrando registros anteriores...")
+        with get_connection() as conn:
+            delete_all_rma_items(conn)
+        loaded = 0
+        with get_connection() as conn:
+            for idx, row in df.iterrows():
+                rma = _value(row.get(col_map.get("rma_number")))
+                serial = _value(row.get(col_map.get("serial"))) if col_map.get("serial") else None
+                if not rma:
+                    continue
+                pct = 5 + int(90 * (idx + 1) / total) if total else 95
+                _update_task(task_id, percent=min(pct, 95), message=f"Insertando fila {idx + 2}...")
+                excel_row = int(idx) + 2
+                insert_rma_item(
+                    conn,
+                    rma_number=rma,
+                    product=_value(row.get(col_map.get("product"))) if col_map.get("product") else None,
+                    serial=serial,
+                    client_name=_value(row.get(col_map.get("client_name"))) if col_map.get("client_name") else None,
+                    client_email=_value(row.get(col_map.get("client_email"))) if col_map.get("client_email") else None,
+                    client_phone=_value(row.get(col_map.get("client_phone"))) if col_map.get("client_phone") else None,
+                    date_received=_value(row.get(col_map.get("date_received"))) if col_map.get("date_received") else None,
+                    averia=_value(row.get(col_map.get("averia"))) if col_map.get("averia") else None,
+                    observaciones=_value(row.get(col_map.get("observaciones"))) if col_map.get("observaciones") else None,
+                    date_pickup=_value(row.get(col_map.get("date_pickup"))) if col_map.get("date_pickup") else None,
+                    date_sent=_value(row.get(col_map.get("date_sent"))) if col_map.get("date_sent") else None,
+                    excel_row=excel_row,
+                )
+                loaded += 1
+        _update_task(
+            task_id,
+            status="done",
+            percent=100,
+            message="Completado",
+            result={"mensaje": "Lista RMA recargada desde Excel. Todos los registros tienen número de fila.", "cargados": loaded},
         )
-
-    # Número de fila en el Excel: fila 1 = cabecera, fila 2 = primer dato (pandas index 0) -> excel_row = idx + 2
-    added = 0
-    with get_connection() as conn:
-        for idx, row in df.iterrows():
-            rma = _value(row.get(col_map.get("rma_number")))
-            serial = _value(row.get(col_map.get("serial"))) if col_map.get("serial") else None
-            if not rma:
-                continue
-            if rma_item_exists(conn, rma, serial or ""):
-                continue
-            excel_row = int(idx) + 2  # Fila en Excel (1 = cabecera; mayor = más reciente)
-            insert_rma_item(
-                conn,
-                rma_number=rma,
-                product=_value(row.get(col_map.get("product"))) if col_map.get("product") else None,
-                serial=serial,
-                client_name=_value(row.get(col_map.get("client_name"))) if col_map.get("client_name") else None,
-                client_email=_value(row.get(col_map.get("client_email"))) if col_map.get("client_email") else None,
-                client_phone=_value(row.get(col_map.get("client_phone"))) if col_map.get("client_phone") else None,
-                date_received=_value(row.get(col_map.get("date_received"))) if col_map.get("date_received") else None,
-                averia=_value(row.get(col_map.get("averia"))) if col_map.get("averia") else None,
-                observaciones=_value(row.get(col_map.get("observaciones"))) if col_map.get("observaciones") else None,
-                date_pickup=_value(row.get(col_map.get("date_pickup"))) if col_map.get("date_pickup") else None,
-                date_sent=_value(row.get(col_map.get("date_sent"))) if col_map.get("date_sent") else None,
-                excel_row=excel_row,
-            )
-            added += 1
-
-    return {"mensaje": "Sincronización completada", "añadidos": added}
+    except Exception as e:
+        _update_task(task_id, status="error", percent=0, message=str(e), result=None)
 
 
 @app.post("/api/productos/sync-reset")
 async def recargar_rma_desde_excel(username: str = Depends(get_current_username)):
     """
     Borra todos los registros RMA y vuelve a cargar la lista entera desde el Excel
-    configurado (EXCEL_SYNC_PATH). Cada registro tendrá su número de fila (excel_row).
-    Requiere autenticación. Usar solo cuando se quiera resetear la base RMA.
+    configurado (EXCEL_SYNC_PATH). Devuelve task_id para consultar progreso en GET /api/tasks/{task_id}.
     """
     with get_connection() as conn:
         excel_path = _get_excel_sync_path(conn)
@@ -204,46 +206,106 @@ async def recargar_rma_desde_excel(username: str = Depends(get_current_username)
             status_code=400,
             detail=f"No se encuentra el archivo Excel en la ruta configurada: {path}",
         )
+    task_id = str(uuid.uuid4())
+    with _tasks_lock:
+        _tasks[task_id] = {"status": "running", "percent": 0, "message": "Iniciando...", "result": None}
+    threading.Thread(target=_run_sync_reset_task, args=(task_id, excel_path), daemon=True).start()
+    return {"task_id": task_id}
+
+
+@app.get("/api/tasks/{task_id}")
+def get_task_progress(task_id: str):
+    """Devuelve el progreso de una tarea (sync, sync-reset, catalog refresh)."""
+    with _tasks_lock:
+        t = _tasks.get(task_id)
+    if t is None:
+        return {"status": "not_found", "percent": 0, "message": "", "result": None}
+    return {
+        "status": t.get("status", "running"),
+        "percent": t.get("percent", 0),
+        "message": t.get("message", ""),
+        "result": t.get("result"),
+    }
+
+
+def _run_sync_task(task_id: str, excel_path: str | None, file_content: bytes | None) -> None:
+    """Ejecuta sync (añadir solo nuevos) en segundo plano."""
     try:
-        df = pd.read_excel(path, sheet_name=0)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error al leer el Excel: {e}")
-
-    df = df.replace({np.nan: None})
-    col_map = _excel_row_to_columns(df)
-    if "rma_number" not in col_map:
-        raise HTTPException(
-            status_code=400,
-            detail="El Excel debe tener una columna tipo 'Nº DE RMA'",
+        if file_content is not None:
+            _update_task(task_id, percent=0, message="Leyendo Excel subido...")
+            df = pd.read_excel(io.BytesIO(file_content), sheet_name=0)
+        else:
+            _update_task(task_id, percent=0, message="Leyendo Excel...")
+            path = Path(excel_path)
+            df = pd.read_excel(path, sheet_name=0)
+        df = df.replace({np.nan: None})
+        col_map = _excel_row_to_columns(df)
+        if "rma_number" not in col_map:
+            _update_task(task_id, status="error", percent=0, message="Excel sin columna Nº DE RMA", result=None)
+            return
+        total = len(df)
+        added = 0
+        with get_connection() as conn:
+            for idx, row in df.iterrows():
+                rma = _value(row.get(col_map.get("rma_number")))
+                serial = _value(row.get(col_map.get("serial"))) if col_map.get("serial") else None
+                if not rma:
+                    continue
+                pct = int(100 * (idx + 1) / total) if total else 100
+                _update_task(task_id, percent=pct, message=f"Procesando fila {idx + 2}...")
+                if rma_item_exists(conn, rma, serial or ""):
+                    continue
+                excel_row = int(idx) + 2
+                insert_rma_item(
+                    conn,
+                    rma_number=rma,
+                    product=_value(row.get(col_map.get("product"))) if col_map.get("product") else None,
+                    serial=serial,
+                    client_name=_value(row.get(col_map.get("client_name"))) if col_map.get("client_name") else None,
+                    client_email=_value(row.get(col_map.get("client_email"))) if col_map.get("client_email") else None,
+                    client_phone=_value(row.get(col_map.get("client_phone"))) if col_map.get("client_phone") else None,
+                    date_received=_value(row.get(col_map.get("date_received"))) if col_map.get("date_received") else None,
+                    averia=_value(row.get(col_map.get("averia"))) if col_map.get("averia") else None,
+                    observaciones=_value(row.get(col_map.get("observaciones"))) if col_map.get("observaciones") else None,
+                    date_pickup=_value(row.get(col_map.get("date_pickup"))) if col_map.get("date_pickup") else None,
+                    date_sent=_value(row.get(col_map.get("date_sent"))) if col_map.get("date_sent") else None,
+                    excel_row=excel_row,
+                )
+                added += 1
+        _update_task(
+            task_id,
+            status="done",
+            percent=100,
+            message="Completado",
+            result={"mensaje": "Sincronización completada", "añadidos": added},
         )
+    except Exception as e:
+        _update_task(task_id, status="error", percent=0, message=str(e), result=None)
 
-    with get_connection() as conn:
-        delete_all_rma_items(conn)
-        loaded = 0
-        for idx, row in df.iterrows():
-            rma = _value(row.get(col_map.get("rma_number")))
-            serial = _value(row.get(col_map.get("serial"))) if col_map.get("serial") else None
-            if not rma:
-                continue
-            excel_row = int(idx) + 2
-            insert_rma_item(
-                conn,
-                rma_number=rma,
-                product=_value(row.get(col_map.get("product"))) if col_map.get("product") else None,
-                serial=serial,
-                client_name=_value(row.get(col_map.get("client_name"))) if col_map.get("client_name") else None,
-                client_email=_value(row.get(col_map.get("client_email"))) if col_map.get("client_email") else None,
-                client_phone=_value(row.get(col_map.get("client_phone"))) if col_map.get("client_phone") else None,
-                date_received=_value(row.get(col_map.get("date_received"))) if col_map.get("date_received") else None,
-                averia=_value(row.get(col_map.get("averia"))) if col_map.get("averia") else None,
-                observaciones=_value(row.get(col_map.get("observaciones"))) if col_map.get("observaciones") else None,
-                date_pickup=_value(row.get(col_map.get("date_pickup"))) if col_map.get("date_pickup") else None,
-                date_sent=_value(row.get(col_map.get("date_sent"))) if col_map.get("date_sent") else None,
-                excel_row=excel_row,
-            )
-            loaded += 1
 
-    return {"mensaje": "Lista RMA recargada desde Excel. Todos los registros tienen número de fila.", "cargados": loaded}
+@app.post("/api/productos/sync")
+async def sincronizar_excel(file: UploadFile = File(None)):
+    """
+    Sincroniza con la BD leyendo el Excel (ruta configurada o archivo subido).
+    Solo se insertan filas nuevas. Devuelve task_id para consultar progreso en GET /api/tasks/{task_id}.
+    """
+    file_content = None
+    excel_path = None
+    if file and file.filename:
+        if not file.filename.lower().endswith((".xlsx", ".xls")):
+            raise HTTPException(status_code=400, detail="Debe subir un archivo Excel (.xlsx o .xls)")
+        file_content = await file.read()
+    else:
+        with get_connection() as conn:
+            excel_path = _get_excel_sync_path(conn)
+        path = Path(excel_path)
+        if not path.is_file():
+            raise HTTPException(status_code=400, detail=f"No se encuentra el Excel en la ruta configurada: {path}")
+    task_id = str(uuid.uuid4())
+    with _tasks_lock:
+        _tasks[task_id] = {"status": "running", "percent": 0, "message": "Iniciando...", "result": None}
+    threading.Thread(target=_run_sync_task, args=(task_id, excel_path, file_content), daemon=True).start()
+    return {"task_id": task_id}
 
 
 class EstadoBody(BaseModel):
@@ -413,21 +475,53 @@ def actualizar_settings(
     return {"mensaje": "Configuración guardada"}
 
 
-# --- Catálogo de productos (carpeta QNAP: marcas -> productos, Excel técnico D31/D28) ---
+# --- Catálogo de productos (carpeta QNAP: caché en BD; solo lo nuevo con refresh) ---
 
 
 @app.get("/api/productos-catalogo")
 def listar_productos_catalogo():
-    """Lista productos escaneados desde la carpeta de red (configurable en la app)."""
+    """Lista productos desde la caché en BD (no rescanear). Si no hay caché, productos vacío y cached=false."""
+    with get_connection() as conn:
+        scanned_at, productos = get_catalog_cache(conn)
+    if scanned_at is None:
+        return {"productos": [], "error": None, "cached": False, "scanned_at": None}
+    return {"productos": productos, "error": None, "cached": True, "scanned_at": scanned_at}
+
+
+def _run_catalog_refresh_task(task_id: str, catalog_path: str) -> None:
+    """Escanea QNAP, guarda en caché y actualiza progreso."""
+    try:
+        _update_task(task_id, percent=0, message="Escaneando carpeta de productos...")
+        productos = get_productos_catalogo(catalog_path)
+        _update_task(task_id, percent=90, message="Guardando en caché...")
+        with get_connection() as conn:
+            set_catalog_cache(conn, productos)
+        _update_task(
+            task_id,
+            status="done",
+            percent=100,
+            message="Completado",
+            result={"productos": productos, "mensaje": f"Catálogo actualizado: {len(productos)} productos."},
+        )
+    except Exception as e:
+        _update_task(task_id, status="error", percent=0, message=str(e), result=None)
+
+
+@app.post("/api/productos-catalogo/refresh")
+def refrescar_catalogo(username: str = Depends(get_current_username)):
+    """
+    Escanea la carpeta QNAP y actualiza la caché del catálogo.
+    Devuelve task_id para consultar progreso en GET /api/tasks/{task_id}.
+    """
     with get_connection() as conn:
         catalog_path = _get_productos_catalog_path(conn)
-    if not catalog_path:
-        return {"productos": [], "error": None}
-    try:
-        productos = get_productos_catalogo(catalog_path)
-        return {"productos": productos, "error": None}
-    except Exception as e:
-        return {"productos": [], "error": str(e)}
+    if not catalog_path or not catalog_path.strip():
+        raise HTTPException(status_code=400, detail="Configura la ruta del catálogo en Configuración.")
+    task_id = str(uuid.uuid4())
+    with _tasks_lock:
+        _tasks[task_id] = {"status": "running", "percent": 0, "message": "Iniciando...", "result": None}
+    threading.Thread(target=_run_catalog_refresh_task, args=(task_id, catalog_path), daemon=True).start()
+    return {"task_id": task_id}
 
 
 @app.get("/api/productos-catalogo/archivo")

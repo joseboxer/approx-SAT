@@ -1,15 +1,19 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { useGarantia } from '../../context/GarantiaContext'
 import { API_URL } from '../../constants'
 import { getRmaId } from '../../utils/garantia'
+import ProgressBar from '../ProgressBar'
 
 function Inicio() {
   const { productos, productosVisibles, getRmaId: getRmaIdCtx, getEstadoLabel, cargando, refetchProductos } = useGarantia()
   const [syncLoading, setSyncLoading] = useState(false)
+  const [syncProgress, setSyncProgress] = useState(0)
+  const [syncProgressMessage, setSyncProgressMessage] = useState('')
   const [syncResult, setSyncResult] = useState(null)
   const [syncError, setSyncError] = useState(null)
   const [archivoManual, setArchivoManual] = useState(null)
   const [mostrarSubir, setMostrarSubir] = useState(false)
+  const syncPollRef = useRef(null)
 
   const rmaId = getRmaIdCtx ?? getRmaId
 
@@ -162,12 +166,19 @@ function Inicio() {
               </button>
             </form>
           )}
+          {syncLoading && (
+            <ProgressBar
+              percent={syncProgress}
+              message={syncProgressMessage}
+              className="sync-progress"
+            />
+          )}
           {syncError && (
             <p className="sync-error" role="alert">
               {syncError}
             </p>
           )}
-          {syncResult != null && (
+          {syncResult != null && !syncLoading && (
             <p className="sync-ok">
               {syncResult.mensaje ?? 'Sincronización completada.'}
               {typeof syncResult.añadidos === 'number' && (

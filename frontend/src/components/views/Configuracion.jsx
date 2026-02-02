@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { API_URL, AUTH_STORAGE_KEY } from '../../constants'
+import ProgressBar from '../ProgressBar'
 
 function getAuthHeaders() {
   try {
@@ -22,8 +23,11 @@ function Configuracion() {
   const [mensaje, setMensaje] = useState(null)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [resetProgress, setResetProgress] = useState(0)
+  const [resetProgressMessage, setResetProgressMessage] = useState('')
   const [resetMensaje, setResetMensaje] = useState(null)
   const [resetError, setResetError] = useState(null)
+  const resetPollRef = useRef(null)
 
   const cargar = useCallback(() => {
     setCargando(true)
@@ -45,25 +49,76 @@ function Configuracion() {
     cargar()
   }, [cargar])
 
+  const parseErrorResponse = (res) =>
+    res.text().then((text) => {
+      let detail = 'Error al recargar'
+      try {
+        const j = JSON.parse(text)
+        if (j.detail) detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)
+      } catch (_) {
+        if (text) detail = text
+      }
+      throw new Error(detail)
+    })
+
   const recargarRmaConfirm = () => {
     setResetting(true)
     setResetError(null)
     setResetMensaje(null)
+    setResetProgress(0)
+    setResetProgressMessage('Iniciando...')
     fetch(`${API_URL}/api/productos/sync-reset`, {
       method: 'POST',
       headers: getAuthHeaders(),
     })
       .then((res) => {
-        if (!res.ok) return res.json().then((e) => { throw new Error(e.detail || 'Error al recargar') })
+        if (!res.ok) return parseErrorResponse(res)
         return res.json()
       })
       .then((data) => {
-        setShowResetConfirm(false)
-        setResetMensaje(data.mensaje + (data.cargados != null ? ` Registros cargados: ${data.cargados}.` : ''))
+        const taskId = data.task_id
+        if (!taskId) {
+          setResetError('No se recibió task_id')
+          setResetting(false)
+          return
+        }
+        const poll = () => {
+          fetch(`${API_URL}/api/tasks/${taskId}`, { headers: getAuthHeaders() })
+            .then((r) => r.json())
+            .then((t) => {
+              setResetProgress(t.percent ?? 0)
+              setResetProgressMessage(t.message ?? '')
+              if (t.status === 'done') {
+                if (resetPollRef.current) clearInterval(resetPollRef.current)
+                resetPollRef.current = null
+                setShowResetConfirm(false)
+                const msg = t.result?.mensaje ?? 'Completado.'
+                const cargados = t.result?.cargados
+                setResetMensaje(cargados != null ? `${msg} Registros cargados: ${cargados}.` : msg)
+                setResetting(false)
+              } else if (t.status === 'error') {
+                if (resetPollRef.current) clearInterval(resetPollRef.current)
+                resetPollRef.current = null
+                setResetError(t.message || 'Error al recargar')
+                setResetting(false)
+              }
+            })
+            .catch(() => {})
+        }
+        poll()
+        resetPollRef.current = setInterval(poll, 400)
       })
-      .catch((err) => setResetError(err.message))
-      .finally(() => setResetting(false))
+      .catch((err) => {
+        setResetError(err.message)
+        setResetting(false)
+      })
   }
+
+  useEffect(() => {
+    return () => {
+      if (resetPollRef.current) clearInterval(resetPollRef.current)
+    }
+  }, [])
 
   const guardar = () => {
     setGuardando(true)
@@ -184,6 +239,13 @@ function Configuracion() {
               Se borrarán <strong>todos</strong> los registros RMA y se volverán a cargar desde el Excel configurado.
               Los estados (abonado, reparado…), fechas editadas y registros ocultos se perderán. Esta acción no se puede deshacer.
             </p>
+            {resetting && (
+              <ProgressBar
+                percent={resetProgress}
+                message={resetProgressMessage}
+                className="modal-progress"
+              />
+            )}
             {resetError && <p className="error-msg">{resetError}</p>}
             <div className="modal-pie modal-pie-actions">
               <button

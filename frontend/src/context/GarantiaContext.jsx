@@ -41,14 +41,7 @@ export function GarantiaProvider({ children }) {
     refetchProductos()
   }, [refetchProductos])
 
-  // Al volver a la pestaña, refrescar datos para que varios usuarios vean cambios de otros
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') refetchProductos()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
-  }, [refetchProductos])
+  // No refetch al cambiar de pestaña: los datos se cargan una vez y se actualizan solo tras sync/editar/ocultar
 
   const hiddenRmas = useMemo(
     () => productos.filter((p) => p.hidden === true),

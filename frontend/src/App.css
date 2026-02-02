@@ -871,6 +871,37 @@
   color: var(--text-muted);
   line-height: 1.4;
 }
+.catalog-scanned-at {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+.productos-catalogo-actions {
+  margin-bottom: 1rem;
+}
+.catalog-refresh-progress {
+  margin-bottom: 1rem;
+}
+.productos-catalogo-hint {
+  margin: 0 0 1rem 0;
+  padding: 0.75rem 1rem;
+  background: var(--color-card-bg);
+  border-radius: var(--radius);
+  border: 1px dashed var(--color-border);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+.sync-progress {
+  margin: 0.75rem 0;
+}
+.modal-progress {
+  margin: 1rem 0;
+}
+.loading-wrap {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
 .productos-catalogo-filtros {
   margin-bottom: 1.25rem;
   padding: 1rem;
@@ -1073,6 +1104,38 @@
   border-radius: var(--radius);
   border: 1px solid #fecaca;
   font-weight: 500;
+}
+
+/* ========== Barra de progreso en tiempo real ========== */
+.progress-bar-wrap {
+  width: 100%;
+  max-width: 24rem;
+  margin: 0.5rem 0;
+}
+.progress-bar-track {
+  height: 0.5rem;
+  background: var(--color-border-light);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--color-primary, #2563eb);
+  border-radius: 999px;
+  transition: width 0.2s ease-out;
+}
+.progress-bar-fill.progress-bar-indeterminate {
+  width: 30% !important;
+  animation: progress-indeterminate 1.2s ease-in-out infinite;
+}
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.progress-bar-message {
+  margin: 0.35rem 0 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
 }
 
 /* ========== Botones genéricos y primarios ========== */
