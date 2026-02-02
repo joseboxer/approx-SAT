@@ -330,6 +330,7 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
               <th>Nº serie</th>
               <th>Cliente</th>
               <th>Fecha recibido</th>
+              <th>Fecha enviado</th>
               <th>Fecha recogida</th>
               <th>Avería</th>
               <th>Observaciones</th>
@@ -344,6 +345,7 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
               const abierto = productosDesplegableAbierto === grupo.rmaId
               const key = grupo.rmaId || `rma-${inicio}-${i}`
               const isSelected = selectedRmaIds.has(grupo.rmaId)
+              const fechaEnviado = p['FECHA ENVIADO']
               const fechaRecogida = p['FECHA RECOGIDA']
               return (
                 <React.Fragment key={key}>
@@ -409,6 +411,11 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
                         : '-'}
                     </td>
                     <td>
+                      {fechaEnviado
+                        ? new Date(fechaEnviado).toLocaleDateString('es-ES')
+                        : '-'}
+                    </td>
+                    <td>
                       {fechaRecogida
                         ? new Date(fechaRecogida).toLocaleDateString('es-ES')
                         : '-'}
@@ -443,7 +450,7 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
                   </tr>
                   {abierto && n > 1 && (
                     <tr className="fila-desplegable">
-                      <td colSpan={11} className="td-desplegable">
+                      <td colSpan={12} className="td-desplegable">
                         <div className="desplegable-detalle">
                           <table className="tabla-desplegable">
                             <thead>
@@ -453,6 +460,7 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
                                 <th>Nº serie</th>
                                 <th>Cliente</th>
                                 <th>Fecha recibido</th>
+                                <th>Fecha enviado</th>
                                 <th>Fecha recogida</th>
                                 <th>Avería</th>
                                 <th>Observaciones</th>
@@ -475,6 +483,13 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
                                     {item['FECHA RECIBIDO']
                                       ? new Date(
                                           item['FECHA RECIBIDO']
+                                        ).toLocaleDateString('es-ES')
+                                      : '-'}
+                                  </td>
+                                  <td>
+                                    {item['FECHA ENVIADO']
+                                      ? new Date(
+                                          item['FECHA ENVIADO']
                                         ).toLocaleDateString('es-ES')
                                       : '-'}
                                   </td>

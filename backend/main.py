@@ -12,12 +12,14 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel
 
 from auth import router as auth_router, get_current_username
+from productos_catalogo import get_productos_catalogo
 from database import (
     get_connection,
     get_all_rma_items,
@@ -56,6 +58,8 @@ _EXCEL_COLUMNS = {
     "client_email": ["EMAIL", "CORREO", "E-MAIL"],
     "client_phone": ["TELEFONO", "TELÉFONO", "TELF", "TELEFONO"],
     "date_received": ["FECHA RECIBIDO", "FECHA"],
+    "date_pickup": ["FECHA RECOGIDA"],
+    "date_sent": ["FECHA ENVIADO"],
     "averia": ["AVERIA", "AVERÍA"],
     "observaciones": ["OBSERVACIONES"],
 }
@@ -87,6 +91,9 @@ def _value(v):
 # Ruta del Excel para sincronizar: por defecto el del proyecto (pruebas); en producción apuntar a QNAP (env EXCEL_SYNC_PATH)
 _BASE_DIR = Path(__file__).resolve().parent
 EXCEL_SYNC_PATH = os.environ.get("EXCEL_SYNC_PATH", str(_BASE_DIR / "productos.xlsx"))
+
+# Catálogo de productos: carpeta de red (ej: \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS). Vacío = no escanear.
+PRODUCTOS_CATALOG_PATH = os.environ.get("PRODUCTOS_CATALOG_PATH", "").strip()
 
 # Ruta raíz: solo si NO servimos el frontend compilado (para no tapar la SPA)
 _frontend_dist = Path(__file__).resolve().parent / ".." / "frontend" / "dist"
@@ -155,6 +162,8 @@ async def sincronizar_excel(file: UploadFile = File(None)):
                 date_received=_value(row.get(col_map.get("date_received"))) if col_map.get("date_received") else None,
                 averia=_value(row.get(col_map.get("averia"))) if col_map.get("averia") else None,
                 observaciones=_value(row.get(col_map.get("observaciones"))) if col_map.get("observaciones") else None,
+                date_pickup=_value(row.get(col_map.get("date_pickup"))) if col_map.get("date_pickup") else None,
+                date_sent=_value(row.get(col_map.get("date_sent"))) if col_map.get("date_sent") else None,
             )
             added += 1
 
@@ -296,6 +305,35 @@ def actualizar_garantia_serial(serial: str, body: GarantiaVigenteBody):
     with get_connection() as conn:
         set_serial_warranty(conn, s, body.vigente)
     return {"mensaje": "Garantía actualizada", "vigente": body.vigente}
+
+
+# --- Catálogo de productos (carpeta QNAP: marcas -> productos, Excel técnico D31/D28) ---
+
+
+@app.get("/api/productos-catalogo")
+def listar_productos_catalogo():
+    """Lista productos escaneados desde la carpeta de red (PRODUCTOS_CATALOG_PATH)."""
+    if not PRODUCTOS_CATALOG_PATH:
+        return []
+    return get_productos_catalogo(PRODUCTOS_CATALOG_PATH)
+
+
+@app.get("/api/productos-catalogo/archivo")
+def servir_archivo_catalogo(path: str = ""):
+    """Sirve un archivo del catálogo por ruta relativa (para abrir visual PDF/Excel)."""
+    if not PRODUCTOS_CATALOG_PATH or not path or ".." in path or path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Ruta no válida")
+    base = Path(PRODUCTOS_CATALOG_PATH)
+    if not base.exists() or not base.is_dir():
+        raise HTTPException(status_code=404, detail="Catálogo no disponible")
+    full = base / path.replace("/", os.sep)
+    try:
+        full.resolve().relative_to(base.resolve())
+    except (ValueError, OSError):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    if not full.is_file():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return FileResponse(str(full), filename=full.name)
 
 
 # Servir frontend compilado (para despliegue en un solo servidor)

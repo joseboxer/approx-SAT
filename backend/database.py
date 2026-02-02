@@ -554,7 +554,8 @@ def get_productos_rma(conn: sqlite3.Connection) -> list[dict]:
             set_serial_warranty(conn, serial_key, False)
         cur_items = conn.execute(
             """SELECT id, rma_number, product, serial, client_name, client_email, client_phone,
-                      date_received, averia, observaciones, estado, hidden, hidden_by, hidden_at
+                      date_received, averia, observaciones, estado, hidden, hidden_by, hidden_at,
+                      date_pickup, date_sent
                FROM rma_items
                WHERE hidden = 0 AND TRIM(COALESCE(serial, '')) = ?
                ORDER BY date_received, id""",

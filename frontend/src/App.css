@@ -731,19 +731,20 @@
   table-layout: fixed;
 }
 
-/* Reparto de ancho tablas RMA (11 columnas: + Fecha recogida) */
+/* Reparto de ancho tablas RMA (12 columnas: checkbox + Nº RMA + Producto + serie + Cliente + 3 fechas + Avería + Observaciones + Estado + Acciones) */
 .table-wrapper.tabla-rma table { table-layout: fixed; }
 .table-wrapper.tabla-rma .col-checkbox { width: 3%; text-align: center; }
 .table-wrapper.tabla-rma thead th:nth-child(2) { width: 5%; }   /* Nº RMA */
-.table-wrapper.tabla-rma thead th:nth-child(3) { width: 10%; }  /* Producto */
-.table-wrapper.tabla-rma thead th:nth-child(4) { width: 7%; }   /* Nº serie */
-.table-wrapper.tabla-rma thead th:nth-child(5) { width: 11%; }  /* Cliente */
-.table-wrapper.tabla-rma thead th:nth-child(6) { width: 7%; }   /* Fecha recibido */
-.table-wrapper.tabla-rma thead th:nth-child(7) { width: 7%; }   /* Fecha recogida */
-.table-wrapper.tabla-rma thead th:nth-child(8) { width: 12%; } /* Avería */
-.table-wrapper.tabla-rma thead th:nth-child(9) { width: 12%; }  /* Observaciones */
-.table-wrapper.tabla-rma thead th:nth-child(10) { width: 10%; } /* Estado */
-.table-wrapper.tabla-rma thead th:nth-child(11) { width: 7%; }  /* Acciones */
+.table-wrapper.tabla-rma thead th:nth-child(3) { width: 9%; }  /* Producto */
+.table-wrapper.tabla-rma thead th:nth-child(4) { width: 6%; }  /* Nº serie */
+.table-wrapper.tabla-rma thead th:nth-child(5) { width: 10%; } /* Cliente */
+.table-wrapper.tabla-rma thead th:nth-child(6) { width: 6%; }  /* Fecha recibido */
+.table-wrapper.tabla-rma thead th:nth-child(7) { width: 6%; }   /* Fecha enviado */
+.table-wrapper.tabla-rma thead th:nth-child(8) { width: 6%; }  /* Fecha recogida */
+.table-wrapper.tabla-rma thead th:nth-child(9) { width: 11%; } /* Avería */
+.table-wrapper.tabla-rma thead th:nth-child(10) { width: 11%; } /* Observaciones */
+.table-wrapper.tabla-rma thead th:nth-child(11) { width: 9%; } /* Estado */
+.table-wrapper.tabla-rma thead th:nth-child(12) { width: 7%; } /* Acciones */
 .table-wrapper.tabla-rma tr.row-selected { background: var(--color-bg-subtle); }
 .table-wrapper.tabla-rma .col-checkbox input { cursor: pointer; }
 
@@ -861,6 +862,64 @@
   margin: 1rem 0 0 0;
   font-size: 0.875rem;
   color: var(--text-muted);
+}
+
+/* ========== Productos (catálogo QNAP) ========== */
+.productos-catalogo-desc {
+  margin: 0 0 1rem 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.productos-catalogo-filtros {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+}
+.productos-catalogo-filtros-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem 1rem;
+  align-items: end;
+  margin-bottom: 0.5rem;
+}
+.productos-catalogo-filtros-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-heading);
+}
+.productos-catalogo-filtro-input,
+.productos-catalogo-filtro-select {
+  padding: 0.4rem 0.5rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--text-heading);
+}
+.productos-catalogo-empty {
+  margin: 1rem 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+.productos-catalogo-empty code {
+  background: var(--color-bg);
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+}
+.table-wrapper.tabla-productos-catalogo { margin-bottom: 1rem; }
+.productos-catalogo-visual {
+  white-space: nowrap;
+}
+.productos-catalogo-visual .btn-link {
+  margin-right: 0.5rem;
+  font-size: 0.85rem;
 }
 
 /* Lista oculta: 10 columnas (incl. Ocultado por); Acciones fija a la derecha para que Desocultar sea visible */

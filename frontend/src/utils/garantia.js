@@ -82,6 +82,7 @@ export function getColumnasFiltroRma(claveSerieReal) {
     { label: 'Nº serie', apiKey: claveSerieReal },
     { label: 'Cliente', apiKey: 'RAZON SOCIAL O NOMBRE' },
     { label: 'Fecha recibido', apiKey: 'FECHA RECIBIDO' },
+    { label: 'Fecha enviado', apiKey: 'FECHA ENVIADO' },
     { label: 'Fecha recogida', apiKey: 'FECHA RECOGIDA' },
     { label: 'Avería', apiKey: 'AVERIA' },
     { label: 'Observaciones', apiKey: 'OBSERVACIONES' },

@@ -148,14 +148,19 @@ function ProductosRMA() {
   const refetch = useCallback(() => {
     setCargando(true)
     setError(null)
-    fetch(`${API_URL}/api/productos-rma`, { headers: getAuthHeaders() })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
+    fetch(`${API_URL}/api/productos-rma`, { headers: getAuthHeaders(), signal: controller.signal })
       .then((res) => {
-        if (!res.ok) throw new Error('Error al cargar productos RMA')
+        if (!res.ok) throw new Error(res.status === 401 ? 'Sesión expirada' : 'Error al cargar productos RMA')
         return res.json()
       })
       .then((data) => setList(Array.isArray(data) ? data : []))
-      .catch((err) => setError(err.message))
-      .finally(() => setCargando(false))
+      .catch((err) => setError(err.name === 'AbortError' ? 'Tiempo de espera agotado' : (err.message || 'Error al cargar')))
+      .finally(() => {
+        clearTimeout(timeoutId)
+        setCargando(false)
+      })
   }, [])
 
   useEffect(() => {
