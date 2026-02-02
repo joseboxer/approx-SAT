@@ -1,10 +1,9 @@
 """
 Catálogo de productos desde carpeta de red (QNAP).
-Estructura: \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS
-  -> carpetas por marca
-    -> carpetas por número de serie base (o por tipo de producto -> carpetas por serie)
-      -> Excel con "visual datasheet" y número de serie en el nombre; celdas D31 (serie base), D28 (fecha creación).
-      -> Visual: PDF o Excel con "visual" / "datasheet" en el nombre.
+- Se recorre la estructura recursivamente hasta encontrar directorios que contengan al menos un Excel.
+- Solo entonces se considera "producto": se usa el Excel más nuevo del directorio para datos técnicos (D31, D28).
+- El PDF más nuevo del mismo directorio es el visual que se puede abrir desde la app.
+- El Excel más nuevo del directorio (o el que tenga "visual"/"datasheet" en nombre) puede ser el visual Excel.
 """
 import os
 from pathlib import Path
@@ -44,130 +43,169 @@ def _read_serial_and_date_from_excel(excel_path: Path) -> tuple[str | None, str 
         return None, None
 
 
-def _is_technical_excel(name: str) -> bool:
-    """El Excel técnico contiene 'visual datasheet' y suele llevar el número de serie en el nombre."""
-    n = name.lower()
-    return "visual" in n and "datasheet" in n and (n.endswith(".xlsx") or n.endswith(".xls"))
+def _mtime(p: Path) -> float:
+    """Mtime del archivo; 0 si no se puede leer."""
+    try:
+        return p.stat().st_mtime
+    except (OSError, PermissionError):
+        return 0.0
 
 
-def _is_visual_file(name: str) -> bool:
-    """Archivo que puede ser el visual (PDF o Excel con 'visual' o 'datasheet')."""
-    n = name.lower()
-    if n.endswith(".pdf"):
-        return "visual" in n or "datasheet" in n
-    if n.endswith(".xlsx") or n.endswith(".xls"):
-        return "visual" in n or "datasheet" in n
+def _dir_has_excel(folder: Path) -> bool:
+    """True si el directorio contiene al menos un archivo .xlsx o .xls."""
+    try:
+        for e in folder.iterdir():
+            if e.is_file() and e.suffix.lower() in (".xlsx", ".xls"):
+                return True
+    except (OSError, PermissionError):
+        pass
     return False
 
 
-def _find_product_in_dir(
-    folder: Path,
-    base_path: Path,
-    brand: str,
-    product_type: str | None,
-) -> dict | None:
-    """
-    Si en esta carpeta hay un Excel técnico (visual datasheet), devuelve un dict con
-    base_serial, brand, product_type, creation_date, folder_rel, excel_rel, visual_pdf_rel, visual_excel_rel.
-    """
-    folder = _normalize_path(folder)
+def _newest_excel_in_dir(folder: Path) -> Path | None:
+    """Devuelve el Excel más nuevo (por fecha de modificación) del directorio."""
+    excels = []
     try:
-        entries = list(folder.iterdir())
+        for e in folder.iterdir():
+            if e.is_file() and e.suffix.lower() in (".xlsx", ".xls"):
+                excels.append(e)
     except (OSError, PermissionError):
         return None
+    if not excels:
+        return None
+    excels.sort(key=_mtime, reverse=True)
+    return excels[0]
 
-    technical_excel = None
-    for e in entries:
-        if e.is_file() and _is_technical_excel(e.name):
-            technical_excel = e
-            break
 
+def _newest_pdf_in_dir(folder: Path) -> Path | None:
+    """Devuelve el PDF más nuevo (por fecha de modificación) del directorio."""
+    pdfs = []
+    try:
+        for e in folder.iterdir():
+            if e.is_file() and e.suffix.lower() == ".pdf":
+                pdfs.append(e)
+    except (OSError, PermissionError):
+        return None
+    if not pdfs:
+        return None
+    pdfs.sort(key=_mtime, reverse=True)
+    return pdfs[0]
+
+
+def _newest_visual_excel_in_dir(folder: Path) -> Path | None:
+    """Devuelve el Excel más nuevo que tenga 'visual' o 'datasheet' en el nombre (para abrir como visual)."""
+    excels = []
+    try:
+        for e in folder.iterdir():
+            if not e.is_file() or e.suffix.lower() not in (".xlsx", ".xls"):
+                continue
+            n = e.name.lower()
+            if "visual" in n or "datasheet" in n:
+                excels.append(e)
+    except (OSError, PermissionError):
+        return None
+    if not excels:
+        return None
+    excels.sort(key=_mtime, reverse=True)
+    return excels[0]
+
+
+def _process_product_dir(
+    folder: Path,
+    base_path: Path,
+    path_parts: list[str],
+) -> dict | None:
+    """
+    Procesa un directorio que contiene al menos un Excel (producto).
+    Usa el Excel más nuevo para datos técnicos; el PDF más nuevo como visual; el Excel visual más nuevo si hay.
+    path_parts = componentes de la ruta relativa (ej. ["PRODUCTOS APPROX", "APP500LITE"]).
+    """
+    folder = _normalize_path(folder)
+    technical_excel = _newest_excel_in_dir(folder)
     if not technical_excel:
         return None
 
     serie_base, fecha_creacion = _read_serial_and_date_from_excel(technical_excel)
     if not serie_base:
-        serie_base = folder.name  # fallback al nombre de carpeta
+        serie_base = folder.name
 
     try:
         folder_rel = folder.relative_to(base_path)
     except ValueError:
         folder_rel = folder
+    folder_rel_str = str(folder_rel).replace("\\", "/")
 
     try:
         excel_rel = technical_excel.relative_to(base_path)
     except ValueError:
         excel_rel = Path(technical_excel.name)
+    excel_rel_str = str(excel_rel).replace("\\", "/")
 
     visual_pdf = None
-    visual_excel = None
-    for e in entries:
-        if not e.is_file():
-            continue
-        if not _is_visual_file(e.name):
-            continue
+    pdf_file = _newest_pdf_in_dir(folder)
+    if pdf_file:
         try:
-            rel = e.relative_to(base_path)
-        except ValueError:
-            rel = Path(e.name)
-        if e.suffix.lower() == ".pdf":
+            rel = pdf_file.relative_to(base_path)
             visual_pdf = str(rel).replace("\\", "/")
-        elif e.suffix.lower() in (".xlsx", ".xls"):
+        except ValueError:
+            visual_pdf = pdf_file.name
+
+    visual_excel = None
+    excel_visual_file = _newest_visual_excel_in_dir(folder)
+    if excel_visual_file:
+        try:
+            rel = excel_visual_file.relative_to(base_path)
             visual_excel = str(rel).replace("\\", "/")
+        except ValueError:
+            visual_excel = excel_visual_file.name
+
+    brand = path_parts[0] if path_parts else folder.name
+    product_type = path_parts[1] if len(path_parts) >= 3 else None
 
     return {
         "base_serial": serie_base,
         "brand": brand,
-        "product_type": product_type or None,
+        "product_type": product_type,
         "creation_date": fecha_creacion,
-        "folder_rel": str(folder_rel).replace("\\", "/"),
-        "excel_rel": str(excel_rel).replace("\\", "/"),
+        "folder_rel": folder_rel_str,
+        "excel_rel": excel_rel_str,
         "visual_pdf_rel": visual_pdf,
         "visual_excel_rel": visual_excel,
     }
 
 
-def _scan_brand_dir(
-    brand_path: Path,
+def _walk_and_collect(
+    current: Path,
     base_path: Path,
-    brand: str,
-) -> list[dict]:
-    """Recorre una carpeta de marca: puede tener productos directamente o subcarpetas por tipo."""
-    out = []
+    path_parts: list[str],
+    out: list[dict],
+) -> None:
+    """
+    Recorre recursivamente. Si el directorio actual tiene al menos un Excel, es un producto y se procesa.
+    Si no, se entra en cada subcarpeta y se repite.
+    """
     try:
-        entries = list(brand_path.iterdir())
+        entries = list(current.iterdir())
     except (OSError, PermissionError):
-        return out
+        return
+
+    if _dir_has_excel(current):
+        product = _process_product_dir(current, base_path, path_parts)
+        if product:
+            out.append(product)
+        return
 
     for e in entries:
         if not e.is_dir():
             continue
-        # Puede ser carpeta de producto (tiene Excel técnico) o carpeta de tipo (contiene carpetas de producto)
-        product = _find_product_in_dir(e, base_path, brand, None)
-        if product:
-            out.append(product)
-            continue
-        # Subcarpeta por tipo de producto
-        try:
-            sub_entries = list(e.iterdir())
-        except (OSError, PermissionError):
-            continue
-        tipo = e.name
-        for sub in sub_entries:
-            if not sub.is_dir():
-                continue
-            product = _find_product_in_dir(sub, base_path, brand, tipo)
-            if product:
-                out.append(product)
-    return out
+        new_parts = path_parts + [e.name]
+        _walk_and_collect(e, base_path, new_parts, out)
 
 
 def get_productos_catalogo(base_path: str | Path) -> list[dict]:
     """
-    Escanea la ruta base (ej: \\\\Qnap-approx2\\z\\DEPT. TEC\\PRODUCTOS).
-    Devuelve lista de productos con base_serial, brand, product_type, creation_date,
-    folder_rel, excel_rel, visual_pdf_rel, visual_excel_rel.
-    Lanza excepción si la ruta no existe o no se puede acceder.
+    Escanea la ruta base recursivamente. Solo se considera producto un directorio que contenga al menos un Excel.
+    En ese directorio: Excel más nuevo = datos técnicos (D31, D28); PDF más nuevo = visual; Excel visual más nuevo = opcional.
     """
     if not base_path or not str(base_path).strip():
         return []
@@ -180,16 +218,5 @@ def get_productos_catalogo(base_path: str | Path) -> list[dict]:
 
     base = _normalize_path(base)
     out = []
-
-    try:
-        top_entries = list(base.iterdir())
-    except (OSError, PermissionError) as e:
-        raise PermissionError(f"No se puede acceder a la carpeta: {base_path}") from e
-
-    for e in top_entries:
-        if not e.is_dir():
-            continue
-        brand = e.name
-        out.extend(_scan_brand_dir(e, base, brand))
-
+    _walk_and_collect(base, base, [], out)
     return out

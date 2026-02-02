@@ -157,15 +157,17 @@ async def sincronizar_excel(file: UploadFile = File(None)):
             detail="El Excel debe tener una columna tipo 'Nº DE RMA'",
         )
 
+    # Número de fila en el Excel: fila 1 = cabecera, fila 2 = primer dato (pandas index 0) -> excel_row = idx + 2
     added = 0
     with get_connection() as conn:
-        for _, row in df.iterrows():
+        for idx, row in df.iterrows():
             rma = _value(row.get(col_map.get("rma_number")))
             serial = _value(row.get(col_map.get("serial"))) if col_map.get("serial") else None
             if not rma:
                 continue
             if rma_item_exists(conn, rma, serial or ""):
                 continue
+            excel_row = int(idx) + 2  # Fila en Excel (1 = cabecera; mayor = más reciente)
             insert_rma_item(
                 conn,
                 rma_number=rma,
@@ -179,6 +181,7 @@ async def sincronizar_excel(file: UploadFile = File(None)):
                 observaciones=_value(row.get(col_map.get("observaciones"))) if col_map.get("observaciones") else None,
                 date_pickup=_value(row.get(col_map.get("date_pickup"))) if col_map.get("date_pickup") else None,
                 date_sent=_value(row.get(col_map.get("date_sent"))) if col_map.get("date_sent") else None,
+                excel_row=excel_row,
             )
             added += 1
 

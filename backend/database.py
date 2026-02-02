@@ -107,6 +107,8 @@ def _init_db(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE rma_items ADD COLUMN date_pickup TEXT")
     if "date_sent" not in cols:
         conn.execute("ALTER TABLE rma_items ADD COLUMN date_sent TEXT")
+    if "excel_row" not in cols:
+        conn.execute("ALTER TABLE rma_items ADD COLUMN excel_row INTEGER")
 
 
 @contextmanager
@@ -188,6 +190,7 @@ def _row_to_api(row: sqlite3.Row) -> dict:
     """Convierte una fila de rma_items al formato que espera el frontend."""
     out = {
         "id": row["id"],
+        "fila": row["excel_row"] if "excel_row" in row.keys() and row["excel_row"] is not None else None,
         "Nº DE RMA": row["rma_number"] or None,
         "PRODUCTO": row["product"] or None,
         "Nº DE SERIE": row["serial"] or None,
@@ -215,8 +218,8 @@ def get_all_rma_items(conn: sqlite3.Connection) -> list[dict]:
     cur = conn.execute(
         """SELECT id, rma_number, product, serial, client_name, client_email, client_phone,
                   date_received, averia, observaciones, estado, hidden, hidden_by, hidden_at,
-                  date_pickup, date_sent
-           FROM rma_items ORDER BY id"""
+                  date_pickup, date_sent, excel_row
+           FROM rma_items ORDER BY COALESCE(excel_row, id) DESC"""
     )
     return [_row_to_api(row) for row in cur.fetchall()]
 
@@ -243,6 +246,7 @@ def insert_rma_item(
     observaciones: str,
     date_pickup=None,
     date_sent=None,
+    excel_row: int | None = None,
 ) -> None:
     def _s(v):
         if v is None or (isinstance(v, float) and math.isnan(v)):
@@ -252,8 +256,8 @@ def insert_rma_item(
 
     conn.execute(
         """INSERT INTO rma_items (rma_number, product, serial, client_name, client_email, client_phone,
-                                  date_received, averia, observaciones, date_pickup, date_sent)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  date_received, averia, observaciones, date_pickup, date_sent, excel_row)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             _s(rma_number),
             _s(product),
@@ -266,6 +270,7 @@ def insert_rma_item(
             _s(observaciones),
             _s(date_pickup) if date_pickup is not None else None,
             _s(date_sent) if date_sent is not None else None,
+            excel_row if isinstance(excel_row, int) else None,
         ),
     )
 
