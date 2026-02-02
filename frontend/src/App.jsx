@@ -10,6 +10,7 @@ import Productos from './components/views/Productos'
 import ProductosRMA from './components/views/ProductosRMA'
 import ListaOculta from './components/views/ListaOculta'
 import Informes from './components/views/Informes'
+import Configuracion from './components/views/Configuracion'
 import ModalEditarRma from './components/ModalEditarRma'
 import { VISTAS } from './constants'
 import './App.css'
@@ -46,6 +47,8 @@ function AppContent() {
         return <ListaOculta />
       case VISTAS.INFORMES:
         return <Informes />
+      case VISTAS.CONFIGURACION:
+        return <Configuracion />
       default:
         return <Inicio />
     }

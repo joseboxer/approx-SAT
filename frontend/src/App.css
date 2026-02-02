@@ -922,6 +922,55 @@
   font-size: 0.85rem;
 }
 
+/* ========== Configuración (paths QNAP, Excel) ========== */
+.configuracion-desc {
+  margin: 0 0 1.25rem 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.configuracion-form {
+  max-width: 42rem;
+  padding: 1.25rem;
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+}
+.configuracion-field {
+  margin-bottom: 1.25rem;
+}
+.configuracion-field label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-heading);
+  margin-bottom: 0.35rem;
+}
+.configuracion-input {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--text-heading);
+}
+.configuracion-hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.configuracion-actions {
+  margin-top: 1.25rem;
+}
+.configuracion-ok {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: var(--color-success, #0a7);
+}
+
 /* Lista oculta: 10 columnas (incl. Ocultado por); Acciones fija a la derecha para que Desocultar sea visible */
 .table-wrapper.tabla-lista-oculta { overflow-x: auto; }
 .table-wrapper.tabla-lista-oculta thead th:nth-child(1) { width: 6%; }

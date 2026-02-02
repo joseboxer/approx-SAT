@@ -91,6 +91,10 @@ def _init_db(conn: sqlite3.Connection):
             serial TEXT PRIMARY KEY,
             warranty_valid INTEGER NOT NULL DEFAULT 1
         );
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
     """)
     # Migración: añadir hidden_by y hidden_at si no existen (BD ya creada)
     cur = conn.execute("PRAGMA table_info(rma_items)")
@@ -520,8 +524,7 @@ def get_productos_rma(conn: sqlite3.Connection) -> list[dict]:
     """
     Lista por número de serie completo (clave primaria): cada fila es un serial
     con product_name, count, first_date, last_date, clients_sample y garantia_vigente.
-    La expiración se calcula desde la primera fecha: si han pasado más de 3 años
-    desde first_date, la garantía se considera expirada y se guarda en serial_warranty.
+    Misma fuente que lista RMA (rma_items). Una sola consulta de ítems para evitar N+1.
     """
     cur = conn.execute(
         """SELECT
@@ -539,6 +542,24 @@ def get_productos_rma(conn: sqlite3.Connection) -> list[dict]:
     rows = cur.fetchall()
     cur = conn.execute("SELECT serial, warranty_valid FROM serial_warranty")
     warranty_map = {row[0]: bool(row[1]) for row in cur.fetchall()}
+    serial_keys = [(row[0] or "").strip() for row in rows if (row[0] or "").strip()]
+    items_by_serial = {}
+    if serial_keys:
+        placeholders = ",".join("?" * len(serial_keys))
+        cur = conn.execute(
+            f"""SELECT id, rma_number, product, serial, client_name, client_email, client_phone,
+                      date_received, averia, observaciones, estado, hidden, hidden_by, hidden_at,
+                      date_pickup, date_sent
+               FROM rma_items
+               WHERE hidden = 0 AND TRIM(COALESCE(serial, '')) IN ({placeholders})
+               ORDER BY TRIM(COALESCE(serial, '')), date_received, id""",
+            serial_keys,
+        )
+        for r in cur.fetchall():
+            sk = (r[3] or "").strip()
+            if sk not in items_by_serial:
+                items_by_serial[sk] = []
+            items_by_serial[sk].append(_row_to_api(r))
     today = date.today()
     out = []
     for row in rows:
@@ -552,16 +573,7 @@ def get_productos_rma(conn: sqlite3.Connection) -> list[dict]:
         if first_d and (today - first_d).days > 3 * 365:
             vigente = False
             set_serial_warranty(conn, serial_key, False)
-        cur_items = conn.execute(
-            """SELECT id, rma_number, product, serial, client_name, client_email, client_phone,
-                      date_received, averia, observaciones, estado, hidden, hidden_by, hidden_at,
-                      date_pickup, date_sent
-               FROM rma_items
-               WHERE hidden = 0 AND TRIM(COALESCE(serial, '')) = ?
-               ORDER BY date_received, id""",
-            (serial_key,),
-        )
-        items = [_row_to_api(r) for r in cur_items.fetchall()]
+        items = items_by_serial.get(serial_key, [])
         out.append(
             {
                 "serial": serial_key,
@@ -602,4 +614,24 @@ def set_serial_warranty(
         """INSERT INTO serial_warranty (serial, warranty_valid)
            VALUES (?, ?) ON CONFLICT(serial) DO UPDATE SET warranty_valid = ?""",
         (s, 1 if vigente else 0, 1 if vigente else 0),
+    )
+
+
+# --- Settings (paths QNAP, Excel) ---
+
+
+def get_setting(conn: sqlite3.Connection, key: str) -> str | None:
+    """Obtiene el valor de una clave de configuración (ej: PRODUCTOS_CATALOG_PATH)."""
+    cur = conn.execute("SELECT value FROM settings WHERE key = ?", (key.strip(),))
+    row = cur.fetchone()
+    return row[0] if row and row[0] is not None else None
+
+
+def set_setting(conn: sqlite3.Connection, key: str, value: str | None) -> None:
+    """Guarda el valor de una clave de configuración."""
+    k = key.strip()
+    v = (value or "").strip() or None
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (k, v),
     )

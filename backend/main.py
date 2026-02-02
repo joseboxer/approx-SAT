@@ -25,6 +25,8 @@ from database import (
     get_all_rma_items,
     get_client_groups,
     get_productos_rma,
+    get_setting,
+    set_setting,
     insert_rma_item,
     rma_item_exists,
     update_estado_by_rma_number,
@@ -88,12 +90,18 @@ def _value(v):
     return str(v).strip() or None
 
 
-# Ruta del Excel para sincronizar: por defecto el del proyecto (pruebas); en producción apuntar a QNAP (env EXCEL_SYNC_PATH)
+# Rutas por defecto (env); se pueden sobreescribir desde la app (tabla settings)
 _BASE_DIR = Path(__file__).resolve().parent
-EXCEL_SYNC_PATH = os.environ.get("EXCEL_SYNC_PATH", str(_BASE_DIR / "productos.xlsx"))
+_DEFAULT_EXCEL_SYNC_PATH = os.environ.get("EXCEL_SYNC_PATH", str(_BASE_DIR / "productos.xlsx"))
+_DEFAULT_PRODUCTOS_CATALOG_PATH = os.environ.get("PRODUCTOS_CATALOG_PATH", "").strip()
 
-# Catálogo de productos: carpeta de red (ej: \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS). Vacío = no escanear.
-PRODUCTOS_CATALOG_PATH = os.environ.get("PRODUCTOS_CATALOG_PATH", "").strip()
+
+def _get_excel_sync_path(conn) -> str:
+    return (get_setting(conn, "EXCEL_SYNC_PATH") or _DEFAULT_EXCEL_SYNC_PATH).strip()
+
+
+def _get_productos_catalog_path(conn) -> str:
+    return (get_setting(conn, "PRODUCTOS_CATALOG_PATH") or _DEFAULT_PRODUCTOS_CATALOG_PATH).strip()
 
 # Ruta raíz: solo si NO servimos el frontend compilado (para no tapar la SPA)
 _frontend_dist = Path(__file__).resolve().parent / ".." / "frontend" / "dist"
@@ -126,7 +134,9 @@ async def sincronizar_excel(file: UploadFile = File(None)):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Error al leer el Excel: {e}")
     else:
-        path = Path(EXCEL_SYNC_PATH)
+        with get_connection() as conn:
+            excel_path = _get_excel_sync_path(conn)
+        path = Path(excel_path)
         if not path.is_file():
             raise HTTPException(status_code=400, detail=f"No se encuentra el archivo Excel en la ruta configurada: {path}")
         try:
@@ -307,25 +317,59 @@ def actualizar_garantia_serial(serial: str, body: GarantiaVigenteBody):
     return {"mensaje": "Garantía actualizada", "vigente": body.vigente}
 
 
+# --- Configuración (paths QNAP, Excel) desde la app ---
+
+
+@app.get("/api/settings")
+def obtener_settings(username: str = Depends(get_current_username)):
+    """Devuelve las claves de configuración editables (paths)."""
+    with get_connection() as conn:
+        return {
+            "PRODUCTOS_CATALOG_PATH": get_setting(conn, "PRODUCTOS_CATALOG_PATH") or "",
+            "EXCEL_SYNC_PATH": get_setting(conn, "EXCEL_SYNC_PATH") or "",
+        }
+
+
+class SettingsBody(BaseModel):
+    PRODUCTOS_CATALOG_PATH: str = ""
+    EXCEL_SYNC_PATH: str = ""
+
+
+@app.patch("/api/settings")
+def actualizar_settings(
+    body: SettingsBody,
+    username: str = Depends(get_current_username),
+):
+    """Guarda las rutas de catálogo y Excel (sin tocar archivos)."""
+    with get_connection() as conn:
+        set_setting(conn, "PRODUCTOS_CATALOG_PATH", (body.PRODUCTOS_CATALOG_PATH or "").strip())
+        set_setting(conn, "EXCEL_SYNC_PATH", (body.EXCEL_SYNC_PATH or "").strip())
+    return {"mensaje": "Configuración guardada"}
+
+
 # --- Catálogo de productos (carpeta QNAP: marcas -> productos, Excel técnico D31/D28) ---
 
 
 @app.get("/api/productos-catalogo")
 def listar_productos_catalogo():
-    """Lista productos escaneados desde la carpeta de red (PRODUCTOS_CATALOG_PATH)."""
-    if not PRODUCTOS_CATALOG_PATH:
+    """Lista productos escaneados desde la carpeta de red (configurable en la app)."""
+    with get_connection() as conn:
+        catalog_path = _get_productos_catalog_path(conn)
+    if not catalog_path:
         return []
-    return get_productos_catalogo(PRODUCTOS_CATALOG_PATH)
+    return get_productos_catalogo(catalog_path)
 
 
 @app.get("/api/productos-catalogo/archivo")
 def servir_archivo_catalogo(path: str = ""):
     """Sirve un archivo del catálogo por ruta relativa (para abrir visual PDF/Excel)."""
-    if not PRODUCTOS_CATALOG_PATH or not path or ".." in path or path.startswith("/"):
+    with get_connection() as conn:
+        catalog_path = _get_productos_catalog_path(conn)
+    if not catalog_path or not path or ".." in path or path.startswith("/"):
         raise HTTPException(status_code=400, detail="Ruta no válida")
-    base = Path(PRODUCTOS_CATALOG_PATH)
+    base = Path(catalog_path)
     if not base.exists() or not base.is_dir():
-        raise HTTPException(status_code=404, detail="Catálogo no disponible")
+        raise HTTPException(status_code=404, detail="Catálogo no disponible. Configura la ruta en Configuración.")
     full = base / path.replace("/", os.sep)
     try:
         full.resolve().relative_to(base.resolve())

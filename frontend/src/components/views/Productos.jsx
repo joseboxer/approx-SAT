@@ -165,8 +165,8 @@ function Productos({ productoDestacado }) {
 
       {catalogo.length === 0 ? (
         <p className="productos-catalogo-empty">
-          No hay productos en el catálogo. Configura <code>PRODUCTOS_CATALOG_PATH</code> en el servidor
-          (carpeta de red, ej. \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS).
+          No hay productos en el catálogo. Configura la ruta en <strong>Configuración</strong> (menú superior)
+          — carpeta de red, ej. \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS.
         </p>
       ) : (
         <>

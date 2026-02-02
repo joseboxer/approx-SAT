@@ -72,14 +72,29 @@ Si desde otros PCs no carga, puede estar bloqueando el puerto:
 1. Panel de control → Sistema y seguridad → Firewall de Windows → Configuración avanzada.
 2. Reglas de entrada → Nueva regla → Puerto → TCP, puerto 8000 (o el que uses) → Permitir la conexión.
 
+## 7. Script automático (actualizar + compilar + arrancar)
+
+En la raíz del proyecto hay un script para Windows que hace todo en un solo paso:
+
+1. **`update-and-run.bat`** (doble clic o desde CMD):
+   - Actualiza el código desde Git (`git pull`)
+   - Instala dependencias del frontend (`npm install`)
+   - Compila el frontend (`npm run build`)
+   - Crea el entorno virtual del backend si no existe
+   - Instala dependencias del backend (`pip install -r requirements.txt`)
+   - Arranca el servidor (`uvicorn main:app --host 0.0.0.0 --port 8000`)
+
+Requisitos: tener **Git**, **Node.js** y **Python** instalados y en el PATH. La primera vez configura el backend (`.env` en `backend`) y, si quieres, crea un usuario con `create_initial_user.py`.
+
 ## Resumen rápido
 
 | Paso | Comando / Acción |
 |------|-------------------|
+| **Todo en uno** | Ejecutar `update-and-run.bat` en la raíz del proyecto |
 | Compilar frontend | `cd frontend` → `npm install` → `npm run build` |
 | Backend | `cd backend` → `venv` + `pip install -r requirements.txt` |
 | .env | `CORS_ORIGINS=*` para acceso desde la red |
 | Arrancar | `uvicorn main:app --host 0.0.0.0 --port 8000` |
 | URL en red | `http://<IP-del-servidor>:8000` |
 
-No hace falta volver a compilar el frontend salvo que cambies código del frontend; entonces repite `npm run build` en `frontend`.
+No hace falta volver a compilar el frontend salvo que cambies código del frontend; el script `update-and-run.bat` ya lo hace cada vez que lo ejecutas.

@@ -82,6 +82,13 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
         >
           Informes
         </button>
+        <button
+          type="button"
+          className={`nav-link ${vista === VISTAS.CONFIGURACION ? 'active' : ''}`}
+          onClick={() => go(VISTAS.CONFIGURACION)}
+        >
+          Configuración
+        </button>
         {user && (
           <button type="button" className="nav-link nav-logout" onClick={handleLogoutClick}>
             Cerrar sesión

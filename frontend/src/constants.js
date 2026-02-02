@@ -49,4 +49,5 @@ export const VISTAS = {
   PRODUCTOS_RMA: 'productos-rma',
   OCULTA: 'oculta',
   INFORMES: 'informes',
+  CONFIGURACION: 'configuracion',
 }
