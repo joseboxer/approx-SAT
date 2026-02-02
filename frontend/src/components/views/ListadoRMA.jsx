@@ -138,6 +138,19 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
       })
       return [...conFecha, ...sinFecha]
     }
+    if (columnaOrden === 'fila') {
+      return [...gruposFiltradosPorFechaRecogida].sort((a, b) => {
+        const filaA = Math.max(
+          0,
+          ...(a.items || []).map((i) => (i.fila != null ? Number(i.fila) : 0))
+        )
+        const filaB = Math.max(
+          0,
+          ...(b.items || []).map((i) => (i.fila != null ? Number(i.fila) : 0))
+        )
+        return ordenAsc ? filaA - filaB : filaB - filaA
+      })
+    }
     return [...gruposFiltradosPorFechaRecogida].sort((a, b) => {
       const va = getValorOrden(a.items[0], columnaOrden)
       const vb = getValorOrden(b.items[0], columnaOrden)

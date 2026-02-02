@@ -30,6 +30,8 @@ function Productos({ productoDestacado }) {
   const [columnaOrden, setColumnaOrden] = useState('base_serial')
   const [ordenAsc, setOrdenAsc] = useState(true)
   const [pagina, setPagina] = useState(1)
+  const [vistaCatalogo, setVistaCatalogo] = useState('lista') // 'lista' | 'marcas'
+  const [marcaExpandida, setMarcaExpandida] = useState(null) // brand name cuando vista === 'marcas'
 
   const {
     taskId: refreshTaskId,
@@ -125,6 +127,16 @@ function Productos({ productoDestacado }) {
   const inicio = (pagina - 1) * POR_PAGINA
   const enPagina = ordenados.slice(inicio, inicio + POR_PAGINA)
 
+  const porMarca = useMemo(() => {
+    const map = new Map()
+    ordenados.forEach((p) => {
+      const marca = (p.brand || '').trim() || '—'
+      if (!map.has(marca)) map.set(marca, [])
+      map.get(marca).push(p)
+    })
+    return Array.from(map.entries()).map(([marca, productos]) => ({ marca, productos }))
+  }, [ordenados])
+
   const urlArchivo = (pathRel) => {
     if (!pathRel) return null
     const base = API_URL || ''
@@ -147,6 +159,26 @@ function Productos({ productoDestacado }) {
       </p>
 
       <div className="productos-catalogo-actions">
+        <div className="productos-catalogo-vista-toggle" role="tablist" aria-label="Tipo de vista">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={vistaCatalogo === 'lista'}
+            className={`btn ${vistaCatalogo === 'lista' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => { setVistaCatalogo('lista'); setMarcaExpandida(null); }}
+          >
+            Vista lista
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={vistaCatalogo === 'marcas'}
+            className={`btn ${vistaCatalogo === 'marcas' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => { setVistaCatalogo('marcas'); setMarcaExpandida(null); }}
+          >
+            Vista por marcas
+          </button>
+        </div>
         <button
           type="button"
           className="btn btn-primary"
@@ -251,7 +283,67 @@ function Productos({ productoDestacado }) {
           No hay productos en el catálogo. Configura la ruta en <strong>Configuración</strong> (menú superior)
           — carpeta de red, ej. \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS.
         </p>
-      ) : catalogo.length === 0 && catalogError ? null : (
+      ) : catalogo.length === 0 && catalogError ? null : vistaCatalogo === 'marcas' ? (
+        <>
+          <section className="productos-catalogo-marcas" aria-label="Catálogo por marcas">
+            <div className="productos-catalogo-marcas-grid">
+              {porMarca.map(({ marca, productos }) => (
+                <button
+                  type="button"
+                  key={marca}
+                  className={`productos-catalogo-marca-card ${marcaExpandida === marca ? 'productos-catalogo-marca-card--activa' : ''}`}
+                  onClick={() => setMarcaExpandida((prev) => (prev === marca ? null : marca))}
+                  aria-expanded={marcaExpandida === marca}
+                >
+                  <span className="productos-catalogo-marca-icono" aria-hidden>◉</span>
+                  <span className="productos-catalogo-marca-nombre">{marca}</span>
+                </button>
+              ))}
+            </div>
+            {marcaExpandida && (() => {
+              const { productos: productosMarca } = porMarca.find((r) => r.marca === marcaExpandida) ?? { productos: [] }
+              return (
+                <div className="productos-catalogo-marca-detalle">
+                  <h3 className="productos-catalogo-marca-detalle-titulo">{marcaExpandida}</h3>
+                  <div className="table-wrapper tabla-productos-catalogo tabla-productos-catalogo--compacta">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Nº serie base</th>
+                          <th>Tipo</th>
+                          <th>Fecha creación</th>
+                          <th>Visual</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productosMarca.map((p, i) => (
+                          <tr key={`${p.base_serial}-${p.folder_rel}-${i}`}>
+                            <td>{p.base_serial ?? '-'}</td>
+                            <td>{p.product_type ?? '-'}</td>
+                            <td>{p.creation_date ?? '-'}</td>
+                            <td className="productos-catalogo-visual">
+                              {p.visual_pdf_rel && (
+                                <a href={urlArchivo(p.visual_pdf_rel)} target="_blank" rel="noopener noreferrer" className="btn btn-link">Abrir PDF</a>
+                              )}
+                              {p.visual_excel_rel && (
+                                <>
+                                  {p.visual_pdf_rel && ' '}
+                                  <a href={urlArchivo(p.visual_excel_rel)} target="_blank" rel="noopener noreferrer" className="btn btn-link">Abrir Excel</a>
+                                </>
+                              )}
+                              {!p.visual_pdf_rel && !p.visual_excel_rel && '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })()}
+          </section>
+        </>
+      ) : (
         <>
           <div className="table-wrapper tabla-productos-catalogo">
             <table>

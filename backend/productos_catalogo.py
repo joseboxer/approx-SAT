@@ -3,7 +3,7 @@ Catálogo de productos desde carpeta de red (QNAP).
 - Se recorre la estructura recursivamente. Solo se considera "producto" un directorio que contenga al menos un Excel
   cuyo nombre incluya la palabra "visual" (insensible a mayúsculas). Si no hay ningún Excel con "visual", se ignora
   el directorio y se revisan el resto (subcarpetas).
-- En un directorio producto: se usa el Excel más nuevo para datos técnicos (D31, D28); PDF más nuevo = visual.
+- En un directorio producto: se usa el Excel visual para datos técnicos (fecha en C3, serie base = última celda con texto en col D); PDF más nuevo = visual.
 - El Excel más nuevo del directorio con "visual" o "datasheet" en el nombre puede ser el visual Excel.
 """
 from __future__ import annotations
@@ -14,10 +14,11 @@ from typing import Callable
 
 import pandas as pd
 
-# Celdas del Excel técnico (0-based: D28 = col 3, row 27; D31 = col 3, row 30)
+# Fecha del producto: siempre celda C3 (0-based: col 2, row 2)
+EXCEL_COL_FECHA = 2   # C
+EXCEL_ROW_FECHA = 2   # fila 3
+# Número de serie base: última celda con texto en columna D (fila mayor con texto)
 EXCEL_COL_SERIE = 3   # D
-EXCEL_ROW_SERIE = 30  # D31
-EXCEL_ROW_FECHA = 27  # D28
 
 
 def _normalize_path(p: Path) -> Path:
@@ -28,20 +29,42 @@ def _normalize_path(p: Path) -> Path:
         return p
 
 
+def _is_text_value(val) -> bool:
+    """True si el valor es texto no vacío (no NaN ni vacío)."""
+    if val is None:
+        return False
+    if isinstance(val, float) and pd.isna(val):
+        return False
+    s = str(val).strip()
+    return len(s) > 0
+
+
 def _read_serial_and_date_from_excel(excel_path: Path) -> tuple[str | None, str | None]:
-    """Lee número de serie base (D31) y fecha de creación (D28) del Excel técnico."""
+    """
+    Lee fecha desde C3 (siempre) y número de serie base como la última celda con texto
+    en la columna D (fila mayor con texto).
+    """
     try:
         df = pd.read_excel(excel_path, sheet_name=0, header=None)
-        if df.shape[0] <= max(EXCEL_ROW_SERIE, EXCEL_ROW_FECHA):
+        nrows, ncols = df.shape
+        if ncols <= EXCEL_COL_SERIE:
             return None, None
-        serie_val = df.iloc[EXCEL_ROW_SERIE, EXCEL_COL_SERIE]
-        fecha_val = df.iloc[EXCEL_ROW_FECHA, EXCEL_COL_SERIE]
-        serie = None
-        if serie_val is not None and not (isinstance(serie_val, float) and pd.isna(serie_val)):
-            serie = str(serie_val).strip() or None
+
+        # Fecha: siempre C3 (0-based: col 2, row 2)
         fecha = None
-        if fecha_val is not None and not (isinstance(fecha_val, float) and pd.isna(fecha_val)):
-            fecha = str(fecha_val).strip() or None
+        if nrows > EXCEL_ROW_FECHA:
+            fecha_val = df.iloc[EXCEL_ROW_FECHA, EXCEL_COL_FECHA]
+            if _is_text_value(fecha_val):
+                fecha = str(fecha_val).strip()
+
+        # Serie base: última celda con texto en columna D (fila mayor)
+        serie = None
+        for r in range(nrows - 1, -1, -1):
+            val = df.iloc[r, EXCEL_COL_SERIE]
+            if _is_text_value(val):
+                serie = str(val).strip()
+                break
+
         return serie, fecha
     except Exception:
         return None, None
@@ -133,11 +156,11 @@ def _process_product_dir(
 ) -> dict | None:
     """
     Procesa un directorio producto. Solo se abre el Excel con "visual"/"datasheet" en el nombre
-    (datos técnicos D31/D28 y enlace visual), para no cargar Excels que no sean del producto.
+    (fecha C3, serie = última celda con texto en col D), para no cargar Excels que no sean del producto.
     path_parts = componentes de la ruta relativa (ej. ["PRODUCTOS APPROX", "APP500LITE"]).
     """
     folder = _normalize_path(folder)
-    # Usar solo el Excel visual para leer D31/D28: no abrir otros Excels de la carpeta
+    # Usar solo el Excel visual para leer C3 y última celda con texto: no abrir otros Excels de la carpeta
     technical_excel = _newest_visual_excel_in_dir(folder)
     if not technical_excel:
         return None
@@ -260,7 +283,7 @@ def get_productos_catalogo(
 ) -> list[dict]:
     """
     Escanea la ruta base recursivamente. Solo se considera producto un directorio que contenga al menos un Excel
-    cuyo nombre incluya "visual" (insensible a mayúsculas). En ese directorio: Excel más nuevo = datos técnicos (D31, D28);
+    cuyo nombre incluya "visual" (insensible a mayúsculas). En ese directorio: fecha en C3, serie base = última celda con texto en col D;
     PDF más nuevo = visual; Excel con "visual"/"datasheet" en nombre = visual Excel opcional.
     on_directory(path_rel, current, total) se invoca al entrar en cada directorio: current/total permite mostrar % en tiempo real.
     Si on_directory está definido, se hace un primer pase para contar directorios y así poder dar porcentaje aproximado.

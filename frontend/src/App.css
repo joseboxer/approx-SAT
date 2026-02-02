@@ -877,6 +877,73 @@
 }
 .productos-catalogo-actions {
   margin-bottom: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.productos-catalogo-vista-toggle {
+  display: flex;
+  gap: 0.25rem;
+}
+.productos-catalogo-marcas {
+  margin-top: 1rem;
+}
+.productos-catalogo-marcas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.productos-catalogo-marca-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  padding: 1rem;
+  background: var(--color-card-bg);
+  border: 2px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  text-align: center;
+}
+.productos-catalogo-marca-card:hover {
+  border-color: var(--color-primary, #2563eb);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.productos-catalogo-marca-card--activa {
+  border-color: var(--color-primary, #2563eb);
+  background: color-mix(in srgb, var(--color-primary, #2563eb) 10%, transparent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.productos-catalogo-marca-icono {
+  display: block;
+  font-size: 1.75rem;
+  margin-bottom: 0.35rem;
+  opacity: 0.85;
+}
+.productos-catalogo-marca-nombre {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text-heading);
+  word-break: break-word;
+}
+.productos-catalogo-marca-detalle {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+}
+.productos-catalogo-marca-detalle-titulo {
+  margin: 0 0 0.75rem 0;
+  font-size: 1.1rem;
+  color: var(--text-heading);
+}
+.tabla-productos-catalogo--compacta {
+  margin-top: 0;
 }
 .catalog-refresh-progress {
   margin-bottom: 1rem;

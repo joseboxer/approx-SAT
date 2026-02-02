@@ -170,7 +170,7 @@ function Configuracion() {
             className="configuracion-input"
           />
           <span className="configuracion-hint">
-            Carpeta donde están las marcas y productos (Excel técnico con D31/D28). Las rutas con espacios (ej. DEPT. TEC\PRODUCTOS) se leen correctamente.
+            Carpeta donde están las marcas y productos (Excel: fecha en C3, serie base = última celda con texto en col D). Las rutas con espacios (ej. DEPT. TEC\PRODUCTOS) se leen correctamente.
           </span>
         </div>
 
