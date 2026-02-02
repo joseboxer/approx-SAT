@@ -91,7 +91,7 @@ function Configuracion() {
             className="configuracion-input"
           />
           <span className="configuracion-hint">
-            Carpeta donde están las marcas y productos (Excel técnico con D31/D28).
+            Carpeta donde están las marcas y productos (Excel técnico con D31/D28). Las rutas con espacios (ej. DEPT. TEC\PRODUCTOS) se leen correctamente.
           </span>
         </div>
 
@@ -108,7 +108,7 @@ function Configuracion() {
             className="configuracion-input"
           />
           <span className="configuracion-hint">
-            Archivo Excel que se usa al pulsar &quot;Sincronizar&quot; en Inicio (mismo origen que Lista RMA).
+            Ruta completa al archivo Excel (incluyendo nombre del archivo). Se usa al pulsar &quot;Sincronizar&quot; en Inicio (mismo origen que Lista RMA). El archivo puede llamarse como quieras; las rutas con espacios (ej. DEPT. TEC\archivo nombre.xlsx) se leen correctamente.
           </span>
         </div>
 

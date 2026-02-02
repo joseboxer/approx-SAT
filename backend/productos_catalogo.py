@@ -167,21 +167,24 @@ def get_productos_catalogo(base_path: str | Path) -> list[dict]:
     Escanea la ruta base (ej: \\\\Qnap-approx2\\z\\DEPT. TEC\\PRODUCTOS).
     Devuelve lista de productos con base_serial, brand, product_type, creation_date,
     folder_rel, excel_rel, visual_pdf_rel, visual_excel_rel.
+    Lanza excepción si la ruta no existe o no se puede acceder.
     """
     if not base_path or not str(base_path).strip():
         return []
 
     base = Path(base_path)
-    if not base.exists() or not base.is_dir():
-        return []
+    if not base.exists():
+        raise FileNotFoundError(f"La ruta no existe: {base_path}")
+    if not base.is_dir():
+        raise NotADirectoryError(f"La ruta no es una carpeta: {base_path}")
 
     base = _normalize_path(base)
     out = []
 
     try:
         top_entries = list(base.iterdir())
-    except (OSError, PermissionError):
-        return []
+    except (OSError, PermissionError) as e:
+        raise PermissionError(f"No se puede acceder a la carpeta: {base_path}") from e
 
     for e in top_entries:
         if not e.is_dir():

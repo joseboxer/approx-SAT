@@ -17,6 +17,7 @@ function getAuthHeaders() {
  */
 function Productos({ productoDestacado }) {
   const [catalogo, setCatalogo] = useState([])
+  const [catalogError, setCatalogError] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   const [filtroMarca, setFiltroMarca] = useState('')
@@ -29,12 +30,21 @@ function Productos({ productoDestacado }) {
   const refetch = useCallback(() => {
     setCargando(true)
     setError(null)
+    setCatalogError(null)
     fetch(`${API_URL}/api/productos-catalogo`, { headers: getAuthHeaders() })
       .then((res) => {
         if (!res.ok) throw new Error('Error al cargar catálogo')
         return res.json()
       })
-      .then((data) => setCatalogo(Array.isArray(data) ? data : []))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCatalogo(data)
+          setCatalogError(null)
+        } else {
+          setCatalogo(data.productos ?? [])
+          setCatalogError(data.error ?? null)
+        }
+      })
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
   }, [])
@@ -92,6 +102,12 @@ function Productos({ productoDestacado }) {
       <p className="productos-catalogo-desc">
         Productos desde la carpeta de red. Abre el visual (PDF o Excel) directamente desde aquí.
       </p>
+
+      {catalogError && (
+        <div className="productos-catalogo-error" role="alert">
+          No se pudo cargar el catálogo: {catalogError}. Comprueba la ruta en <strong>Configuración</strong> (ej. \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS). El servidor debe tener acceso a la carpeta de red.
+        </div>
+      )}
 
       <section className="productos-catalogo-filtros" aria-label="Filtros">
         <div className="productos-catalogo-filtros-grid">
@@ -163,12 +179,12 @@ function Productos({ productoDestacado }) {
         </div>
       </section>
 
-      {catalogo.length === 0 ? (
+      {catalogo.length === 0 && !catalogError ? (
         <p className="productos-catalogo-empty">
           No hay productos en el catálogo. Configura la ruta en <strong>Configuración</strong> (menú superior)
           — carpeta de red, ej. \\Qnap-approx2\z\DEPT. TEC\PRODUCTOS.
         </p>
-      ) : (
+      ) : catalogo.length === 0 && catalogError ? null : (
         <>
           <div className="table-wrapper tabla-productos-catalogo">
             <table>

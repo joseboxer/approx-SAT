@@ -97,11 +97,16 @@ _DEFAULT_PRODUCTOS_CATALOG_PATH = os.environ.get("PRODUCTOS_CATALOG_PATH", "").s
 
 
 def _get_excel_sync_path(conn) -> str:
+    # .strip() solo quita espacios al inicio/final; los espacios en la ruta (ej. "DEPT. TEC\archivo nombre.xlsx") se conservan
     return (get_setting(conn, "EXCEL_SYNC_PATH") or _DEFAULT_EXCEL_SYNC_PATH).strip()
 
 
 def _get_productos_catalog_path(conn) -> str:
-    return (get_setting(conn, "PRODUCTOS_CATALOG_PATH") or _DEFAULT_PRODUCTOS_CATALOG_PATH).strip()
+    raw = (get_setting(conn, "PRODUCTOS_CATALOG_PATH") or _DEFAULT_PRODUCTOS_CATALOG_PATH).strip()
+    # Normalizar ruta UNC en Windows: \server\share -> \\server\share
+    if raw and len(raw) > 1 and raw[0] == "\\" and raw[1] != "\\":
+        raw = "\\" + raw
+    return raw
 
 # Ruta raíz: solo si NO servimos el frontend compilado (para no tapar la SPA)
 _frontend_dist = Path(__file__).resolve().parent / ".." / "frontend" / "dist"
@@ -356,8 +361,12 @@ def listar_productos_catalogo():
     with get_connection() as conn:
         catalog_path = _get_productos_catalog_path(conn)
     if not catalog_path:
-        return []
-    return get_productos_catalogo(catalog_path)
+        return {"productos": [], "error": None}
+    try:
+        productos = get_productos_catalogo(catalog_path)
+        return {"productos": productos, "error": None}
+    except Exception as e:
+        return {"productos": [], "error": str(e)}
 
 
 @app.get("/api/productos-catalogo/archivo")
