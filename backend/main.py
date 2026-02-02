@@ -88,10 +88,12 @@ def _value(v):
 _BASE_DIR = Path(__file__).resolve().parent
 EXCEL_SYNC_PATH = os.environ.get("EXCEL_SYNC_PATH", str(_BASE_DIR / "productos.xlsx"))
 
-
-@app.get("/")
-def root():
-    return {"mensaje": "API Garantías"}
+# Ruta raíz: solo si NO servimos el frontend compilado (para no tapar la SPA)
+_frontend_dist = Path(__file__).resolve().parent / ".." / "frontend" / "dist"
+if not _frontend_dist.exists():
+    @app.get("/")
+    def root():
+        return {"mensaje": "API Garantías", "frontend": "Compila con: cd frontend && npm run build"}
 
 
 @app.get("/api/productos")
@@ -297,6 +299,5 @@ def actualizar_garantia_serial(serial: str, body: GarantiaVigenteBody):
 
 
 # Servir frontend compilado (para despliegue en un solo servidor)
-_frontend_dist = Path(__file__).resolve().parent / ".." / "frontend" / "dist"
 if _frontend_dist.exists():
     app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
