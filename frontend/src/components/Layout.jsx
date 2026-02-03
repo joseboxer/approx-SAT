@@ -8,6 +8,8 @@ function Layout({
   setClienteDestacado,
   productoDestacado,
   setProductoDestacado,
+  notifCountKey,
+  refreshNotifCount,
   children,
 }) {
   return (
@@ -17,6 +19,8 @@ function Layout({
         setVista={setVista}
         onClienteDestacado={setClienteDestacado}
         onProductoDestacado={setProductoDestacado}
+        notifCountKey={notifCountKey}
+        refreshNotifCount={refreshNotifCount}
       />
       <main className="main">{children}</main>
     </div>

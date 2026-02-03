@@ -4,6 +4,7 @@ import { POR_PAGINA, COLUMNAS_CLIENTES, API_URL, AUTH_STORAGE_KEY } from '../../
 import { compararValores } from '../../utils/garantia'
 import HerramientasTabla from '../HerramientasTabla'
 import Paginacion from '../Paginacion'
+import ModalNotificar from '../ModalNotificar'
 
 function getAuthHeaders() {
   try {
@@ -29,6 +30,8 @@ function Clientes({ clienteDestacado }) {
   const [selectedKeys, setSelectedKeys] = useState(new Set())
   const [unificarEstado, setUnificarEstado] = useState(null)
   const [unificarCargando, setUnificarCargando] = useState(false)
+  const [notificarOpen, setNotificarOpen] = useState(false)
+  const [notificarRef, setNotificarRef] = useState(null)
 
   const refetchGrupos = useCallback(() => {
     setGruposCargando(true)
@@ -341,6 +344,7 @@ function Clientes({ clienteDestacado }) {
               <th>Email</th>
               <th>Teléfono</th>
               <th>Nº RMAs</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -361,6 +365,19 @@ function Clientes({ clienteDestacado }) {
                   <td>{c.email || '-'}</td>
                   <td>{c.telefono || '-'}</td>
                   <td>{c.count}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-notificar btn-sm"
+                      onClick={() => {
+                        setNotificarRef({ nombre: c.nombre, email: c.email ?? '' })
+                        setNotificarOpen(true)
+                      }}
+                      title="Notificar a un usuario (compartir este cliente)"
+                    >
+                      Notificar
+                    </button>
+                  </td>
                 </tr>
               )
             })}
@@ -374,6 +391,12 @@ function Clientes({ clienteDestacado }) {
         pagina={pagina}
         totalPaginas={totalPaginas}
         setPagina={setPagina}
+      />
+      <ModalNotificar
+        open={notificarOpen}
+        onClose={() => { setNotificarOpen(false); setNotificarRef(null); }}
+        type="cliente"
+        referenceData={notificarRef || {}}
       />
     </>
   )

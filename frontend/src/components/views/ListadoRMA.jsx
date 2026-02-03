@@ -11,6 +11,7 @@ import {
 } from '../../utils/garantia'
 import HerramientasTabla from '../HerramientasTabla'
 import Paginacion from '../Paginacion'
+import ModalNotificar from '../ModalNotificar'
 
 const COL_RMA = 'NÂº DE RMA'
 
@@ -57,6 +58,8 @@ function ListadoRMA({
   const [selectedRmaIds, setSelectedRmaIds] = useState(new Set())
   const [estadoMasivo, setEstadoMasivo] = useState('')
   const [aplicandoMasivo, setAplicandoMasivo] = useState(false)
+  const [notificarOpen, setNotificarOpen] = useState(false)
+  const [notificarRef, setNotificarRef] = useState(null)
 
   const columnasFiltro = useMemo(
     () => getColumnasFiltroRma(claveSerieReal),
@@ -82,7 +85,7 @@ function ListadoRMA({
       setValorFiltro(String(serialDestacado).trim())
       setColumnaFiltro(claveSerieReal)
       setPagina(1)
-      setSerialDestacadoState?.(null)
+      setSerialDestacado?.(null)
     }
   }, [serialDestacado, claveSerieReal, setSerialDestacado])
 
@@ -518,6 +521,20 @@ function ListadoRMA({
                       >
                         Ocultar
                       </button>
+                      <button
+                        type="button"
+                        className="btn btn-notificar"
+                        onClick={() => {
+                          const rmaNum = p['NÂº DE RMA'] ?? p['Nº DE RMA']
+                          if (rmaNum != null) {
+                            setNotificarRef({ rma_number: String(rmaNum) })
+                            setNotificarOpen(true)
+                          }
+                        }}
+                        title="Notificar a un usuario (compartir este RMA)"
+                      >
+                        Notificar
+                      </button>
                     </td>
                   </tr>
                   {abierto && n > 1 && (
@@ -624,6 +641,12 @@ function ListadoRMA({
         totalPaginas={totalPaginas}
         setPagina={setPagina}
         label="RMAs"
+      />
+      <ModalNotificar
+        open={notificarOpen}
+        onClose={() => { setNotificarOpen(false); setNotificarRef(null); }}
+        type="rma"
+        referenceData={notificarRef || {}}
       />
     </>
   )

@@ -51,4 +51,12 @@ export const VISTAS = {
   OCULTA: 'oculta',
   INFORMES: 'informes',
   CONFIGURACION: 'configuracion',
+  NOTIFICACIONES: 'notificaciones',
+}
+
+export const NOTIFICATION_TYPES = {
+  rma: 'Lista RMA',
+  catalogo: 'Catálogo',
+  producto_rma: 'Productos RMA',
+  cliente: 'Clientes',
 }

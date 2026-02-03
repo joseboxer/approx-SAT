@@ -54,6 +54,13 @@ from database import (
     create_repuesto,
     update_repuesto,
     delete_repuesto,
+    get_user_by_username,
+    get_user_by_id,
+    list_users,
+    get_notifications_for_user,
+    count_unread_notifications,
+    create_notification,
+    mark_notification_read,
 )
 
 # CORS: en desarrollo solo localhost; en red local poner CORS_ORIGINS=* en .env
@@ -747,6 +754,87 @@ def eliminar_repuesto(repuesto_id: int, username: str = Depends(get_current_user
     if not ok:
         raise HTTPException(status_code=404, detail="Repuesto no encontrado")
     return {"mensaje": "Repuesto eliminado"}
+
+
+# --- Usuarios (para dropdown notificaciones) y Notificaciones ---
+
+
+@app.get("/api/users")
+def listar_usuarios(username: str = Depends(get_current_username)):
+    """Lista usuarios (id, username) para elegir destinatario de notificaciones. Excluye al actual."""
+    with get_connection() as conn:
+        current = get_user_by_username(conn, username)
+        users = list_users(conn)
+    if not current:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    current_id = current["id"]
+    return [u for u in users if u["id"] != current_id]
+
+
+@app.get("/api/notifications")
+def listar_notificaciones(username: str = Depends(get_current_username)):
+    """Lista notificaciones recibidas por el usuario actual."""
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        items = get_notifications_for_user(conn, user["id"])
+    return items
+
+
+@app.get("/api/notifications/unread-count")
+def contar_notificaciones_no_leidas(username: str = Depends(get_current_username)):
+    """Cuenta notificaciones no leídas del usuario actual."""
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        count = count_unread_notifications(conn, user["id"])
+    return {"count": count}
+
+
+class NotificationBody(BaseModel):
+    to_user_id: int
+    type: str  # 'rma' | 'catalogo' | 'producto_rma' | 'cliente'
+    reference_data: dict
+    message: str = ""
+
+
+@app.post("/api/notifications")
+def crear_notificacion(body: NotificationBody, username: str = Depends(get_current_username)):
+    """Crea una notificación para otro usuario (compartir fila de RMA, catálogo, etc.)."""
+    with get_connection() as conn:
+        from_user = get_user_by_username(conn, username)
+        if not from_user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        to_user = get_user_by_id(conn, body.to_user_id)
+        if not to_user:
+            raise HTTPException(status_code=404, detail="Usuario destinatario no encontrado")
+        if from_user["id"] == body.to_user_id:
+            raise HTTPException(status_code=400, detail="No puedes notificarte a ti mismo")
+        ref_json = json.dumps(body.reference_data, ensure_ascii=False)
+        nid = create_notification(
+            conn,
+            from_user_id=from_user["id"],
+            to_user_id=body.to_user_id,
+            type_=body.type.strip(),
+            reference_data=ref_json,
+            message=body.message.strip() or None,
+        )
+    return {"id": nid, "mensaje": "Notificación enviada"}
+
+
+@app.patch("/api/notifications/{notification_id:int}/read")
+def marcar_notificacion_leida(notification_id: int, username: str = Depends(get_current_username)):
+    """Marca una notificación como leída."""
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        ok = mark_notification_read(conn, notification_id, user["id"])
+    if not ok:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada o ya leída")
+    return {"mensaje": "Marcada como leída"}
 
 
 # Servir frontend compilado (para despliegue en un solo servidor)

@@ -3,6 +3,7 @@ import { API_URL, AUTH_STORAGE_KEY, POR_PAGINA } from '../../constants'
 import { compararValores } from '../../utils/garantia'
 import Paginacion from '../Paginacion'
 import ProgressBar from '../ProgressBar'
+import ModalNotificar from '../ModalNotificar'
 import { useCatalogRefresh } from '../../context/CatalogRefreshContext'
 
 function getAuthHeaders() {
@@ -32,6 +33,8 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   const [pagina, setPagina] = useState(1)
   const [vistaCatalogo, setVistaCatalogo] = useState('lista') // 'lista' | 'marcas'
   const [marcaExpandida, setMarcaExpandida] = useState(null) // brand name cuando vista === 'marcas'
+  const [notificarOpen, setNotificarOpen] = useState(false)
+  const [notificarRef, setNotificarRef] = useState(null)
 
   const {
     taskId: refreshTaskId,
@@ -335,6 +338,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                           <th>Tipo</th>
                           <th>Fecha creación</th>
                           <th>Visual</th>
+                          <th>Acciones</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -354,6 +358,20 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                                 </>
                               )}
                               {!p.visual_pdf_rel && !p.visual_excel_rel && '-'}
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-notificar btn-sm"
+                                onClick={() => {
+                                  const brand = (p.brand || '').trim() || marcaExpandida
+                                  setNotificarRef({ product_ref: `${brand}|${p.base_serial || ''}`, brand, base_serial: p.base_serial })
+                                  setNotificarOpen(true)
+                                }}
+                                title="Notificar a un usuario (compartir este producto)"
+                              >
+                                Notificar
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -376,6 +394,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                   <th>Tipo</th>
                   <th>Fecha creación</th>
                   <th>Visual</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -411,6 +430,19 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                       )}
                       {!p.visual_pdf_rel && !p.visual_excel_rel && '-'}
                     </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-notificar btn-sm"
+                        onClick={() => {
+                          setNotificarRef({ product_ref: `${p.brand || ''}|${p.base_serial || ''}`, brand: p.brand, base_serial: p.base_serial })
+                          setNotificarOpen(true)
+                        }}
+                        title="Notificar a un usuario (compartir este producto)"
+                      >
+                        Notificar
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -426,6 +458,12 @@ function Productos({ productoDestacado, setProductoDestacado }) {
           />
         </>
       )}
+      <ModalNotificar
+        open={notificarOpen}
+        onClose={() => { setNotificarOpen(false); setNotificarRef(null); }}
+        type="catalogo"
+        referenceData={notificarRef || {}}
+      />
     </>
   )
 }

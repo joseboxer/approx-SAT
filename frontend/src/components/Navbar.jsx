@@ -1,14 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useGarantia } from '../context/GarantiaContext'
 import { useAuth } from '../context/AuthContext'
-import { VISTAS } from '../constants'
+import { VISTAS, API_URL, AUTH_STORAGE_KEY } from '../constants'
+function getAuthHeaders() {
+  try {
+    const token = localStorage.getItem(AUTH_STORAGE_KEY)
+    if (token) return { Authorization: `Bearer ${token}` }
+  } catch {}
+  return {}
+}
 
-function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
+function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, notifCountKey, refreshNotifCount }) {
   const { hiddenRmas } = useGarantia()
   const { user, logout } = useAuth()
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [showRmaMenu, setShowRmaMenu] = useState(false)
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const rmaMenuRef = useRef(null)
   const hamburgerRef = useRef(null)
 
@@ -44,6 +52,13 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
     document.addEventListener('mousedown', closeMenus)
     return () => document.removeEventListener('mousedown', closeMenus)
   }, [])
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/notifications/unread-count`, { headers: getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : { count: 0 }))
+      .then((data) => setUnreadCount(data.count ?? 0))
+      .catch(() => setUnreadCount(0))
+  }, [notifCountKey])
 
   const handleLogoutClick = () => {
     setShowHamburgerMenu(false)
@@ -154,6 +169,19 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
         </button>
         {showHamburgerMenu && (
           <div className="nav-hamburger-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              className={`nav-hamburger-item ${vista === VISTAS.NOTIFICACIONES ? 'active' : ''}`}
+              onClick={() => go(VISTAS.NOTIFICACIONES)}
+            >
+              Notificaciones
+              {unreadCount > 0 && (
+                <span className="nav-notif-badge" aria-label={`${unreadCount} sin leer`}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
             <button
               type="button"
               role="menuitem"

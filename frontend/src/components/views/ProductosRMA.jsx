@@ -3,6 +3,7 @@ import { API_URL, AUTH_STORAGE_KEY, POR_PAGINA, COLUMNAS_PRODUCTOS_RMA, VISTAS }
 import { compararValores } from '../../utils/garantia'
 import Paginacion from '../Paginacion'
 import ProgressBar from '../ProgressBar'
+import ModalNotificar from '../ModalNotificar'
 
 function getAuthHeaders() {
   try {
@@ -29,7 +30,7 @@ function parseDateInput(s) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado) {
+function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, onNotificar) {
   const items = Array.isArray(row.items) ? row.items : []
   const n = items.length
   const abierto = serialExpandido === row.serial
@@ -126,10 +127,22 @@ function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleG
             <span>{row.garantia_vigente ? 'Sí' : 'No'}</span>
           </label>
         </td>
+        <td>
+          {onNotificar && row.serial && (
+            <button
+              type="button"
+              className="btn btn-notificar btn-sm"
+              onClick={() => onNotificar({ serial: row.serial })}
+              title="Notificar a un usuario (compartir este producto RMA)"
+            >
+              Notificar
+            </button>
+          )}
+        </td>
       </tr>
       {abierto && n > 0 && (
         <tr className="fila-desplegable">
-          <td colSpan={7} className="td-desplegable">
+          <td colSpan={8} className="td-desplegable">
             <div className="desplegable-detalle">
               <table className="tabla-desplegable">
                 <thead>
@@ -198,6 +211,12 @@ function ProductosRMA(props) {
   const [ordenAsc, setOrdenAsc] = useState(true)
   const [serialExpandido, setSerialExpandido] = useState(null)
   const [paginaSinFecha, setPaginaSinFecha] = useState(1)
+  const [notificarOpen, setNotificarOpen] = useState(false)
+  const [notificarRef, setNotificarRef] = useState(null)
+  const openNotificar = useCallback((ref) => {
+    setNotificarRef(ref)
+    setNotificarOpen(true)
+  }, [])
 
   const refetch = useCallback(() => {
     setCargando(true)
@@ -603,10 +622,11 @@ function ProductosRMA(props) {
                 <th>Última fecha</th>
                 <th>Clientes (muestra)</th>
                 <th>Garantía vigente</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {enPagina.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate))}
+              {enPagina.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, openNotificar))}
             </tbody>
           </table>
         </div>
@@ -643,10 +663,11 @@ function ProductosRMA(props) {
                   <th>Última fecha</th>
                   <th>Clientes (muestra)</th>
                   <th>Garantía vigente</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {enPaginaSinFecha.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado))}
+                {enPaginaSinFecha.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, openNotificar))}
               </tbody>
             </table>
           </div>
@@ -660,6 +681,12 @@ function ProductosRMA(props) {
           />
         </section>
       )}
+      <ModalNotificar
+        open={notificarOpen}
+        onClose={() => { setNotificarOpen(false); setNotificarRef(null); }}
+        type="producto_rma"
+        referenceData={notificarRef || {}}
+      />
     </>
   )
 }

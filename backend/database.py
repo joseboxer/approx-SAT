@@ -115,6 +115,19 @@ def _init_db(conn: sqlite3.Connection):
             PRIMARY KEY (repuesto_id, product_ref)
         );
         CREATE INDEX IF NOT EXISTS idx_repuestos_productos_repuesto ON repuestos_productos(repuesto_id);
+
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_user_id INTEGER NOT NULL REFERENCES users(id),
+            to_user_id INTEGER NOT NULL REFERENCES users(id),
+            type TEXT NOT NULL,
+            reference_data TEXT NOT NULL,
+            message TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            read_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_notifications_to_user ON notifications(to_user_id);
+        CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
     """)
     # Migración: añadir hidden_by y hidden_at si no existen (BD ya creada)
     cur = conn.execute("PRAGMA table_info(rma_items)")
@@ -165,6 +178,83 @@ def create_user(conn: sqlite3.Connection, username: str, password_hash: str, ema
         "INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)",
         (username.strip(), password_hash, email.strip().lower()),
     )
+
+
+def list_users(conn: sqlite3.Connection) -> list[dict]:
+    """Lista todos los usuarios (id, username) para dropdown de notificaciones."""
+    cur = conn.execute("SELECT id, username FROM users ORDER BY username")
+    return [{"id": row["id"], "username": row["username"]} for row in cur.fetchall()]
+
+
+# --- Notificaciones (compartir fila con otro usuario) ---
+
+
+def get_notifications_for_user(conn: sqlite3.Connection, to_user_id: int) -> list[dict]:
+    """Lista notificaciones recibidas por el usuario, con from_username. Orden: más recientes primero."""
+    cur = conn.execute(
+        """SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.reference_data, n.message, n.created_at, n.read_at,
+                  u.username AS from_username
+           FROM notifications n
+           JOIN users u ON u.id = n.from_user_id
+           WHERE n.to_user_id = ?
+           ORDER BY n.created_at DESC""",
+        (to_user_id,),
+    )
+    out = []
+    for row in cur.fetchall():
+        out.append({
+            "id": row["id"],
+            "from_user_id": row["from_user_id"],
+            "from_username": row["from_username"],
+            "to_user_id": row["to_user_id"],
+            "type": row["type"],
+            "reference_data": row["reference_data"],
+            "message": row["message"] or "",
+            "created_at": row["created_at"],
+            "read_at": row["read_at"],
+        })
+    return out
+
+
+def count_unread_notifications(conn: sqlite3.Connection, to_user_id: int) -> int:
+    """Cuenta notificaciones no leídas del usuario."""
+    cur = conn.execute(
+        "SELECT COUNT(*) FROM notifications WHERE to_user_id = ? AND read_at IS NULL",
+        (to_user_id,),
+    )
+    return cur.fetchone()[0] or 0
+
+
+def create_notification(
+    conn: sqlite3.Connection,
+    from_user_id: int,
+    to_user_id: int,
+    type_: str,
+    reference_data: str,
+    message: str | None = None,
+) -> int:
+    """Crea una notificación. Devuelve el id."""
+    cur = conn.execute(
+        """INSERT INTO notifications (from_user_id, to_user_id, type, reference_data, message)
+           VALUES (?, ?, ?, ?, ?)""",
+        (from_user_id, to_user_id, type_, reference_data, (message or "").strip() or None),
+    )
+    return cur.lastrowid
+
+
+def mark_notification_read(conn: sqlite3.Connection, notification_id: int, to_user_id: int) -> bool:
+    """Marca una notificación como leída si pertenece al usuario. Devuelve True si se actualizó."""
+    cur = conn.execute(
+        "UPDATE notifications SET read_at = datetime('now') WHERE id = ? AND to_user_id = ? AND read_at IS NULL",
+        (notification_id, to_user_id),
+    )
+    return cur.rowcount > 0
+
+
+def get_user_by_id(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
+    """Obtiene un usuario por id."""
+    cur = conn.execute("SELECT id, username FROM users WHERE id = ?", (user_id,))
+    return cur.fetchone()
 
 
 # --- Códigos de verificación por correo ---

@@ -13,6 +13,7 @@ import Repuestos from './components/views/Repuestos'
 import ListaOculta from './components/views/ListaOculta'
 import Informes from './components/views/Informes'
 import Configuracion from './components/views/Configuracion'
+import Notificaciones from './components/views/Notificaciones'
 import ModalEditarRma from './components/ModalEditarRma'
 import { VISTAS } from './constants'
 import './App.css'
@@ -28,6 +29,8 @@ function AppContent() {
   const [productoDestacado, setProductoDestacado] = useState(null)
   const [rmaDestacado, setRmaDestacado] = useState(null)
   const [serialDestacado, setSerialDestacado] = useState(null)
+  const [notifCountKey, setNotifCountKey] = useState(0)
+  const refreshNotifCount = () => setNotifCountKey((k) => k + 1)
 
   const renderVista = () => {
     switch (vista) {
@@ -76,6 +79,17 @@ function AppContent() {
         return <Informes />
       case VISTAS.CONFIGURACION:
         return <Configuracion />
+      case VISTAS.NOTIFICACIONES:
+        return (
+          <Notificaciones
+            setVista={setVista}
+            setRmaDestacado={setRmaDestacado}
+            setSerialDestacado={setSerialDestacado}
+            setProductoDestacado={setProductoDestacado}
+            setClienteDestacado={setClienteDestacado}
+            onMarkRead={refreshNotifCount}
+          />
+        )
       default:
         return <Inicio setVista={setVista} setRmaDestacado={setRmaDestacado} />
     }
@@ -89,6 +103,8 @@ function AppContent() {
       setClienteDestacado={setClienteDestacado}
       productoDestacado={productoDestacado}
       setProductoDestacado={setProductoDestacado}
+      notifCountKey={notifCountKey}
+      refreshNotifCount={refreshNotifCount}
     >
       {renderVista()}
       <ModalEditarRma />
