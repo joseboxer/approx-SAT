@@ -1038,8 +1038,8 @@
 .table-wrapper.tabla-rma .col-checkbox { width: 3%; text-align: center; }
 .table-wrapper.tabla-rma thead th:nth-child(2) { width: 5%; }   /* Nº RMA */
 .table-wrapper.tabla-rma thead th:nth-child(3) { width: 9%; }  /* Producto */
-.table-wrapper.tabla-rma thead th:nth-child(4) { width: 6%; }  /* Nº serie */
-.table-wrapper.tabla-rma thead th:nth-child(5) { width: 10%; } /* Cliente */
+.table-wrapper.tabla-rma thead th:nth-child(4) { width: 8%; }  /* Nº serie */
+.table-wrapper.tabla-rma thead th:nth-child(5) { width: 12%; } /* Cliente */
 .table-wrapper.tabla-rma thead th:nth-child(6) { width: 6%; }  /* Fecha recibido */
 .table-wrapper.tabla-rma thead th:nth-child(7) { width: 6%; }   /* Fecha enviado */
 .table-wrapper.tabla-rma thead th:nth-child(8) { width: 6%; }  /* Fecha recogida */
@@ -1050,6 +1050,8 @@
 .table-wrapper.tabla-rma tr.row-selected { background: var(--color-bg-subtle); }
 .table-wrapper.tabla-rma .col-checkbox input { cursor: pointer; }
 /* Celdas de texto largo: no solapar, truncar con ellipsis; usar title para ver completo al pasar el ratón */
+.table-wrapper.tabla-rma td:nth-child(4),
+.table-wrapper.tabla-rma td:nth-child(5),
 .table-wrapper.tabla-rma td:nth-child(9),
 .table-wrapper.tabla-rma td:nth-child(10) {
   overflow: hidden;

@@ -378,6 +378,9 @@ function Configuracion() {
             <li>
               <strong>Inicio de sesión:</strong> Al cambiar de IP a dominio (o al revés) el navegador trata la sesión como distinta; tendrás que iniciar sesión de nuevo.
             </li>
+            <li>
+              <strong>Notificaciones del navegador:</strong> Para que las notificaciones funcionen en todos los equipos (no solo en el servidor), la aplicación debe servirse por <strong>HTTPS</strong>. Consulta en el proyecto la sección &quot;HTTPS para notificaciones&quot; en <code>DEPLOY.md</code>.
+            </li>
           </ul>
         </div>
         {copyMensaje && <p className="configuracion-ok configuracion-dominio-copy-ok">{copyMensaje}</p>}
