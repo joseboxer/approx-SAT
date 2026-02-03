@@ -31,7 +31,7 @@ if %errorLevel% neq 0 (
   exit /b
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$path = [Environment]::ExpandEnvironmentVariables('%HOSTS_PATH%'); $server = '%SERVER_HOST%'; $domain = 'www.Approx-SAT.com'; $newLine = $server + [char]9 + $domain; $content = Get-Content $path -Raw -ErrorAction Stop; $lines = $content -split \"\\r?\\n\"; $filtered = $lines | Where-Object { $_ -notmatch 'Approx-SAT\\.com' }; $newContent = ($filtered -join \"\\r\\n\").TrimEnd() + \"\\r\\n\" + $newLine + \"\\r\\n\"; Set-Content -Path $path -Value $newContent -NoNewline -Encoding ASCII -ErrorAction Stop"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$path = [Environment]::ExpandEnvironmentVariables('%HOSTS_PATH%'); $server = '%SERVER_HOST%'; $domain = 'www.Approx-SAT.com'; $newLine = $server + [char]9 + $domain; $content = Get-Content $path -Raw -ErrorAction Stop; $lines = $content -split '[\r\n]+'; $filtered = $lines | Where-Object { $_ -notmatch 'Approx-SAT\\.com' }; $crlf = [char]13 + [char]10; $newContent = ($filtered -join $crlf).TrimEnd() + $crlf + $newLine + $crlf; Set-Content -Path $path -Value $newContent -NoNewline -Encoding ASCII -ErrorAction Stop"
 if %errorLevel% equ 0 (
   echo Listo: %DOMAIN% configurado para apuntar a %SERVER_HOST%.
 ) else (
