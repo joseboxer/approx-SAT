@@ -55,13 +55,10 @@ function getInstallCertBatContent() {
   return `@echo off
 chcp 65001 >nul
 :: Instalar certificado HTTPS (cert.pem) en el equipo cliente para confiar en el servidor Garantia SAT.
-:: Ejecutar como administrador: clic derecho en el archivo -> Ejecutar como administrador.
-:: Coloca cert.pem (copiado desde la carpeta backend del servidor) en la misma carpeta que este .bat.
+:: Ejecutar como administrador: clic derecho -> Ejecutar como administrador.
+:: Coloca cert.pem (desde la carpeta backend del servidor) en la misma carpeta que este .bat.
 
-set "DIR=%~dp0"
-set "CERT="
-if exist "%DIR%cert.pem" set "CERT=%DIR%cert.pem"
-if not defined CERT if exist "%DIR%cert.cer" set "CERT=%DIR%cert.cer"
+cd /d "%~dp0"
 
 net session >nul 2>&1
 if %errorLevel% neq 0 (
@@ -70,26 +67,30 @@ if %errorLevel% neq 0 (
   exit /b
 )
 
+set "CERT="
+if exist "cert.pem" set "CERT=cert.pem"
+if not defined CERT if exist "cert.cer" set "CERT=cert.cer"
+
 if not defined CERT (
   echo No se encontró cert.pem ni cert.cer en esta carpeta.
   echo.
-  echo Copia el archivo cert.pem desde la carpeta backend del servidor
-  echo donde corre Garantia SAT a la misma carpeta donde está este script,
-  echo y vuelve a ejecutarlo como administrador.
+  echo Copia cert.pem desde la carpeta backend del servidor
+  echo a la misma carpeta donde está este script y vuelve a ejecutarlo.
   echo.
   pause
   exit /b 1
 )
 
 echo Instalando certificado en Autoridades de certificación raíz de confianza...
-certutil -addstore "Root" "%CERT%"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$pem = Get-Content -Path '%CERT%' -Raw -ErrorAction Stop; $b64 = $pem -replace '-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\\r?\\n',''; $bytes = [System.Convert]::FromBase64String($b64); $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,$bytes); $store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root', 'LocalMachine'); $store.Open('ReadWrite'); $store.Add($cert); $store.Close()"
 if %errorLevel% equ 0 (
   echo.
-  echo Certificado instalado correctamente. Puedes cerrar el aviso del navegador
-  echo al acceder por HTTPS y las notificaciones funcionarán.
+  echo Listo. El navegador ya no mostrará avisos de seguridad para este servidor
+  echo y las notificaciones funcionarán.
 ) else (
   echo.
-  echo Error al instalar. Comprueba que ejecutaste como administrador.
+  echo Error al instalar. Comprueba que ejecutaste como administrador
+  echo y que cert.pem es un certificado válido.
 )
 echo.
 pause
@@ -121,7 +122,6 @@ function Configuracion() {
   const [error, setError] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [mensaje, setMensaje] = useState(null)
-  const [copyMensaje, setCopyMensaje] = useState(null)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [resetProgress, setResetProgress] = useState(0)
@@ -351,30 +351,28 @@ function Configuracion() {
       <section className="configuracion-form configuracion-dominio" aria-label="Dominio en este equipo">
         <h2 className="configuracion-subtitle">Dominio www.Approx-SAT.com (equipo cliente)</h2>
         <p className="configuracion-desc">
-          Para acceder a la aplicación usando el nombre <strong>www.Approx-SAT.com</strong> en lugar de la IP y el puerto,
-          debes configurar el archivo <strong>hosts</strong> en <strong>este equipo</strong> (el ordenador desde el que estás entrando ahora).
-          Puedes hacerlo <strong>a mano</strong> (instrucciones abajo) o <strong>con un script .bat</strong> (solo Windows) que lo hace por ti.
+          Para que <strong>este equipo</strong> (el que estás usando ahora) acceda a la aplicación por el nombre <strong>www.Approx-SAT.com</strong>, descarga el script y ejecútalo aquí como administrador (clic derecho → Ejecutar como administrador). Configurará automáticamente el archivo hosts para que el dominio apunte al servidor. Solo Windows.
         </p>
         {typeof window !== 'undefined' && (
           <div className="configuracion-dominio-script">
-            <p className="configuracion-dominio-script-desc">
-              Descarga el script y ejecútalo en este equipo (clic derecho → Ejecutar como administrador). Añadirá o actualizará la línea en el archivo hosts.
-            </p>
             <button
               type="button"
               className="btn btn-primary configuracion-dominio-download-bat"
               onClick={() => downloadHostsBat(window.location.hostname)}
             >
-              Descargar script (.bat)
+              Descargar script para configurar dominio (.bat)
             </button>
           </div>
         )}
+      </section>
+
+      <section className="configuracion-form configuracion-dominio" aria-label="Certificado HTTPS">
+        <h2 className="configuracion-subtitle">Instalar certificado HTTPS (notificaciones)</h2>
+        <p className="configuracion-desc">
+          Para que el navegador no muestre avisos de seguridad y las notificaciones funcionen en este equipo, instala el certificado del servidor. Copia <strong>cert.pem</strong> desde la carpeta <strong>backend</strong> del servidor a la misma carpeta donde guardes el script, luego ejecuta el script como administrador. Solo Windows.
+        </p>
         {typeof window !== 'undefined' && (
-          <div className="configuracion-dominio-script configuracion-dominio-cert">
-            <h3 className="configuracion-dominio-manual-title">Instalar certificado HTTPS (notificaciones)</h3>
-            <p className="configuracion-dominio-script-desc">
-              Para que el navegador no muestre avisos de seguridad y las notificaciones funcionen, instala el certificado del servidor en este equipo. Copia <strong>cert.pem</strong> desde la carpeta <strong>backend</strong> del servidor a la misma carpeta donde guardes el script, luego ejecuta el script como administrador (clic derecho → Ejecutar como administrador).
-            </p>
+          <div className="configuracion-dominio-script">
             <button
               type="button"
               className="btn btn-primary configuracion-dominio-download-bat"
@@ -384,78 +382,6 @@ function Configuracion() {
             </button>
           </div>
         )}
-        <div className="configuracion-dominio-line">
-          <h3 className="configuracion-dominio-manual-title">O hazlo a mano</h3>
-          <label htmlFor="config-hosts-line" className="configuracion-dominio-label">
-            Línea a añadir o actualizar en el archivo hosts:
-          </label>
-          <input
-            id="config-hosts-line"
-            type="text"
-            readOnly
-            value={typeof window !== 'undefined' ? `${window.location.hostname}\twww.Approx-SAT.com` : ''}
-            className="configuracion-input configuracion-dominio-input"
-            aria-label="Línea para el archivo hosts"
-          />
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm configuracion-dominio-copy"
-            onClick={() => {
-              const line = typeof window !== 'undefined' ? `${window.location.hostname}\twww.Approx-SAT.com` : ''
-              if (line && navigator.clipboard?.writeText) {
-                navigator.clipboard.writeText(line)
-                setCopyMensaje('Línea copiada al portapapeles.')
-                setTimeout(() => setCopyMensaje(null), 3000)
-              }
-            }}
-          >
-            Copiar
-          </button>
-        </div>
-        <div className="configuracion-dominio-instructions">
-          <h3 className="configuracion-dominio-instructions-title">Windows</h3>
-          <ol className="configuracion-dominio-list">
-            <li>Abre el Bloc de notas como administrador (clic derecho → Ejecutar como administrador).</li>
-            <li>Archivo → Abrir y ve a <code>C:\Windows\System32\drivers\etc</code>.</li>
-            <li>En &quot;Archivos de texto&quot; elige &quot;Todos los archivos (*.*)&quot; y abre <code>hosts</code>.</li>
-            <li>Añade la línea de arriba al final del archivo (o sustituye la línea que ya tenga www.Approx-SAT.com).</li>
-            <li>Guarda el archivo.</li>
-          </ol>
-          <h3 className="configuracion-dominio-instructions-title">Linux / macOS</h3>
-          <ol className="configuracion-dominio-list">
-            <li>Abre una terminal y edita el archivo hosts: <code>sudo nano /etc/hosts</code> (o <code>sudo vi /etc/hosts</code>).</li>
-            <li>Añade la línea de arriba al final del archivo (o sustituye la línea que ya tenga www.Approx-SAT.com).</li>
-            <li>Guarda y cierra el editor (en nano: Ctrl+O, Enter, Ctrl+X).</li>
-          </ol>
-        </div>
-        <p className="configuracion-dominio-after">
-          Después podrás acceder a la aplicación en{' '}
-          <strong>
-            http://www.Approx-SAT.com{typeof window !== 'undefined' && window.location.port ? `:${window.location.port}` : ''}
-          </strong>
-          {typeof window !== 'undefined' && window.location.port ? ` (mismo puerto que ahora: ${window.location.port}).` : '.'}
-        </p>
-        <div className="configuracion-dominio-troubleshoot">
-          <h3 className="configuracion-dominio-troubleshoot-title">Si no puedes acceder por el dominio</h3>
-          <ul className="configuracion-dominio-troubleshoot-list">
-            <li>
-              <strong>Servidor:</strong> El servidor donde corre la aplicación debe arrancarse con <code>--host 0.0.0.0</code> para aceptar conexiones por red (no solo localhost). Ejemplo: <code>uvicorn main:app --host 0.0.0.0 --port 8000</code>.
-            </li>
-            <li>
-              <strong>CORS:</strong> En el <code>.env</code> del servidor, en <code>CORS_ORIGINS</code> incluye la URL del dominio (p. ej. <code>http://www.Approx-SAT.com:8000</code>) o usa <code>CORS_ORIGINS=*</code> para permitir cualquier origen.
-            </li>
-            <li>
-              <strong>Frontend:</strong> La aplicación debe estar compilada sin definir <code>VITE_API_URL</code> (o con la misma URL que usas en el navegador) para que las peticiones vayan al mismo sitio. Si compilaste con una IP fija, vuelve a compilar sin <code>VITE_API_URL</code>.
-            </li>
-            <li>
-              <strong>Inicio de sesión:</strong> Al cambiar de IP a dominio (o al revés) el navegador trata la sesión como distinta; tendrás que iniciar sesión de nuevo.
-            </li>
-            <li>
-              <strong>Notificaciones del navegador:</strong> Para que las notificaciones funcionen en todos los equipos (no solo en el servidor), la aplicación debe servirse por <strong>HTTPS</strong>. En cada equipo cliente puedes descargar desde aquí el script para instalar el certificado (.bat) y así evitar avisos de seguridad. Más detalles en <code>DEPLOY.md</code> (sección &quot;HTTPS para notificaciones&quot;).
-            </li>
-          </ul>
-        </div>
-        {copyMensaje && <p className="configuracion-ok configuracion-dominio-copy-ok">{copyMensaje}</p>}
       </section>
 
       <section className="configuracion-form configuracion-reset" aria-label="Recargar lista RMA">
