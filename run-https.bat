@@ -28,13 +28,13 @@ if not exist "venv\Scripts\activate.bat" (
 )
 call venv\Scripts\activate.bat
 
-echo Iniciando servidor con HTTPS (puerto 8443)...
+echo Iniciando servidor con HTTPS ^(puerto 443, por defecto^)...
+echo   IMPORTANTE: Ejecuta este script como administrador para usar el puerto 443.
 echo.
-echo   Abre en el navegador: https://localhost:8443
-echo   Desde la red: https://www.Approx-SAT.com:8443 o https://[IP]:8443
-echo   La primera vez acepta el aviso del certificado autofirmado.
+echo   Abre en el navegador: https://localhost
+echo   Desde la red: https://www.Approx-SAT.com o https://[IP]
 echo   Para detener: Ctrl+C
 echo.
-uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile=key.pem --ssl-certfile=cert.pem
+uvicorn main:app --host 0.0.0.0 --port 443 --ssl-keyfile=key.pem --ssl-certfile=cert.pem
 
 pause

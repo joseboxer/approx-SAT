@@ -400,7 +400,7 @@ function Configuracion() {
           </p>
         )}
         <p className="configuracion-dominio-script-desc configuracion-dominio-troubleshoot">
-          Si no puedes acceder con el dominio: 1) Ejecuta el script como administrador, 2) Usa la URL <strong>https://www.Approx-SAT.com:8443</strong> (con puerto 8443 si usas HTTPS), 3) Comprueba que el firewall del servidor permite el puerto 8443.
+          Si no puedes acceder con el dominio: 1) Ejecuta el script como administrador, 2) Usa la URL <strong>https://www.Approx-SAT.com</strong> (puerto 443 por defecto; el servidor debe arrancarse como administrador), 3) Comprueba que el firewall del servidor permite el puerto 443.
         </p>
         {typeof window !== 'undefined' && (
           <div className="configuracion-dominio-script">
@@ -421,7 +421,7 @@ function Configuracion() {
           Para que el navegador muestre el candado como seguro y las notificaciones funcionen, descarga aquí el certificado y el script. Guarda ambos en la misma carpeta y ejecuta el script como administrador (clic derecho → Ejecutar como administrador). Solo Windows.
         </p>
         <p className="configuracion-dominio-script-desc configuracion-dominio-troubleshoot">
-          Si tras instalar el certificado sigue saliendo &quot;No seguro&quot;, el certificado del servidor debe haberse generado con SAN (en el servidor ejecuta <strong>generate-cert.bat</strong> en la carpeta backend, reinicia el servidor y vuelve a descargar e instalar cert.pem aquí).
+          Si tras instalar el certificado sigue saliendo &quot;No seguro&quot;, el certificado del servidor debe haberse generado con SAN (en el servidor ejecuta <strong>generate-cert.bat</strong> en la carpeta backend, reinicia el servidor y vuelve a descargar e instalar cert.pem aquí). Si usas puerto 443, arranca el servidor como administrador.
         </p>
         {typeof window !== 'undefined' && (
           <div className="configuracion-dominio-script">

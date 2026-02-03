@@ -126,21 +126,23 @@ Las **notificaciones del navegador** (aviso cuando otro usuario te envía una no
 
 2. **Arrancar el servidor con HTTPS**:
 
+   Ejecuta **como administrador** (clic derecho → Ejecutar como administrador) el script `update-and-run.bat` o `run-https.bat` desde la raíz del proyecto. Así el servidor usará el puerto **443** (HTTPS por defecto) y no tendrás que escribir el puerto en la URL.
+
+   Si prefieres no usar administrador, puedes arrancar manualmente en otro puerto (por ejemplo 8443):
    ```cmd
    cd backend
    venv\Scripts\activate
    uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile=key.pem --ssl-certfile=cert.pem
    ```
-
-   Usa el puerto **8443** (HTTPS típico para desarrollo) o **443** (requiere ejecutar como administrador en Windows).
+   Entonces la URL sería `https://www.Approx-SAT.com:8443`.
 
 3. **Acceder desde la red**:
-   - En el servidor: `https://localhost:8443`
-   - Desde otros PCs: `https://www.Approx-SAT.com:8443` o `https://192.168.1.x:8443`
+   - Con puerto 443 (servidor arrancado como admin): `https://www.Approx-SAT.com` o `https://localhost`
+   - Con puerto 8443: `https://www.Approx-SAT.com:8443`
 
-   La primera vez cada navegador mostrará un aviso de “conexión no segura” (certificado autofirmado). Pulsa “Avanzado” → “Continuar de todos modos” (o equivalente) para que las notificaciones funcionen. Si quieres quitar el aviso y que salga el candado verde, instala el certificado como de confianza (ver apartado siguiente).
+   La primera vez cada navegador puede mostrar un aviso de “conexión no segura” (certificado autofirmado). Para que salga el candado verde, instala el certificado como de confianza (ver apartado siguiente).
 
-4. **Firewall**: Si usas el puerto 8443, abre ese puerto en el Firewall de Windows (igual que el 8000).
+4. **Firewall**: Abre el puerto **443** (o el 8443 si usas ese) en el Firewall de Windows (igual que el 8000 para HTTP).
 
 #### Quitar el aviso "No seguro" instalando el certificado como de confianza
 
@@ -152,7 +154,7 @@ Para que cada equipo confíe en tu certificado autofirmado y muestre el candado 
 
 1. Copia el archivo **`backend\cert.pem`** del servidor a ese PC (o descárgalo desde Configuración en la app).
 2. Ejecuta **`install-cert.bat`** con ese `cert.pem` en la misma carpeta, **como administrador** (clic derecho → Ejecutar como administrador). O instala manualmente: doble clic en el certificado → Instalar certificado → Equipo local → "Entidades de certificación raíz de confianza".
-3. Cierra el navegador por completo y vuelve a abrir la página (`https://www.Approx-SAT.com:8443` o `https://www.approx-sat.com:8443`). Debería aparecer el candado como seguro.
+3. Cierra el navegador por completo y vuelve a abrir la página (`https://www.Approx-SAT.com` o `https://www.approx-sat.com`). Debería aparecer el candado como seguro.
 
 Solo hace falta hacerlo **una vez por equipo**. Si generas un certificado nuevo, instala de nuevo el nuevo `cert.pem` en cada cliente.
 
