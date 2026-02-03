@@ -141,17 +141,29 @@ _DEFAULT_EXCEL_SYNC_PATH = os.environ.get("EXCEL_SYNC_PATH", str(_BASE_DIR / "pr
 _DEFAULT_PRODUCTOS_CATALOG_PATH = os.environ.get("PRODUCTOS_CATALOG_PATH", "").strip()
 
 
+def _normalize_unc_path(raw: str) -> str:
+    """
+    Normaliza ruta UNC en Windows: \\server\\share debe tener dos barras al inicio.
+    Si el usuario escribe \\server\\share o \server\share, dejamos formato correcto para Path.
+    En Windows, Path('\\\\server\\share') es la forma correcta para rutas de red.
+    """
+    if not raw or not raw.strip():
+        return raw.strip() if raw is not None else ""
+    s = raw.strip()
+    if len(s) > 1 and s[0] == "\\" and s[1] != "\\":
+        s = "\\" + s
+    return s
+
+
 def _get_excel_sync_path(conn) -> str:
-    # .strip() solo quita espacios al inicio/final; los espacios en la ruta (ej. "DEPT. TEC\archivo nombre.xlsx") se conservan
-    return (get_setting(conn, "EXCEL_SYNC_PATH") or _DEFAULT_EXCEL_SYNC_PATH).strip()
+    # .strip() solo quita espacios al inicio/final; espacios en la ruta (ej. "DEPT. TEC\\archivo nombre.xlsx") se conservan
+    raw = (get_setting(conn, "EXCEL_SYNC_PATH") or _DEFAULT_EXCEL_SYNC_PATH).strip()
+    return _normalize_unc_path(raw)
 
 
 def _get_productos_catalog_path(conn) -> str:
     raw = (get_setting(conn, "PRODUCTOS_CATALOG_PATH") or _DEFAULT_PRODUCTOS_CATALOG_PATH).strip()
-    # Normalizar ruta UNC en Windows: \server\share -> \\server\share
-    if raw and len(raw) > 1 and raw[0] == "\\" and raw[1] != "\\":
-        raw = "\\" + raw
-    return raw
+    return _normalize_unc_path(raw)
 
 # Ruta raíz: solo si NO servimos el frontend compilado (para no tapar la SPA)
 _frontend_dist = Path(__file__).resolve().parent / ".." / "frontend" / "dist"
@@ -622,7 +634,8 @@ def validar_rutas(
     def check_excel(p: str) -> dict:
         if not (p or "").strip():
             return {"path": p or "", "exists": False, "readable": False, "message": "Ruta vacía"}
-        path = Path(p.strip())
+        p = _normalize_unc_path(p)
+        path = Path(p)
         if not path.exists():
             return {"path": str(path), "exists": False, "readable": False, "message": "No existe el archivo o la ruta"}
         if not path.is_file():
@@ -639,7 +652,8 @@ def validar_rutas(
     def check_catalog(p: str) -> dict:
         if not (p or "").strip():
             return {"path": p or "", "exists": False, "readable": False, "message": "Ruta vacía"}
-        path = Path(p.strip())
+        p = _normalize_unc_path(p)
+        path = Path(p)
         if not path.exists():
             return {"path": str(path), "exists": False, "readable": False, "message": "No existe la carpeta"}
         if not path.is_dir():
@@ -882,11 +896,18 @@ def servir_archivo_catalogo(path: str = ""):
     base = Path(catalog_path)
     if not base.exists() or not base.is_dir():
         raise HTTPException(status_code=404, detail="Catálogo no disponible. Configura la ruta en Configuración.")
-    full = base / path.replace("/", os.sep)
+    # path ya está validado (sin ".."); unir con base. En Windows con UNC, resolve() puede fallar.
+    path_normalized = path.replace("/", os.sep).lstrip(os.sep)
+    full = base / path_normalized
     try:
-        full.resolve().relative_to(base.resolve())
+        full_res = full.resolve()
+        base_res = base.resolve()
+        full_res.relative_to(base_res)
     except (ValueError, OSError):
-        raise HTTPException(status_code=403, detail="Acceso denegado")
+        # OSError típico en rutas UNC en Windows; ValueError si full no está bajo base.
+        # Si no podemos resolver, confiamos en que path no tiene ".." y que full está bajo base.
+        if ".." in path_normalized or path_normalized.startswith(".."):
+            raise HTTPException(status_code=403, detail="Acceso denegado")
     if not full.is_file():
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     return FileResponse(str(full), filename=full.name)

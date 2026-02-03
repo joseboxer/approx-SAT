@@ -512,7 +512,7 @@ function Configuracion() {
       <section className="configuracion-form" aria-label="Rutas">
         <h2 className="configuracion-subtitle">
           Rutas
-          <HelpTip text="Ruta de red (ej. \\\\servidor\\carpeta) o local. El Excel de RMA debe ser un archivo .xlsx; el catálogo es una carpeta con subcarpetas de productos." />
+          <HelpTip text="Ruta de red (ej. \\\\servidor\\carpeta) o local. El Excel de RMA debe ser un archivo .xlsx; el catálogo es una carpeta con subcarpetas de productos. Para QNAP: quien accede a los archivos es el servidor donde corre la app; ese equipo debe tener acceso de lectura a la unidad de red (misma red, usuario con permiso en el QNAP). Usa «Comprobar rutas» para verificar antes de guardar." />
         </h2>
         <div className="configuracion-field">
           <label htmlFor="config-productos-catalog-path">
