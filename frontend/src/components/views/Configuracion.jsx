@@ -10,13 +10,15 @@ function getAuthHeaders() {
   return {}
 }
 
-/** Genera el contenido del .bat para añadir www.Approx-SAT.com al archivo hosts (Windows). */
+/** Genera el contenido del .bat para añadir www.Approx-SAT.com al archivo hosts (Windows). CRLF al descargar. */
 function getHostsBatContent(serverHost) {
   const host = (serverHost || '').trim() || 'localhost'
   return `@echo off
 chcp 65001 >nul
 :: Script para añadir www.Approx-SAT.com al archivo hosts (Windows).
-:: Ejecutar como administrador: clic derecho en el archivo -> Ejecutar como administrador.
+:: Ejecutar como administrador: clic derecho -> Ejecutar como administrador.
+
+cd /d "%~dp0"
 
 set "HOSTS_PATH=%SystemRoot%\\System32\\drivers\\etc\\hosts"
 set "SERVER_HOST=${host}"
@@ -40,7 +42,7 @@ pause
 }
 
 function downloadHostsBat(serverHost) {
-  const content = getHostsBatContent(serverHost)
+  const content = getHostsBatContent(serverHost).replace(/\n/g, '\r\n')
   const blob = new Blob([content], { type: 'application/x-bat' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -98,7 +100,7 @@ pause
 }
 
 function downloadInstallCertBat() {
-  const content = getInstallCertBatContent()
+  const content = getInstallCertBatContent().replace(/\n/g, '\r\n')
   const blob = new Blob([content], { type: 'application/x-bat' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
