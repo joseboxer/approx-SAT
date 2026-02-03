@@ -28,7 +28,7 @@ import pandas as pd
 import numpy as np
 from pydantic import BaseModel
 
-from auth import router as auth_router, get_current_username
+from auth import router as auth_router, get_current_username, get_password_hash
 from hosts_config import get_server_ip
 from productos_catalogo import get_productos_catalogo
 from database import (
@@ -58,6 +58,7 @@ from database import (
     get_user_by_username,
     get_user_by_id,
     list_users,
+    create_user,
     get_notifications_for_user,
     count_unread_notifications,
     create_notification,
@@ -778,7 +779,32 @@ def eliminar_repuesto(repuesto_id: int, username: str = Depends(get_current_user
     return {"mensaje": "Repuesto eliminado"}
 
 
-# --- Usuarios (para dropdown notificaciones) y Notificaciones ---
+# --- Usuarios (para dropdown notificaciones y creación desde Configuración) y Notificaciones ---
+
+DEFAULT_NEW_USER_PASSWORD = "approx2026"
+
+
+class CreateUserBody(BaseModel):
+    username: str
+
+
+@app.post("/api/users")
+def crear_usuario(body: CreateUserBody, username: str = Depends(get_current_username)):
+    """Crea un usuario nuevo (solo nombre). Contraseña por defecto: approx2026. Solo para uso desde Configuración."""
+    username_clean = (body.username or "").strip()
+    if not username_clean:
+        raise HTTPException(status_code=400, detail="El nombre de usuario no puede estar vacío")
+    email_placeholder = f"{username_clean}@approx.es"
+    with get_connection() as conn:
+        if get_user_by_username(conn, username_clean):
+            raise HTTPException(status_code=400, detail="Ya existe un usuario con ese nombre")
+        create_user(
+            conn,
+            username_clean,
+            get_password_hash(DEFAULT_NEW_USER_PASSWORD),
+            email_placeholder,
+        )
+    return {"mensaje": f"Usuario '{username_clean}' creado. Contraseña por defecto: {DEFAULT_NEW_USER_PASSWORD}"}
 
 
 @app.get("/api/users")

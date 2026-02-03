@@ -180,6 +180,15 @@ def create_user(conn: sqlite3.Connection, username: str, password_hash: str, ema
     )
 
 
+def update_password_by_username(conn: sqlite3.Connection, username: str, password_hash: str) -> bool:
+    """Actualiza la contraseña del usuario. Devuelve True si se actualizó alguna fila."""
+    cur = conn.execute(
+        "UPDATE users SET password_hash = ? WHERE username = ?",
+        (password_hash, username.strip()),
+    )
+    return cur.rowcount > 0
+
+
 def list_users(conn: sqlite3.Connection) -> list[dict]:
     """Lista todos los usuarios (id, username) para dropdown de notificaciones."""
     cur = conn.execute("SELECT id, username FROM users ORDER BY username")

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useAuth } from '../../context/AuthContext'
 import { API_URL, AUTH_STORAGE_KEY } from '../../constants'
 import ProgressBar from '../ProgressBar'
 
@@ -14,6 +15,7 @@ function getAuthHeaders() {
 function getHostsBatContent(serverHost) {
   let host = (serverHost || '').trim() || '127.0.0.1'
   if (host.toLowerCase() === 'localhost') host = '127.0.0.1'
+  // Escribimos un .ps1 temporal para evitar problemas de escape batch->PowerShell. En batch %% se convierte en % al guardar.
   return `@echo off
 chcp 65001 >nul
 :: Script para añadir www.Approx-SAT.com al archivo hosts (Windows).
@@ -24,6 +26,7 @@ cd /d "%~dp0"
 set "HOSTS_PATH=%SystemRoot%\\System32\\drivers\\etc\\hosts"
 set "SERVER_HOST=${host}"
 set "DOMAIN=www.Approx-SAT.com"
+set "PS1=%TEMP%\\hosts_approx_sat.ps1"
 
 net session >nul 2>&1
 if %errorLevel% neq 0 (
@@ -32,9 +35,25 @@ if %errorLevel% neq 0 (
   exit /b
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$path = [Environment]::ExpandEnvironmentVariables('%HOSTS_PATH%'); $server = '%SERVER_HOST%'; $domain = 'www.Approx-SAT.com'; $newLine = $server + [char]9 + $domain; $content = Get-Content $path -Raw -ErrorAction Stop; $lines = $content -split '[\r\n]+'; $filtered = $lines | Where-Object { $_ -notmatch 'Approx-SAT\\.com' }; $crlf = [char]13 + [char]10; $newContent = ($filtered -join $crlf).TrimEnd() + $crlf + $newLine + $crlf; Set-Content -Path $path -Value $newContent -NoNewline -Encoding ASCII -ErrorAction Stop"
+:: Crear script PowerShell temporal (evita escape de variables en una sola linea)
+echo $path = '%HOSTS_PATH%' > "%PS1%"
+echo $server = '%SERVER_HOST%' >> "%PS1%"
+echo $domain = 'www.Approx-SAT.com' >> "%PS1%"
+echo $newLine = $server + [char]9 + $domain >> "%PS1%"
+echo try { >> "%PS1%"
+echo   $content = Get-Content -LiteralPath $path -Raw -Encoding Default >> "%PS1%"
+echo   $lines = $content -split "`r?`n" >> "%PS1%"
+echo   $filtered = $lines ^| Where-Object { $_ -notmatch 'Approx-SAT\\.com' } >> "%PS1%"
+echo   $crlf = [char]13 + [char]10 >> "%PS1%"
+echo   $newContent = ($filtered -join $crlf).TrimEnd() + $crlf + $newLine + $crlf >> "%PS1%"
+echo   Set-Content -LiteralPath $path -Value $newContent -NoNewline -Encoding Default >> "%PS1%"
+echo   exit 0 >> "%PS1%"
+echo } catch { Write-Error $_; exit 1 } >> "%PS1%"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1%"
 if %errorLevel% equ 0 (
   echo Listo: %DOMAIN% configurado para apuntar a %SERVER_HOST%.
+  del "%PS1%" 2>nul
 ) else (
   echo Error al escribir en el archivo hosts. Comprueba que ejecutaste como administrador.
 )
@@ -159,7 +178,18 @@ function Configuracion() {
   const [resetError, setResetError] = useState(null)
   const [certError, setCertError] = useState(null)
   const [serverIp, setServerIp] = useState(null)
+  const [newUsername, setNewUsername] = useState('')
+  const [createUserLoading, setCreateUserLoading] = useState(false)
+  const [createUserError, setCreateUserError] = useState(null)
+  const [createUserOk, setCreateUserOk] = useState(null)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newPasswordRepeat, setNewPasswordRepeat] = useState('')
+  const [changePasswordLoading, setChangePasswordLoading] = useState(false)
+  const [changePasswordError, setChangePasswordError] = useState(null)
+  const [changePasswordOk, setChangePasswordOk] = useState(null)
   const resetPollRef = useRef(null)
+  const { user } = useAuth()
 
   const cargar = useCallback(() => {
     setCargando(true)
@@ -202,6 +232,74 @@ function Configuracion() {
       }
       throw new Error(detail)
     })
+
+  const crearUsuario = () => {
+    const name = (newUsername || '').trim()
+    if (!name) {
+      setCreateUserError('Escribe un nombre de usuario')
+      setCreateUserOk(null)
+      return
+    }
+    setCreateUserLoading(true)
+    setCreateUserError(null)
+    setCreateUserOk(null)
+    fetch(`${API_URL}/api/users`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: name }),
+    })
+      .then((res) => {
+        if (!res.ok) return res.json().then((d) => { throw new Error(d.detail || 'Error al crear usuario') })
+        return res.json()
+      })
+      .then((data) => {
+        setCreateUserOk(data.mensaje || `Usuario '${name}' creado. Contraseña por defecto: approx2026`)
+        setNewUsername('')
+      })
+      .catch((err) => setCreateUserError(err.message))
+      .finally(() => setCreateUserLoading(false))
+  }
+
+  const cambiarContrasena = () => {
+    if (!currentPassword.trim()) {
+      setChangePasswordError('Introduce tu contraseña actual')
+      setChangePasswordOk(null)
+      return
+    }
+    if (!newPassword.trim() || newPassword.length < 4) {
+      setChangePasswordError('La nueva contraseña debe tener al menos 4 caracteres')
+      setChangePasswordOk(null)
+      return
+    }
+    if (newPassword !== newPasswordRepeat) {
+      setChangePasswordError('La nueva contraseña y la repetición no coinciden')
+      setChangePasswordOk(null)
+      return
+    }
+    setChangePasswordLoading(true)
+    setChangePasswordError(null)
+    setChangePasswordOk(null)
+    fetch(`${API_URL}/api/auth/change-password`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) return res.json().then((d) => { throw new Error(d.detail || 'Error al cambiar contraseña') })
+        return res.json()
+      })
+      .then(() => {
+        setChangePasswordOk('Contraseña actualizada. En la próxima sesión usa la nueva contraseña.')
+        setCurrentPassword('')
+        setNewPassword('')
+        setNewPasswordRepeat('')
+      })
+      .catch((err) => setChangePasswordError(err.message))
+      .finally(() => setChangePasswordLoading(false))
+  }
 
   const recargarRmaConfirm = () => {
     setResetting(true)
@@ -442,6 +540,91 @@ function Configuracion() {
             {certError && <p className="error-msg">{certError}</p>}
           </div>
         )}
+      </section>
+
+      <section className="configuracion-form" aria-label="Usuarios">
+        <h2 className="configuracion-subtitle">Crear usuario</h2>
+        <p className="configuracion-desc">
+          Crea un usuario nuevo para que pueda iniciar sesión. La contraseña por defecto será <strong>approx2026</strong> (el usuario puede cambiarla después en esta misma página).
+        </p>
+        <div className="configuracion-field">
+          <label htmlFor="config-new-username">Nombre de usuario</label>
+          <input
+            id="config-new-username"
+            type="text"
+            value={newUsername}
+            onChange={(e) => { setNewUsername(e.target.value); setCreateUserError(null); setCreateUserOk(null); }}
+            placeholder="Ej. maria"
+            className="configuracion-input"
+            autoComplete="off"
+          />
+        </div>
+        <div className="configuracion-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={crearUsuario}
+            disabled={createUserLoading}
+          >
+            {createUserLoading ? 'Creando…' : 'Crear usuario'}
+          </button>
+        </div>
+        {createUserOk && <p className="configuracion-ok">{createUserOk}</p>}
+        {createUserError && <p className="error-msg">{createUserError}</p>}
+      </section>
+
+      <section className="configuracion-form" aria-label="Cambiar mi contraseña">
+        <h2 className="configuracion-subtitle">Cambiar mi contraseña</h2>
+        <p className="configuracion-desc">
+          Cambia la contraseña del usuario con el que has iniciado sesión (<strong>{user?.username ?? '—'}</strong>).
+        </p>
+        <div className="configuracion-field">
+          <label htmlFor="config-current-password">Contraseña actual</label>
+          <input
+            id="config-current-password"
+            type="password"
+            value={currentPassword}
+            onChange={(e) => { setCurrentPassword(e.target.value); setChangePasswordError(null); setChangePasswordOk(null); }}
+            className="configuracion-input"
+            autoComplete="current-password"
+          />
+        </div>
+        <div className="configuracion-field">
+          <label htmlFor="config-new-password">Nueva contraseña</label>
+          <input
+            id="config-new-password"
+            type="password"
+            value={newPassword}
+            onChange={(e) => { setNewPassword(e.target.value); setChangePasswordError(null); setChangePasswordOk(null); }}
+            className="configuracion-input"
+            autoComplete="new-password"
+            minLength={4}
+          />
+        </div>
+        <div className="configuracion-field">
+          <label htmlFor="config-new-password-repeat">Repetir nueva contraseña</label>
+          <input
+            id="config-new-password-repeat"
+            type="password"
+            value={newPasswordRepeat}
+            onChange={(e) => { setNewPasswordRepeat(e.target.value); setChangePasswordError(null); setChangePasswordOk(null); }}
+            className="configuracion-input"
+            autoComplete="new-password"
+            minLength={4}
+          />
+        </div>
+        <div className="configuracion-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={cambiarContrasena}
+            disabled={changePasswordLoading}
+          >
+            {changePasswordLoading ? 'Cambiando…' : 'Cambiar contraseña'}
+          </button>
+        </div>
+        {changePasswordOk && <p className="configuracion-ok">{changePasswordOk}</p>}
+        {changePasswordError && <p className="error-msg">{changePasswordError}</p>}
       </section>
 
       <section className="configuracion-form configuracion-reset" aria-label="Recargar lista RMA">

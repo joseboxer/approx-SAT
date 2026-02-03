@@ -18,6 +18,7 @@ from database import (
     get_user_by_username,
     get_user_by_email,
     create_user,
+    update_password_by_username,
     save_verification_code,
     get_verification_code,
     delete_verification_code,
@@ -36,6 +37,11 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 días
 
 def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def get_password_hash(password: str) -> str:
+    """Hash de contraseña para uso desde otras rutas (p. ej. crear usuario desde Configuración)."""
+    return _hash_password(password)
 
 
 def _verify_password(password: str, password_hash: str) -> bool:
@@ -174,3 +180,26 @@ def login(body: LoginBody):
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
     token = _create_token(user["username"])
     return {"access_token": token, "token_type": "bearer", "username": user["username"]}
+
+
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordBody,
+    username: str = Depends(get_current_username),
+):
+    """Cambia la contraseña del usuario actual. Requiere la contraseña actual."""
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user or not _verify_password(body.current_password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Contraseña actual incorrecta")
+        if not body.new_password or len(body.new_password.strip()) < 4:
+            raise HTTPException(status_code=400, detail="La nueva contraseña debe tener al menos 4 caracteres")
+        new_hash = _hash_password(body.new_password.strip())
+        if not update_password_by_username(conn, username, new_hash):
+            raise HTTPException(status_code=500, detail="Error al actualizar la contraseña")
+    return {"message": "Contraseña actualizada"}
