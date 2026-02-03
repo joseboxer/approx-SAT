@@ -29,6 +29,7 @@ import numpy as np
 from pydantic import BaseModel
 
 from auth import router as auth_router, get_current_username
+from hosts_config import get_server_ip
 from productos_catalogo import get_productos_catalogo
 from database import (
     get_connection,
@@ -64,8 +65,8 @@ from database import (
 )
 
 # CORS: en desarrollo solo localhost; en red local poner CORS_ORIGINS=* en .env
-# Por defecto se incluyen localhost y el dominio www.Approx-SAT.com (puertos 8000, 80, 443) para acceso por nombre
-_default_cors = "http://localhost:3000,http://localhost:5173,http://www.Approx-SAT.com:8000,http://www.Approx-SAT.com:80,https://www.Approx-SAT.com:443"
+# Por defecto se incluyen localhost y el dominio www.Approx-SAT.com (puertos 8000, 8443, 80, 443) para acceso por nombre
+_default_cors = "http://localhost:3000,http://localhost:5173,http://www.Approx-SAT.com:8000,http://www.Approx-SAT.com:80,https://www.Approx-SAT.com:443,https://www.Approx-SAT.com:8443"
 _cors_origins = os.getenv("CORS_ORIGINS", _default_cors).strip()
 _cors_list = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins != "*" else ["*"]
 
@@ -514,6 +515,15 @@ def actualizar_settings(
         if (body.ATRACTOR_PASSWORD or "").strip():
             set_setting(conn, "ATRACTOR_PASSWORD", (body.ATRACTOR_PASSWORD or "").strip())
     return {"mensaje": "Configuración guardada"}
+
+
+@app.get("/api/settings/server-ip")
+def obtener_ip_servidor(username: str = Depends(get_current_username)):
+    """Devuelve la IP del servidor (red local) para que el script de dominio configure el archivo hosts correctamente."""
+    ip = get_server_ip()
+    if not ip:
+        raise HTTPException(status_code=503, detail="No se pudo obtener la IP del servidor.")
+    return {"ip": ip}
 
 
 @app.get("/api/settings/certificate")

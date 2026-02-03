@@ -10,9 +10,10 @@ function getAuthHeaders() {
   return {}
 }
 
-/** Genera el contenido del .bat para añadir www.Approx-SAT.com al archivo hosts (Windows). CRLF al descargar. */
+/** Genera el contenido del .bat para añadir www.Approx-SAT.com al archivo hosts (Windows). CRLF al descargar. serverHost debe ser una IP (nunca "localhost" en el archivo hosts). */
 function getHostsBatContent(serverHost) {
-  const host = (serverHost || '').trim() || 'localhost'
+  let host = (serverHost || '').trim() || '127.0.0.1'
+  if (host.toLowerCase() === 'localhost') host = '127.0.0.1'
   return `@echo off
 chcp 65001 >nul
 :: Script para añadir www.Approx-SAT.com al archivo hosts (Windows).
@@ -157,6 +158,7 @@ function Configuracion() {
   const [resetMensaje, setResetMensaje] = useState(null)
   const [resetError, setResetError] = useState(null)
   const [certError, setCertError] = useState(null)
+  const [serverIp, setServerIp] = useState(null)
   const resetPollRef = useRef(null)
 
   const cargar = useCallback(() => {
@@ -178,6 +180,16 @@ function Configuracion() {
   useEffect(() => {
     cargar()
   }, [cargar])
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/settings/server-ip`, { headers: getAuthHeaders() })
+      .then((res) => {
+        if (!res.ok) throw new Error('No se pudo obtener la IP del servidor')
+        return res.json()
+      })
+      .then((data) => setServerIp(data.ip || null))
+      .catch(() => setServerIp(null))
+  }, [])
 
   const parseErrorResponse = (res) =>
     res.text().then((text) => {
@@ -382,12 +394,20 @@ function Configuracion() {
         <p className="configuracion-desc">
           Para que <strong>este equipo</strong> (el que estás usando ahora) acceda a la aplicación por el nombre <strong>www.Approx-SAT.com</strong>, descarga el script y ejecútalo aquí como administrador (clic derecho → Ejecutar como administrador). Configurará automáticamente el archivo hosts para que el dominio apunte al servidor. Solo Windows.
         </p>
+        {serverIp && (
+          <p className="configuracion-dominio-script-desc">
+            IP del servidor: <strong>{serverIp}</strong>. El script configurará tu equipo para que <strong>www.Approx-SAT.com</strong> apunte a esta IP.
+          </p>
+        )}
+        <p className="configuracion-dominio-script-desc configuracion-dominio-troubleshoot">
+          Si no puedes acceder con el dominio: 1) Ejecuta el script como administrador, 2) Usa la URL <strong>https://www.Approx-SAT.com:8443</strong> (con puerto 8443 si usas HTTPS), 3) Comprueba que el firewall del servidor permite el puerto 8443.
+        </p>
         {typeof window !== 'undefined' && (
           <div className="configuracion-dominio-script">
             <button
               type="button"
               className="btn btn-primary configuracion-dominio-download-bat"
-              onClick={() => downloadHostsBat(window.location.hostname)}
+              onClick={() => downloadHostsBat(serverIp || window.location.hostname)}
             >
               Descargar script para configurar dominio (.bat)
             </button>
