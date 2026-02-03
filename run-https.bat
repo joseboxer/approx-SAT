@@ -13,10 +13,10 @@ goto :run
 :no_cert
 echo No se encontraron key.pem y cert.pem en la carpeta backend.
 echo.
-echo Genera un certificado autofirmado con OpenSSL:
-echo   openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.Approx-SAT.com"
+echo Genera un certificado con SAN ^(necesario para que el navegador lo marque como seguro^):
+echo   Ejecuta en esta carpeta: generate-cert.bat
+echo   O con OpenSSL: openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -config openssl-san.cnf -extensions v3_req
 echo.
-echo Ejecuta ese comando en la carpeta backend y vuelve a ejecutar este script.
 pause
 exit /b 1
 

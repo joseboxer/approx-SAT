@@ -418,7 +418,10 @@ function Configuracion() {
       <section className="configuracion-form configuracion-dominio" aria-label="Certificado HTTPS">
         <h2 className="configuracion-subtitle">Instalar certificado HTTPS (notificaciones)</h2>
         <p className="configuracion-desc">
-          Para que el navegador no muestre avisos de seguridad y las notificaciones funcionen en este equipo, descarga aquí el certificado y el script. Guarda ambos en la misma carpeta y ejecuta el script como administrador (clic derecho → Ejecutar como administrador). Solo Windows.
+          Para que el navegador muestre el candado como seguro y las notificaciones funcionen, descarga aquí el certificado y el script. Guarda ambos en la misma carpeta y ejecuta el script como administrador (clic derecho → Ejecutar como administrador). Solo Windows.
+        </p>
+        <p className="configuracion-dominio-script-desc configuracion-dominio-troubleshoot">
+          Si tras instalar el certificado sigue saliendo &quot;No seguro&quot;, el certificado del servidor debe haberse generado con SAN (en el servidor ejecuta <strong>generate-cert.bat</strong> en la carpeta backend, reinicia el servidor y vuelve a descargar e instalar cert.pem aquí).
         </p>
         {typeof window !== 'undefined' && (
           <div className="configuracion-dominio-script">

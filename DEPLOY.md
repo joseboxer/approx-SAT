@@ -107,16 +107,22 @@ Las **notificaciones del navegador** (aviso cuando otro usuario te envía una no
 
 ### Opción A: Uvicorn con certificado (red interna)
 
-1. **Generar un certificado autofirmado** (solo para uso interno; el navegador mostrará un aviso la primera vez y habrá que aceptar):
+1. **Generar un certificado autofirmado con SAN** (solo para uso interno):
 
-   Necesitas **OpenSSL** (viene con [Git for Windows](https://git-scm.com/download/win) o puedes instalar [Win64 OpenSSL](https://slproweb.com/products/Win32OpenSSL.html)). En CMD, desde la carpeta `backend`:
+   Los navegadores modernos (Chrome 58+) exigen **Subject Alternative Name (SAN)** en el certificado; si solo tiene CN, seguirán mostrando "No seguro" aunque instales el certificado. Necesitas **OpenSSL** (viene con [Git for Windows](https://git-scm.com/download/win) o [Win64 OpenSSL](https://slproweb.com/products/Win32OpenSSL.html)). Desde la carpeta `backend`:
 
    ```cmd
    cd backend
-   openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.Approx-SAT.com"
+   generate-cert.bat
    ```
 
-   Esto crea `key.pem` y `cert.pem` en `backend`. No subas estos archivos al repositorio (añádelos a `.gitignore` si hace falta).
+   O manualmente con OpenSSL (usa el archivo `openssl-san.cnf` del repo, que incluye SAN para www.Approx-SAT.com, localhost, etc.):
+
+   ```cmd
+   openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -config openssl-san.cnf -extensions v3_req
+   ```
+
+   Esto crea `key.pem` y `cert.pem` en `backend`. No subas estos archivos al repositorio (están en `.gitignore`).
 
 2. **Arrancar el servidor con HTTPS**:
 
@@ -138,19 +144,17 @@ Las **notificaciones del navegador** (aviso cuando otro usuario te envía una no
 
 #### Quitar el aviso "No seguro" instalando el certificado como de confianza
 
-Para que cada equipo confíe en tu certificado autofirmado y no muestre "No seguro":
+Para que cada equipo confíe en tu certificado autofirmado y muestre el candado como seguro:
+
+**Requisito:** El certificado debe haberse generado **con SAN** (script `generate-cert.bat` o `openssl-san.cnf`). Si lo generaste solo con `-subj "/CN=..."` sin SAN, los navegadores seguirán mostrando "No seguro"; en ese caso regenera el certificado con `generate-cert.bat` y vuelve a instalar `cert.pem` en cada equipo.
 
 **En cada PC que acceda a la app (incluido el servidor):**
 
-1. Copia el archivo **`backend\cert.pem`** del servidor a ese PC (por ejemplo en el Escritorio o en una carpeta compartida).
-2. Renómbralo a **`cert.cer`** (opcional; en Windows suele funcionar también como .pem).
-3. Haz doble clic en el archivo del certificado y pulsa **"Instalar certificado..."**.
-4. Elige **"Equipo local"** (necesitarás permisos de administrador) y Siguiente.
-5. Marca **"Colocar todos los certificados en el siguiente almacén"**, Examinar, **"Entidades de certificación raíz de confianza"**, Aceptar, Siguiente, Finalizar.
-6. Confirma con "Sí" en la advertencia de seguridad.
-7. Cierra el navegador por completo y vuelve a abrir la página (por ejemplo `https://www.Approx-SAT.com:8443`). Debería aparecer el candado como seguro.
+1. Copia el archivo **`backend\cert.pem`** del servidor a ese PC (o descárgalo desde Configuración en la app).
+2. Ejecuta **`install-cert.bat`** con ese `cert.pem` en la misma carpeta, **como administrador** (clic derecho → Ejecutar como administrador). O instala manualmente: doble clic en el certificado → Instalar certificado → Equipo local → "Entidades de certificación raíz de confianza".
+3. Cierra el navegador por completo y vuelve a abrir la página (`https://www.Approx-SAT.com:8443` o `https://www.approx-sat.com:8443`). Debería aparecer el candado como seguro.
 
-Solo hace falta hacerlo **una vez por equipo**. Si en el futuro generas un certificado nuevo, tendrás que instalar de nuevo el nuevo `cert.pem`.
+Solo hace falta hacerlo **una vez por equipo**. Si generas un certificado nuevo, instala de nuevo el nuevo `cert.pem` en cada cliente.
 
 ### Opción B: Reverse proxy (Caddy o nginx) con Let's Encrypt
 
