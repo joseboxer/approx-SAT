@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useGarantia } from '../context/GarantiaContext'
 import { useAuth } from '../context/AuthContext'
+import { useTour } from '../context/TourContext'
 import { VISTAS, API_URL, AUTH_STORAGE_KEY } from '../constants'
 function getAuthHeaders() {
   try {
@@ -13,6 +14,8 @@ function getAuthHeaders() {
 function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSerialDestacado, notifCountKey, refreshNotifCount }) {
   const { hiddenRmas } = useGarantia()
   const { user, logout } = useAuth()
+  const tour = useTour()
+  const startTour = tour?.startTour
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [showRmaMenu, setShowRmaMenu] = useState(false)
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false)
@@ -191,17 +194,22 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
           )}
         </div>
 
-        <div ref={hamburgerRef}>
+        <div ref={hamburgerRef} className="nav-hamburger-wrap">
         <button
           type="button"
           className="nav-hamburger-btn"
           onClick={() => setShowHamburgerMenu((s) => !s)}
           aria-expanded={showHamburgerMenu}
-          aria-label="Menú"
+          aria-label={unreadCount > 0 ? `Menú (${unreadCount} notificaciones sin leer)` : 'Menú'}
         >
           <span className="nav-hamburger-bar" />
           <span className="nav-hamburger-bar" />
           <span className="nav-hamburger-bar" />
+          {unreadCount > 0 && (
+            <span className="nav-hamburger-btn-badge" aria-hidden>
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
         </button>
         {showHamburgerMenu && (
           <div className="nav-hamburger-menu" role="menu">
@@ -233,6 +241,17 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
               onClick={() => go(VISTAS.INFORMES)}
             >
               Informes
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="nav-hamburger-item nav-hamburger-tour"
+              onClick={() => {
+                setShowHamburgerMenu(false)
+                startTour?.()
+              }}
+            >
+              Recorrido de aprendizaje
             </button>
             {user && (
               <button

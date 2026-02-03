@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { GarantiaProvider } from './context/GarantiaContext'
 import { CatalogRefreshProvider } from './context/CatalogRefreshContext'
+import { TourProvider } from './context/TourContext'
 import Layout from './components/Layout'
 import LoginRegister from './components/LoginRegister'
 import Inicio from './components/views/Inicio'
@@ -15,8 +16,18 @@ import Informes from './components/views/Informes'
 import Configuracion from './components/views/Configuracion'
 import Notificaciones from './components/views/Notificaciones'
 import ModalEditarRma from './components/ModalEditarRma'
-import { VISTAS } from './constants'
+import NotificationPermissionModal, { shouldShowNotificationPermissionPrompt } from './components/NotificationPermissionModal'
+import TourRecorrido from './components/TourRecorrido'
+import { VISTAS, API_URL, AUTH_STORAGE_KEY } from './constants'
 import './App.css'
+
+function getAuthHeaders() {
+  try {
+    const token = localStorage.getItem(AUTH_STORAGE_KEY)
+    if (token) return { Authorization: `Bearer ${token}` }
+  } catch {}
+  return {}
+}
 
 /**
  * App principal: Gestión de garantías.
@@ -31,6 +42,32 @@ function AppContent() {
   const [serialDestacado, setSerialDestacado] = useState(null)
   const [notifCountKey, setNotifCountKey] = useState(0)
   const refreshNotifCount = () => setNotifCountKey((k) => k + 1)
+
+  // Notificaciones del navegador: avisar cuando aumente el número de sin leer (polling)
+  const prevUnreadCountRef = useRef(null)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') return
+    const fetchCount = () => {
+      fetch(`${API_URL}/api/notifications/unread-count`, { headers: getAuthHeaders() })
+        .then((r) => (r.ok ? r.json() : { count: 0 }))
+        .then((data) => {
+          const c = data.count ?? 0
+          if (prevUnreadCountRef.current !== null && c > prevUnreadCountRef.current) {
+            try {
+              new Notification('SAT · Garantías', {
+                body: c === 1 ? 'Tienes 1 notificación nueva.' : `Tienes ${c} notificaciones nuevas.`,
+                icon: '/logo-aqprox.png',
+              })
+            } catch (_) {}
+          }
+          prevUnreadCountRef.current = c
+        })
+        .catch(() => {})
+    }
+    fetchCount()
+    const id = setInterval(fetchCount, 60000)
+    return () => clearInterval(id)
+  }, [])
 
   const renderVista = () => {
     switch (vista) {
@@ -69,6 +106,7 @@ function AppContent() {
             setSerialDestacado={setSerialDestacado}
             setVista={setVista}
             setProductoDestacado={setProductoDestacado}
+            setRmaDestacado={setRmaDestacado}
           />
         )
       case VISTAS.REPUESTOS:
@@ -109,17 +147,32 @@ function AppContent() {
     >
       {renderVista()}
       <ModalEditarRma />
+      <TourRecorrido setVista={setVista} />
     </Layout>
   )
 }
 
 function App() {
   const { user } = useAuth()
+  const [showNotificationPermissionModal, setShowNotificationPermissionModal] = useState(false)
+
+  useEffect(() => {
+    if (user && shouldShowNotificationPermissionPrompt()) {
+      setShowNotificationPermissionModal(true)
+    }
+  }, [user])
+
   if (!user) return <LoginRegister />
   return (
     <GarantiaProvider>
       <CatalogRefreshProvider>
-        <AppContent />
+        <TourProvider>
+          <AppContent />
+          <NotificationPermissionModal
+            open={showNotificationPermissionModal}
+            onCerrar={() => setShowNotificationPermissionModal(false)}
+          />
+        </TourProvider>
       </CatalogRefreshProvider>
     </GarantiaProvider>
   )

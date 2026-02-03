@@ -30,7 +30,7 @@ function parseDateInput(s) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, onNotificar) {
+function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, onNotificar, setRmaDestacado) {
   const items = Array.isArray(row.items) ? row.items : []
   const n = items.length
   const abierto = serialExpandido === row.serial
@@ -158,9 +158,27 @@ function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleG
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, j) => (
+                  {items.map((item, j) => {
+                    const rmaNum = item['NÂº DE RMA'] ?? item['Nº DE RMA']
+                    return (
                     <tr key={item.id ?? j}>
-                      <td>{item['NÂº DE RMA'] ?? item['Nº DE RMA'] ?? '-'}</td>
+                      <td>
+                        {rmaNum != null && rmaNum !== '' && setRmaDestacado && setVista ? (
+                          <button
+                            type="button"
+                            className="link-celda"
+                            onClick={() => {
+                              setRmaDestacado(String(rmaNum))
+                              setVista(VISTAS.RMA)
+                            }}
+                            title={`Ir a Lista RMA: ${rmaNum}`}
+                          >
+                            {rmaNum}
+                          </button>
+                        ) : (
+                          rmaNum ?? '-'
+                        )}
+                      </td>
                       <td>{item.PRODUCTO ?? '-'}</td>
                       <td>{item['Nº DE SERIE'] ?? '-'}</td>
                       <td>{item['RAZON SOCIAL O NOMBRE'] ?? '-'}</td>
@@ -175,7 +193,8 @@ function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleG
                       </td>
                       <td>{item.estado ?? '-'}</td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -192,6 +211,7 @@ function ProductosRMA(props) {
     setSerialDestacado,
     setVista,
     setProductoDestacado,
+    setRmaDestacado,
   } = props || {}
   const [list, setList] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -626,7 +646,7 @@ function ProductosRMA(props) {
               </tr>
             </thead>
             <tbody>
-              {enPagina.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, openNotificar))}
+              {enPagina.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, openNotificar, setRmaDestacado))}
             </tbody>
           </table>
         </div>
@@ -667,7 +687,7 @@ function ProductosRMA(props) {
                 </tr>
               </thead>
               <tbody>
-                {enPaginaSinFecha.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, openNotificar))}
+                {enPaginaSinFecha.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, openNotificar, setRmaDestacado))}
               </tbody>
             </table>
           </div>

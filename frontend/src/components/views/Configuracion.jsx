@@ -24,6 +24,7 @@ function Configuracion() {
   const [error, setError] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [mensaje, setMensaje] = useState(null)
+  const [copyMensaje, setCopyMensaje] = useState(null)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [resetProgress, setResetProgress] = useState(0)
@@ -248,6 +249,66 @@ function Configuracion() {
         </div>
 
         {mensaje && <p className="configuracion-ok">{mensaje}</p>}
+      </section>
+
+      <section className="configuracion-form configuracion-dominio" aria-label="Dominio en este equipo">
+        <h2 className="configuracion-subtitle">Dominio www.Approx-SAT.com (equipo cliente)</h2>
+        <p className="configuracion-desc">
+          Para acceder a la aplicación usando el nombre <strong>www.Approx-SAT.com</strong> en lugar de la IP y el puerto,
+          debes configurar el archivo <strong>hosts</strong> en <strong>este equipo</strong> (el ordenador desde el que estás entrando ahora).
+          Así, el navegador resolverá www.Approx-SAT.com hacia el servidor donde está la aplicación.
+        </p>
+        <div className="configuracion-dominio-line">
+          <label htmlFor="config-hosts-line" className="configuracion-dominio-label">
+            Línea a añadir o actualizar en el archivo hosts:
+          </label>
+          <input
+            id="config-hosts-line"
+            type="text"
+            readOnly
+            value={typeof window !== 'undefined' ? `${window.location.hostname}\twww.Approx-SAT.com` : ''}
+            className="configuracion-input configuracion-dominio-input"
+            aria-label="Línea para el archivo hosts"
+          />
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm configuracion-dominio-copy"
+            onClick={() => {
+              const line = typeof window !== 'undefined' ? `${window.location.hostname}\twww.Approx-SAT.com` : ''
+              if (line && navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(line)
+                setCopyMensaje('Línea copiada al portapapeles.')
+                setTimeout(() => setCopyMensaje(null), 3000)
+              }
+            }}
+          >
+            Copiar
+          </button>
+        </div>
+        <div className="configuracion-dominio-instructions">
+          <h3 className="configuracion-dominio-instructions-title">Windows</h3>
+          <ol className="configuracion-dominio-list">
+            <li>Abre el Bloc de notas como administrador (clic derecho → Ejecutar como administrador).</li>
+            <li>Archivo → Abrir y ve a <code>C:\Windows\System32\drivers\etc</code>.</li>
+            <li>En &quot;Archivos de texto&quot; elige &quot;Todos los archivos (*.*)&quot; y abre <code>hosts</code>.</li>
+            <li>Añade la línea de arriba al final del archivo (o sustituye la línea que ya tenga www.Approx-SAT.com).</li>
+            <li>Guarda el archivo.</li>
+          </ol>
+          <h3 className="configuracion-dominio-instructions-title">Linux / macOS</h3>
+          <ol className="configuracion-dominio-list">
+            <li>Abre una terminal y edita el archivo hosts: <code>sudo nano /etc/hosts</code> (o <code>sudo vi /etc/hosts</code>).</li>
+            <li>Añade la línea de arriba al final del archivo (o sustituye la línea que ya tenga www.Approx-SAT.com).</li>
+            <li>Guarda y cierra el editor (en nano: Ctrl+O, Enter, Ctrl+X).</li>
+          </ol>
+        </div>
+        <p className="configuracion-dominio-after">
+          Después podrás acceder a la aplicación en{' '}
+          <strong>
+            http://www.Approx-SAT.com{typeof window !== 'undefined' && window.location.port ? `:${window.location.port}` : ''}
+          </strong>
+          {typeof window !== 'undefined' && window.location.port ? ` (mismo puerto que ahora: ${window.location.port}).` : '.'}
+        </p>
+        {copyMensaje && <p className="configuracion-ok configuracion-dominio-copy-ok">{copyMensaje}</p>}
       </section>
 
       <section className="configuracion-form configuracion-reset" aria-label="Recargar lista RMA">
