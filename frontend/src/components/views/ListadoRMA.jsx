@@ -495,11 +495,11 @@ function ListadoRMA({
                         ? new Date(fechaRecogida).toLocaleDateString('es-ES')
                         : '-'}
                     </td>
-                    <td>
+                    <td title={(p.AVERIA ?? '').toString().trim() || undefined}>
                       {(p.AVERIA ?? '').toString().slice(0, 50)}
                       {p.AVERIA?.length > 50 ? '…' : ''}
                     </td>
-                    <td>
+                    <td title={(p.OBSERVACIONES ?? '').toString().trim() || undefined}>
                       {(p.OBSERVACIONES ?? '').toString().slice(0, 50)}
                       {p.OBSERVACIONES?.length > 50 ? '…' : ''}
                     </td>
@@ -605,13 +605,13 @@ function ListadoRMA({
                                         ).toLocaleDateString('es-ES')
                                       : '-'}
                                   </td>
-                                  <td>
+                                  <td title={(item.AVERIA ?? '').toString().trim() || undefined}>
                                     {(item.AVERIA ?? '')
                                       .toString()
                                       .slice(0, 50)}
                                     {item.AVERIA?.length > 50 ? '…' : ''}
                                   </td>
-                                  <td>
+                                  <td title={(item.OBSERVACIONES ?? '').toString().trim() || undefined}>
                                     {(item.OBSERVACIONES ?? '')
                                       .toString()
                                       .slice(0, 50)}

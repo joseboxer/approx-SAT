@@ -193,10 +193,21 @@ function Repuestos() {
               </tr>
             </thead>
             <tbody>
-              {list.map((r) => (
+              {list.map((r) => {
+                const desc = r.descripcion || ''
+                const descShort = desc.slice(0, 80) + (desc.length > 80 ? '…' : '')
+                const productosStr = Array.isArray(r.productos) && r.productos.length > 0
+                  ? r.productos.map((ref) => ref.replace(/\|/g, ' — ')).join(', ')
+                  : '—'
+                const productosShort = productosStr.length > 60 ? productosStr.slice(0, 60) + '…' : productosStr
+                return (
                 <tr key={r.id}>
-                  <td>{r.nombre}</td>
-                  <td>{(r.descripcion || '').slice(0, 80)}{(r.descripcion || '').length > 80 ? '…' : ''}</td>
+                  <td title={r.nombre && r.nombre.length > 40 ? r.nombre : undefined}>
+                    {r.nombre}
+                  </td>
+                  <td title={desc.length > 80 ? desc : undefined}>
+                    {descShort}
+                  </td>
                   <td className="repuestos-cantidad">
                     {editandoCantidad === r.id ? (
                       <input
@@ -225,10 +236,8 @@ function Repuestos() {
                       </button>
                     )}
                   </td>
-                  <td>
-                    {Array.isArray(r.productos) && r.productos.length > 0
-                      ? r.productos.map((ref) => ref.replace(/\|/g, ' — ')).join(', ')
-                      : '—'}
+                  <td title={productosStr !== '—' && productosStr.length > 60 ? productosStr : undefined}>
+                    {productosShort}
                   </td>
                   <td>
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => abrirEditar(r)}>
@@ -240,7 +249,8 @@ function Repuestos() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -254,7 +264,7 @@ function Repuestos() {
           aria-modal="true"
           aria-labelledby="repuesto-modal-title"
         >
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-repuesto" onClick={(e) => e.stopPropagation()}>
             <h2 id="repuesto-modal-title" className="modal-titulo">
               {modal === 'crear' ? 'Nuevo repuesto' : 'Editar repuesto'}
             </h2>

@@ -183,11 +183,11 @@ function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleG
                       <td>{item['Nº DE SERIE'] ?? '-'}</td>
                       <td>{item['RAZON SOCIAL O NOMBRE'] ?? '-'}</td>
                       <td>{item['FECHA RECIBIDO'] ? formatDate(item['FECHA RECIBIDO']) : '-'}</td>
-                      <td>
+                      <td title={(item.AVERIA ?? '').toString().trim() || undefined}>
                         {(item.AVERIA ?? '').toString().slice(0, 50)}
                         {item.AVERIA?.length > 50 ? '…' : ''}
                       </td>
-                      <td>
+                      <td title={(item.OBSERVACIONES ?? '').toString().trim() || undefined}>
                         {(item.OBSERVACIONES ?? '').toString().slice(0, 50)}
                         {item.OBSERVACIONES?.length > 50 ? '…' : ''}
                       </td>

@@ -10,6 +10,46 @@ function getAuthHeaders() {
   return {}
 }
 
+/** Genera el contenido del .bat para añadir www.Approx-SAT.com al archivo hosts (Windows). */
+function getHostsBatContent(serverHost) {
+  const host = (serverHost || '').trim() || 'localhost'
+  return `@echo off
+chcp 65001 >nul
+:: Script para añadir www.Approx-SAT.com al archivo hosts (Windows).
+:: Ejecutar como administrador: clic derecho en el archivo -> Ejecutar como administrador.
+
+set "HOSTS_PATH=%SystemRoot%\\System32\\drivers\\etc\\hosts"
+set "SERVER_HOST=${host}"
+set "DOMAIN=www.Approx-SAT.com"
+
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+  echo Solicitando permisos de administrador...
+  powershell -Command "Start-Process '%~f0' -Verb RunAs"
+  exit /b
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$path = [Environment]::ExpandEnvironmentVariables('%HOSTS_PATH%'); $server = '%SERVER_HOST%'; $domain = 'www.Approx-SAT.com'; $newLine = $server + [char]9 + $domain; $content = Get-Content $path -Raw -ErrorAction Stop; $lines = $content -split \"\\r?\\n\"; $filtered = $lines | Where-Object { $_ -notmatch 'Approx-SAT\\.com' }; $newContent = ($filtered -join \"\\r\\n\").TrimEnd() + \"\\r\\n\" + $newLine + \"\\r\\n\"; Set-Content -Path $path -Value $newContent -NoNewline -Encoding ASCII -ErrorAction Stop"
+if %errorLevel% equ 0 (
+  echo Listo: %DOMAIN% configurado para apuntar a %SERVER_HOST%.
+) else (
+  echo Error al escribir en el archivo hosts. Comprueba que ejecutaste como administrador.
+)
+pause
+`
+}
+
+function downloadHostsBat(serverHost) {
+  const content = getHostsBatContent(serverHost)
+  const blob = new Blob([content], { type: 'application/x-bat' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'configurar-dominio-approx-sat.bat'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 /**
  * Vista Configuración: editar rutas de QNAP (catálogo productos) y Excel (sincronización RMA)
  * sin tocar archivos .env.
@@ -256,9 +296,24 @@ function Configuracion() {
         <p className="configuracion-desc">
           Para acceder a la aplicación usando el nombre <strong>www.Approx-SAT.com</strong> en lugar de la IP y el puerto,
           debes configurar el archivo <strong>hosts</strong> en <strong>este equipo</strong> (el ordenador desde el que estás entrando ahora).
-          Así, el navegador resolverá www.Approx-SAT.com hacia el servidor donde está la aplicación.
+          Puedes hacerlo <strong>a mano</strong> (instrucciones abajo) o <strong>con un script .bat</strong> (solo Windows) que lo hace por ti.
         </p>
+        {typeof window !== 'undefined' && (
+          <div className="configuracion-dominio-script">
+            <p className="configuracion-dominio-script-desc">
+              Descarga el script y ejecútalo en este equipo (clic derecho → Ejecutar como administrador). Añadirá o actualizará la línea en el archivo hosts.
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary configuracion-dominio-download-bat"
+              onClick={() => downloadHostsBat(window.location.hostname)}
+            >
+              Descargar script (.bat)
+            </button>
+          </div>
+        )}
         <div className="configuracion-dominio-line">
+          <h3 className="configuracion-dominio-manual-title">O hazlo a mano</h3>
           <label htmlFor="config-hosts-line" className="configuracion-dominio-label">
             Línea a añadir o actualizar en el archivo hosts:
           </label>
@@ -308,6 +363,23 @@ function Configuracion() {
           </strong>
           {typeof window !== 'undefined' && window.location.port ? ` (mismo puerto que ahora: ${window.location.port}).` : '.'}
         </p>
+        <div className="configuracion-dominio-troubleshoot">
+          <h3 className="configuracion-dominio-troubleshoot-title">Si no puedes acceder por el dominio</h3>
+          <ul className="configuracion-dominio-troubleshoot-list">
+            <li>
+              <strong>Servidor:</strong> El servidor donde corre la aplicación debe arrancarse con <code>--host 0.0.0.0</code> para aceptar conexiones por red (no solo localhost). Ejemplo: <code>uvicorn main:app --host 0.0.0.0 --port 8000</code>.
+            </li>
+            <li>
+              <strong>CORS:</strong> En el <code>.env</code> del servidor, en <code>CORS_ORIGINS</code> incluye la URL del dominio (p. ej. <code>http://www.Approx-SAT.com:8000</code>) o usa <code>CORS_ORIGINS=*</code> para permitir cualquier origen.
+            </li>
+            <li>
+              <strong>Frontend:</strong> La aplicación debe estar compilada sin definir <code>VITE_API_URL</code> (o con la misma URL que usas en el navegador) para que las peticiones vayan al mismo sitio. Si compilaste con una IP fija, vuelve a compilar sin <code>VITE_API_URL</code>.
+            </li>
+            <li>
+              <strong>Inicio de sesión:</strong> Al cambiar de IP a dominio (o al revés) el navegador trata la sesión como distinta; tendrás que iniciar sesión de nuevo.
+            </li>
+          </ul>
+        </div>
         {copyMensaje && <p className="configuracion-ok configuracion-dominio-copy-ok">{copyMensaje}</p>}
       </section>
 

@@ -64,7 +64,9 @@ from database import (
 )
 
 # CORS: en desarrollo solo localhost; en red local poner CORS_ORIGINS=* en .env
-_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").strip()
+# Por defecto se incluyen localhost y el dominio www.Approx-SAT.com (puertos 8000, 80, 443) para acceso por nombre
+_default_cors = "http://localhost:3000,http://localhost:5173,http://www.Approx-SAT.com:8000,http://www.Approx-SAT.com:80,https://www.Approx-SAT.com:443"
+_cors_origins = os.getenv("CORS_ORIGINS", _default_cors).strip()
 _cors_list = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins != "*" else ["*"]
 
 app = FastAPI(title="API Garantías")

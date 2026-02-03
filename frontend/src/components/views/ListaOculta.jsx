@@ -135,11 +135,11 @@ function ListaOculta() {
                         )
                       : '-'}
                   </td>
-                  <td>
+                  <td title={(p.AVERIA ?? '').toString().trim() || undefined}>
                     {(p.AVERIA ?? '').toString().slice(0, 50)}
                     {p.AVERIA?.length > 50 ? '…' : ''}
                   </td>
-                  <td>
+                  <td title={(p.OBSERVACIONES ?? '').toString().trim() || undefined}>
                     {(p.OBSERVACIONES ?? '').toString().slice(0, 50)}
                     {p.OBSERVACIONES?.length > 50 ? '…' : ''}
                   </td>
