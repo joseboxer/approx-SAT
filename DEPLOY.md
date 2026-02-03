@@ -132,9 +132,25 @@ Las **notificaciones del navegador** (aviso cuando otro usuario te envía una no
    - En el servidor: `https://localhost:8443`
    - Desde otros PCs: `https://www.Approx-SAT.com:8443` o `https://192.168.1.x:8443`
 
-   La primera vez cada navegador mostrará un aviso de “conexión no segura” (certificado autofirmado). Pulsa “Avanzado” → “Continuar de todos modos” (o equivalente) para que las notificaciones funcionen.
+   La primera vez cada navegador mostrará un aviso de “conexión no segura” (certificado autofirmado). Pulsa “Avanzado” → “Continuar de todos modos” (o equivalente) para que las notificaciones funcionen. Si quieres quitar el aviso y que salga el candado verde, instala el certificado como de confianza (ver apartado siguiente).
 
 4. **Firewall**: Si usas el puerto 8443, abre ese puerto en el Firewall de Windows (igual que el 8000).
+
+#### Quitar el aviso "No seguro" instalando el certificado como de confianza
+
+Para que cada equipo confíe en tu certificado autofirmado y no muestre "No seguro":
+
+**En cada PC que acceda a la app (incluido el servidor):**
+
+1. Copia el archivo **`backend\cert.pem`** del servidor a ese PC (por ejemplo en el Escritorio o en una carpeta compartida).
+2. Renómbralo a **`cert.cer`** (opcional; en Windows suele funcionar también como .pem).
+3. Haz doble clic en el archivo del certificado y pulsa **"Instalar certificado..."**.
+4. Elige **"Equipo local"** (necesitarás permisos de administrador) y Siguiente.
+5. Marca **"Colocar todos los certificados en el siguiente almacén"**, Examinar, **"Entidades de certificación raíz de confianza"**, Aceptar, Siguiente, Finalizar.
+6. Confirma con "Sí" en la advertencia de seguridad.
+7. Cierra el navegador por completo y vuelve a abrir la página (por ejemplo `https://www.Approx-SAT.com:8443`). Debería aparecer el candado como seguro.
+
+Solo hace falta hacerlo **una vez por equipo**. Si en el futuro generas un certificado nuevo, tendrás que instalar de nuevo el nuevo `cert.pem`.
 
 ### Opción B: Reverse proxy (Caddy o nginx) con Let's Encrypt
 

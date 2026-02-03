@@ -50,6 +50,63 @@ function downloadHostsBat(serverHost) {
   URL.revokeObjectURL(url)
 }
 
+/** Genera el contenido del .bat para instalar el certificado HTTPS en el equipo cliente (Windows). */
+function getInstallCertBatContent() {
+  return `@echo off
+chcp 65001 >nul
+:: Instalar certificado HTTPS (cert.pem) en el equipo cliente para confiar en el servidor Garantia SAT.
+:: Ejecutar como administrador: clic derecho en el archivo -> Ejecutar como administrador.
+:: Coloca cert.pem (copiado desde la carpeta backend del servidor) en la misma carpeta que este .bat.
+
+set "DIR=%~dp0"
+set "CERT="
+if exist "%DIR%cert.pem" set "CERT=%DIR%cert.pem"
+if not defined CERT if exist "%DIR%cert.cer" set "CERT=%DIR%cert.cer"
+
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+  echo Solicitando permisos de administrador...
+  powershell -Command "Start-Process '%~f0' -Verb RunAs"
+  exit /b
+)
+
+if not defined CERT (
+  echo No se encontró cert.pem ni cert.cer en esta carpeta.
+  echo.
+  echo Copia el archivo cert.pem desde la carpeta backend del servidor
+  echo donde corre Garantia SAT a la misma carpeta donde está este script,
+  echo y vuelve a ejecutarlo como administrador.
+  echo.
+  pause
+  exit /b 1
+)
+
+echo Instalando certificado en Autoridades de certificación raíz de confianza...
+certutil -addstore "Root" "%CERT%"
+if %errorLevel% equ 0 (
+  echo.
+  echo Certificado instalado correctamente. Puedes cerrar el aviso del navegador
+  echo al acceder por HTTPS y las notificaciones funcionarán.
+) else (
+  echo.
+  echo Error al instalar. Comprueba que ejecutaste como administrador.
+)
+echo.
+pause
+`
+}
+
+function downloadInstallCertBat() {
+  const content = getInstallCertBatContent()
+  const blob = new Blob([content], { type: 'application/x-bat' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'install-cert.bat'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 /**
  * Vista Configuración: editar rutas de QNAP (catálogo productos) y Excel (sincronización RMA)
  * sin tocar archivos .env.
@@ -312,6 +369,21 @@ function Configuracion() {
             </button>
           </div>
         )}
+        {typeof window !== 'undefined' && (
+          <div className="configuracion-dominio-script configuracion-dominio-cert">
+            <h3 className="configuracion-dominio-manual-title">Instalar certificado HTTPS (notificaciones)</h3>
+            <p className="configuracion-dominio-script-desc">
+              Para que el navegador no muestre avisos de seguridad y las notificaciones funcionen, instala el certificado del servidor en este equipo. Copia <strong>cert.pem</strong> desde la carpeta <strong>backend</strong> del servidor a la misma carpeta donde guardes el script, luego ejecuta el script como administrador (clic derecho → Ejecutar como administrador).
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary configuracion-dominio-download-bat"
+              onClick={downloadInstallCertBat}
+            >
+              Descargar script para instalar certificado (.bat)
+            </button>
+          </div>
+        )}
         <div className="configuracion-dominio-line">
           <h3 className="configuracion-dominio-manual-title">O hazlo a mano</h3>
           <label htmlFor="config-hosts-line" className="configuracion-dominio-label">
@@ -379,7 +451,7 @@ function Configuracion() {
               <strong>Inicio de sesión:</strong> Al cambiar de IP a dominio (o al revés) el navegador trata la sesión como distinta; tendrás que iniciar sesión de nuevo.
             </li>
             <li>
-              <strong>Notificaciones del navegador:</strong> Para que las notificaciones funcionen en todos los equipos (no solo en el servidor), la aplicación debe servirse por <strong>HTTPS</strong>. Consulta en el proyecto la sección &quot;HTTPS para notificaciones&quot; en <code>DEPLOY.md</code>.
+              <strong>Notificaciones del navegador:</strong> Para que las notificaciones funcionen en todos los equipos (no solo en el servidor), la aplicación debe servirse por <strong>HTTPS</strong>. En cada equipo cliente puedes descargar desde aquí el script para instalar el certificado (.bat) y así evitar avisos de seguridad. Más detalles en <code>DEPLOY.md</code> (sección &quot;HTTPS para notificaciones&quot;).
             </li>
           </ul>
         </div>

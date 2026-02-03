@@ -62,14 +62,25 @@ if errorlevel 1 (
 )
 echo.
 
-:: 4. Arrancar servidor
-echo [5/5] Iniciando servidor (puerto 8000)...
-echo.
-echo   Abre en el navegador: http://localhost:8000
-echo   Desde la red: http://[IP-de-este-PC]:8000
-echo   Para detener: Ctrl+C
-echo.
-uvicorn main:app --host 0.0.0.0 --port 8000
+:: 4. Arrancar servidor (HTTPS si hay certificados, si no HTTP)
+echo [5/5] Iniciando servidor...
+if exist "key.pem" if exist "cert.pem" (
+  echo   Modo HTTPS ^(puerto 8443^). Certificados encontrados.
+  echo.
+  echo   Abre en el navegador: https://localhost:8443
+  echo   Desde la red: https://www.Approx-SAT.com:8443 o https://[IP]:8443
+  echo   Para detener: Ctrl+C
+  echo.
+  uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile=key.pem --ssl-certfile=cert.pem
+) else (
+  echo   Modo HTTP ^(puerto 8000^). Para HTTPS, genera key.pem y cert.pem en backend.
+  echo.
+  echo   Abre en el navegador: http://localhost:8000
+  echo   Desde la red: http://[IP-de-este-PC]:8000
+  echo   Para detener: Ctrl+C
+  echo.
+  uvicorn main:app --host 0.0.0.0 --port 8000
+)
 
 cd ..
 pause
