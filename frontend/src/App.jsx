@@ -103,6 +103,7 @@ function AppContent() {
       setClienteDestacado={setClienteDestacado}
       productoDestacado={productoDestacado}
       setProductoDestacado={setProductoDestacado}
+      setSerialDestacado={setSerialDestacado}
       notifCountKey={notifCountKey}
       refreshNotifCount={refreshNotifCount}
     >

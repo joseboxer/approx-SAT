@@ -10,13 +10,15 @@ function getAuthHeaders() {
   return {}
 }
 
-function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, notifCountKey, refreshNotifCount }) {
+function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSerialDestacado, notifCountKey, refreshNotifCount }) {
   const { hiddenRmas } = useGarantia()
   const { user, logout } = useAuth()
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [showRmaMenu, setShowRmaMenu] = useState(false)
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [serialInput, setSerialInput] = useState('')
+  const serialInputRef = useRef(null)
   const rmaMenuRef = useRef(null)
   const hamburgerRef = useRef(null)
 
@@ -70,6 +72,15 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, noti
   }
   const handleLogoutCancel = () => setShowLogoutConfirm(false)
 
+  const handleSerialSubmit = (e) => {
+    if (e && e.preventDefault) e.preventDefault()
+    const serial = (serialInput || '').trim()
+    if (!serial) return
+    onSerialDestacado?.(serial)
+    setVista(VISTAS.PRODUCTOS_RMA)
+    setSerialInput('')
+  }
+
   return (
     <>
     <nav className="navbar">
@@ -99,6 +110,31 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, noti
           Clientes
         </button>
       </div>
+
+      <form
+        className="nav-serial-search"
+        onSubmit={handleSerialSubmit}
+        role="search"
+        aria-label="Buscar por número de serie"
+      >
+        <label htmlFor="nav-serial-input" className="nav-serial-label">
+          Nº serie
+        </label>
+        <input
+          ref={serialInputRef}
+          id="nav-serial-input"
+          type="text"
+          className="nav-serial-input"
+          placeholder="Escanear o buscar..."
+          value={serialInput}
+          onChange={(e) => setSerialInput(e.target.value)}
+          autoComplete="off"
+          aria-label="Número de serie (escanear código de barras o escribir)"
+        />
+        <button type="submit" className="nav-serial-btn" title="Ir a Productos RMA con este número de serie">
+          Ir
+        </button>
+      </form>
 
       <div className="nav-right">
         <div className="nav-dropdown nav-dropdown-inline-wrap" ref={rmaMenuRef}>

@@ -8,6 +8,7 @@ function Layout({
   setClienteDestacado,
   productoDestacado,
   setProductoDestacado,
+  setSerialDestacado,
   notifCountKey,
   refreshNotifCount,
   children,
@@ -19,6 +20,7 @@ function Layout({
         setVista={setVista}
         onClienteDestacado={setClienteDestacado}
         onProductoDestacado={setProductoDestacado}
+        onSerialDestacado={setSerialDestacado}
         notifCountKey={notifCountKey}
         refreshNotifCount={refreshNotifCount}
       />
