@@ -17,7 +17,7 @@ function getAuthHeaders() {
  * Vista Productos: catálogo desde carpeta de red (QNAP).
  * Muestra marca, número de serie base, tipo, fecha creación y enlaces para abrir el visual (PDF/Excel).
  */
-function Productos({ productoDestacado }) {
+function Productos({ productoDestacado, setProductoDestacado }) {
   const [catalogo, setCatalogo] = useState([])
   const [catalogError, setCatalogError] = useState(null)
   const [cached, setCached] = useState(false)
@@ -143,6 +143,14 @@ function Productos({ productoDestacado }) {
     return `${base}/api/productos-catalogo/archivo?path=${encodeURIComponent(pathRel)}`
   }
 
+  const productoNoEncontrado =
+    !cargando &&
+    !error &&
+    catalogo.length > 0 &&
+    productoDestacado &&
+    String(productoDestacado).trim() !== '' &&
+    filtrados.length === 0
+
   if (cargando && !cached) return (
     <div className="loading-wrap">
       <ProgressBar percent={null} message="Cargando catálogo..." />
@@ -153,6 +161,20 @@ function Productos({ productoDestacado }) {
   return (
     <>
       <h1 className="page-title">Productos (catálogo)</h1>
+      {productoNoEncontrado && (
+        <div className="rma-no-encontrado productos-catalogo-no-encontrado" role="alert">
+          No se encontró en el catálogo ningún producto que coincida con la referencia &quot;{productoDestacado}&quot;.
+          {setProductoDestacado && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm productos-catalogo-limpiar-ref"
+              onClick={() => setProductoDestacado(null)}
+            >
+              Quitar filtro
+            </button>
+          )}
+        </div>
+      )}
       <p className="productos-catalogo-desc">
         Productos desde la carpeta de red (caché en BD). Abre el visual (PDF o Excel) directamente desde aquí.
         {scannedAt && <span className="catalog-scanned-at"> Última actualización: {scannedAt.replace('T', ' ').slice(0, 19)}.</span>}

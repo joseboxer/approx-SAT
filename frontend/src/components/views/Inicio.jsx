@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { useGarantia } from '../../context/GarantiaContext'
-import { API_URL } from '../../constants'
+import { API_URL, VISTAS } from '../../constants'
 import { getRmaId } from '../../utils/garantia'
 import ProgressBar from '../ProgressBar'
 
-function Inicio() {
+function Inicio({ setVista, setRmaDestacado }) {
   const { productos, productosVisibles, getRmaId: getRmaIdCtx, getEstadoLabel, cargando, refetchProductos } = useGarantia()
   const [syncLoading, setSyncLoading] = useState(false)
   const [syncProgress, setSyncProgress] = useState(0)
@@ -310,7 +310,23 @@ function Inicio() {
                     ) : (
                       informes.recientes.map((row, i) => (
                         <tr key={i}>
-                          <td>{row.rma}</td>
+                          <td>
+                            {setVista && setRmaDestacado && row.rma ? (
+                              <button
+                                type="button"
+                                className="link-celda informe-link-rma"
+                                onClick={() => {
+                                  setRmaDestacado(String(row.rma).trim())
+                                  setVista(VISTAS.RMA)
+                                }}
+                                title={`Ir al RMA ${row.rma}`}
+                              >
+                                {row.rma}
+                              </button>
+                            ) : (
+                              row.rma
+                            )}
+                          </td>
                           <td title={row.producto}>{row.producto.length > 18 ? row.producto.slice(0, 18) + '…' : row.producto}</td>
                           <td title={row.cliente}>{row.cliente.length > 18 ? row.cliente.slice(0, 18) + '…' : row.cliente}</td>
                           <td>{row.fecha}</td>

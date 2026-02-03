@@ -102,6 +102,19 @@ def _init_db(conn: sqlite3.Connection):
             scanned_at TEXT NOT NULL,
             data TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS repuestos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            descripcion TEXT,
+            cantidad INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS repuestos_productos (
+            repuesto_id INTEGER NOT NULL REFERENCES repuestos(id) ON DELETE CASCADE,
+            product_ref TEXT NOT NULL,
+            PRIMARY KEY (repuesto_id, product_ref)
+        );
+        CREATE INDEX IF NOT EXISTS idx_repuestos_productos_repuesto ON repuestos_productos(repuesto_id);
     """)
     # Migración: añadir hidden_by y hidden_at si no existen (BD ya creada)
     cur = conn.execute("PRAGMA table_info(rma_items)")
@@ -685,3 +698,115 @@ def set_catalog_cache(conn: sqlite3.Connection, productos: list[dict]) -> None:
            ON CONFLICT(key) DO UPDATE SET scanned_at = excluded.scanned_at, data = excluded.data""",
         (_CATALOG_CACHE_KEY, scanned_at, data),
     )
+
+
+# --- Repuestos (vinculados a productos del catálogo, con inventario) ---
+
+
+def get_repuesto_productos(conn: sqlite3.Connection, repuesto_id: int) -> list[str]:
+    """Devuelve la lista de product_ref vinculados a un repuesto."""
+    cur = conn.execute(
+        "SELECT product_ref FROM repuestos_productos WHERE repuesto_id = ? ORDER BY product_ref",
+        (repuesto_id,),
+    )
+    return [row[0] for row in cur.fetchall()]
+
+
+def get_all_repuestos(conn: sqlite3.Connection) -> list[dict]:
+    """Lista todos los repuestos con sus productos vinculados."""
+    cur = conn.execute(
+        "SELECT id, nombre, descripcion, cantidad, created_at FROM repuestos ORDER BY nombre"
+    )
+    rows = cur.fetchall()
+    out = []
+    for row in rows:
+        productos = get_repuesto_productos(conn, row["id"])
+        out.append({
+            "id": row["id"],
+            "nombre": row["nombre"],
+            "descripcion": row["descripcion"] or "",
+            "cantidad": row["cantidad"],
+            "productos": productos,
+            "created_at": row["created_at"],
+        })
+    return out
+
+
+def get_repuesto_by_id(conn: sqlite3.Connection, repuesto_id: int) -> dict | None:
+    """Devuelve un repuesto por id o None."""
+    cur = conn.execute(
+        "SELECT id, nombre, descripcion, cantidad, created_at FROM repuestos WHERE id = ?",
+        (repuesto_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    productos = get_repuesto_productos(conn, row["id"])
+    return {
+        "id": row["id"],
+        "nombre": row["nombre"],
+        "descripcion": row["descripcion"] or "",
+        "cantidad": row["cantidad"],
+        "productos": productos,
+        "created_at": row["created_at"],
+    }
+
+
+def create_repuesto(
+    conn: sqlite3.Connection,
+    nombre: str,
+    descripcion: str = "",
+    cantidad: int = 0,
+    productos: list[str] | None = None,
+) -> int:
+    """Crea un repuesto y opcionalmente vincula productos. Devuelve el id."""
+    cur = conn.execute(
+        "INSERT INTO repuestos (nombre, descripcion, cantidad) VALUES (?, ?, ?)",
+        (nombre.strip(), (descripcion or "").strip(), max(0, int(cantidad))),
+    )
+    repuesto_id = cur.lastrowid
+    if productos:
+        for ref in productos:
+            ref_s = (ref or "").strip()
+            if ref_s:
+                conn.execute(
+                    "INSERT OR IGNORE INTO repuestos_productos (repuesto_id, product_ref) VALUES (?, ?)",
+                    (repuesto_id, ref_s),
+                )
+    return repuesto_id
+
+
+def update_repuesto(
+    conn: sqlite3.Connection,
+    repuesto_id: int,
+    nombre: str | None = None,
+    descripcion: str | None = None,
+    cantidad: int | None = None,
+    productos: list[str] | None = None,
+) -> bool:
+    """Actualiza un repuesto. productos=None no modifica los vínculos."""
+    cur = conn.execute("SELECT id FROM repuestos WHERE id = ?", (repuesto_id,))
+    if cur.fetchone() is None:
+        return False
+    if nombre is not None:
+        conn.execute("UPDATE repuestos SET nombre = ? WHERE id = ?", (nombre.strip(), repuesto_id))
+    if descripcion is not None:
+        conn.execute("UPDATE repuestos SET descripcion = ? WHERE id = ?", ((descripcion or "").strip(), repuesto_id))
+    if cantidad is not None:
+        conn.execute("UPDATE repuestos SET cantidad = ? WHERE id = ?", (max(0, int(cantidad)), repuesto_id))
+    if productos is not None:
+        conn.execute("DELETE FROM repuestos_productos WHERE repuesto_id = ?", (repuesto_id,))
+        for ref in productos:
+            ref_s = (ref or "").strip()
+            if ref_s:
+                conn.execute(
+                    "INSERT INTO repuestos_productos (repuesto_id, product_ref) VALUES (?, ?)",
+                    (repuesto_id, ref_s),
+                )
+    return True
+
+
+def delete_repuesto(conn: sqlite3.Connection, repuesto_id: int) -> bool:
+    """Elimina un repuesto. Devuelve True si existía."""
+    cur = conn.execute("DELETE FROM repuestos WHERE id = ?", (repuesto_id,))
+    return cur.rowcount > 0

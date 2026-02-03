@@ -9,6 +9,7 @@ import ListadoRMA from './components/views/ListadoRMA'
 import Clientes from './components/views/Clientes'
 import Productos from './components/views/Productos'
 import ProductosRMA from './components/views/ProductosRMA'
+import Repuestos from './components/views/Repuestos'
 import ListaOculta from './components/views/ListaOculta'
 import Informes from './components/views/Informes'
 import Configuracion from './components/views/Configuracion'
@@ -25,25 +26,50 @@ function AppContent() {
   const [vista, setVista] = useState(VISTAS.INICIO)
   const [clienteDestacado, setClienteDestacado] = useState(null)
   const [productoDestacado, setProductoDestacado] = useState(null)
+  const [rmaDestacado, setRmaDestacado] = useState(null)
+  const [serialDestacado, setSerialDestacado] = useState(null)
 
   const renderVista = () => {
     switch (vista) {
       case VISTAS.INICIO:
-        return <Inicio />
+        return (
+          <Inicio
+            setVista={setVista}
+            setRmaDestacado={setRmaDestacado}
+          />
+        )
       case VISTAS.RMA:
         return (
           <ListadoRMA
             setVista={setVista}
             setClienteDestacado={setClienteDestacado}
             setProductoDestacado={setProductoDestacado}
+            setSerialDestacado={setSerialDestacado}
+            rmaDestacado={rmaDestacado}
+            serialDestacado={serialDestacado}
+            setRmaDestacado={setRmaDestacado}
           />
         )
       case VISTAS.CLIENTES:
         return <Clientes clienteDestacado={clienteDestacado} />
       case VISTAS.PRODUCTOS:
-        return <Productos productoDestacado={productoDestacado} />
+        return (
+          <Productos
+            productoDestacado={productoDestacado}
+            setProductoDestacado={setProductoDestacado}
+          />
+        )
       case VISTAS.PRODUCTOS_RMA:
-        return <ProductosRMA />
+        return (
+          <ProductosRMA
+            serialDestacado={serialDestacado}
+            setSerialDestacado={setSerialDestacado}
+            setVista={setVista}
+            setProductoDestacado={setProductoDestacado}
+          />
+        )
+      case VISTAS.REPUESTOS:
+        return <Repuestos />
       case VISTAS.OCULTA:
         return <ListaOculta />
       case VISTAS.INFORMES:
@@ -51,7 +77,7 @@ function AppContent() {
       case VISTAS.CONFIGURACION:
         return <Configuracion />
       default:
-        return <Inicio />
+        return <Inicio setVista={setVista} setRmaDestacado={setRmaDestacado} />
     }
   }
 

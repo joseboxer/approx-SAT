@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, POR_PAGINA, COLUMNAS_PRODUCTOS_RMA } from '../../constants'
+import { API_URL, AUTH_STORAGE_KEY, POR_PAGINA, COLUMNAS_PRODUCTOS_RMA, VISTAS } from '../../constants'
 import { compararValores } from '../../utils/garantia'
 import Paginacion from '../Paginacion'
 import ProgressBar from '../ProgressBar'
@@ -29,30 +29,77 @@ function parseDateInput(s) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate) {
+function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado) {
   const items = Array.isArray(row.items) ? row.items : []
   const n = items.length
   const abierto = serialExpandido === row.serial
+  const serial = row.serial ?? ''
+  const productName = row.product_name ?? ''
   return (
     <React.Fragment key={row.serial}>
       <tr>
         <td>
           {n === 0 ? (
-            row.serial
+            serial && setSerialDestacado && setVista ? (
+              <button
+                type="button"
+                className="link-celda"
+                onClick={() => {
+                  setSerialDestacado(serial)
+                  setVista(VISTAS.RMA)
+                }}
+                title={`Ir al listado RMA: ${serial}`}
+              >
+                {serial}
+              </button>
+            ) : (
+              row.serial
+            )
           ) : (
-            <div className="celda-desplegable">
+            <div className="celda-desplegable celda-serial-rma">
+              {serial && setSerialDestacado && setVista ? (
+                <button
+                  type="button"
+                  className="link-celda productos-rma-link-serial"
+                  onClick={() => {
+                    setSerialDestacado(serial)
+                    setVista(VISTAS.RMA)
+                  }}
+                  title={`Ir al listado RMA: ${serial}`}
+                >
+                  {row.serial}
+                </button>
+              ) : (
+                <span>{row.serial}</span>
+              )}
               <button
                 type="button"
                 className="link-celda btn-desplegable"
                 onClick={() => setSerialExpandido(abierto ? null : row.serial)}
                 aria-expanded={abierto}
               >
-                {row.serial} {abierto ? '▼' : '▶'} ({n} {n === 1 ? 'línea' : 'líneas'})
+                {abierto ? '▼' : '▶'} ({n} {n === 1 ? 'línea' : 'líneas'})
               </button>
             </div>
           )}
         </td>
-        <td>{row.product_name ?? '-'}</td>
+        <td>
+          {productName && setProductoDestacado && setVista ? (
+            <button
+              type="button"
+              className="link-celda"
+              onClick={() => {
+                setProductoDestacado(productName)
+                setVista(VISTAS.PRODUCTOS)
+              }}
+              title={`Ir al catálogo: ${productName}`}
+            >
+              {productName}
+            </button>
+          ) : (
+            row.product_name ?? '-'
+          )}
+        </td>
         <td>{row.count}</td>
         <td>{formatDate(row.first_date)}</td>
         <td>{formatDate(row.last_date)}</td>
@@ -167,6 +214,16 @@ function ProductosRMA() {
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  // Aplicar serial al llegar desde Listado RMA
+  useEffect(() => {
+    if (serialDestacado && String(serialDestacado).trim()) {
+      setFiltroSerial(String(serialDestacado).trim())
+      setPagina(1)
+      setPaginaSinFecha(1)
+      setSerialDestacado?.(null)
+    }
+  }, [serialDestacado, setSerialDestacado])
 
   useEffect(() => {
     setPagina(1)
@@ -332,6 +389,13 @@ function ProductosRMA() {
     filtroCountMin ||
     filtroClientes
 
+  const mostrarSerialNoEncontrado =
+    !cargando &&
+    list.length > 0 &&
+    filtroSerial.trim() !== '' &&
+    ordenadosConFecha.length === 0 &&
+    ordenadosSinFecha.length === 0
+
   if (cargando) return (
     <div className="loading-wrap">
       <ProgressBar percent={null} message="Cargando productos RMA..." />
@@ -342,6 +406,11 @@ function ProductosRMA() {
   return (
     <>
       <h1 className="page-title">Productos RMA</h1>
+      {mostrarSerialNoEncontrado && (
+        <div className="rma-no-encontrado productos-rma-no-encontrado" role="alert">
+          No se encontró ningún producto RMA con ese número de serie.
+        </div>
+      )}
       <p className="productos-rma-desc">
         Lista por número de serie completo (clave primaria). No aparecen productos
         que formen parte de la lista oculta. Los que tienen fecha válida se muestran
@@ -572,7 +641,7 @@ function ProductosRMA() {
                 </tr>
               </thead>
               <tbody>
-                {enPaginaSinFecha.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate))}
+                {enPaginaSinFecha.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado))}
               </tbody>
             </table>
           </div>

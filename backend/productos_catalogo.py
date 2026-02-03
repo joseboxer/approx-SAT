@@ -3,7 +3,8 @@ Catálogo de productos desde carpeta de red (QNAP).
 - Se recorre la estructura recursivamente. Solo se considera "producto" un directorio que contenga al menos un Excel
   cuyo nombre incluya la palabra "visual" (insensible a mayúsculas). Si no hay ningún Excel con "visual", se ignora
   el directorio y se revisan el resto (subcarpetas).
-- En un directorio producto: se usa el Excel visual para datos técnicos (fecha en C3, serie base = última celda con texto en col D); PDF más nuevo = visual.
+- En un directorio producto: se usa el Excel visual para datos técnicos (fecha en C3, serie base = primera celda
+  combinada en columnas E–I; el valor está en la celda superior izquierda del rango combinado). PDF más nuevo = visual.
 - El Excel más nuevo del directorio con "visual" o "datasheet" en el nombre puede ser el visual Excel.
 """
 from __future__ import annotations
@@ -17,8 +18,9 @@ import pandas as pd
 # Fecha del producto: siempre celda C3 (0-based: col 2, row 2)
 EXCEL_COL_FECHA = 2   # C
 EXCEL_ROW_FECHA = 2   # fila 3
-# Número de serie base: última celda con texto en columna D (fila mayor con texto)
-EXCEL_COL_SERIE = 3   # D
+# Número de serie base: primera celda combinada en columnas E–I (openpyxl 1-based: E=5, I=9)
+EXCEL_COL_SERIE_FIRST = 5   # E (1-based)
+EXCEL_COL_SERIE_LAST = 9    # I (1-based)
 
 
 def _normalize_path(p: Path) -> Path:
@@ -39,15 +41,47 @@ def _is_text_value(val) -> bool:
     return len(s) > 0
 
 
+def _read_serial_from_merged_e_i(excel_path: Path) -> str | None:
+    """
+    Busca la primera celda combinada que abarque columnas E a I (1-based: 5–9).
+    La altura de fila puede variar; el número de serie está en la celda superior izquierda del rango combinado.
+    Devuelve el valor de esa celda si es texto no vacío, si no None.
+    """
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(excel_path, read_only=False, data_only=True)
+        ws = wb.active
+        if not ws or not ws.merged_cells:
+            wb.close()
+            return None
+        candidates = []
+        for rng in ws.merged_cells.ranges:
+            min_col, min_row, max_col, max_row = rng.bounds
+            if min_col <= EXCEL_COL_SERIE_LAST and max_col >= EXCEL_COL_SERIE_FIRST:
+                candidates.append((min_row, min_col))
+        if not candidates:
+            wb.close()
+            return None
+        candidates.sort(key=lambda x: (x[0], x[1]))
+        min_row, min_col = candidates[0]
+        val = ws.cell(row=min_row, column=min_col).value
+        wb.close()
+        if _is_text_value(val):
+            return str(val).strip()
+        return None
+    except Exception:
+        return None
+
+
 def _read_serial_and_date_from_excel(excel_path: Path) -> tuple[str | None, str | None]:
     """
-    Lee fecha desde C3 (siempre) y número de serie base como la última celda con texto
-    en la columna D (fila mayor con texto).
+    Lee fecha desde C3 (siempre) y número de serie base desde la primera celda combinada
+    en columnas E–I (valor en la celda superior izquierda del rango combinado).
     """
     try:
         df = pd.read_excel(excel_path, sheet_name=0, header=None)
         nrows, ncols = df.shape
-        if ncols <= EXCEL_COL_SERIE:
+        if ncols <= EXCEL_COL_FECHA:
             return None, None
 
         # Fecha: siempre C3 (0-based: col 2, row 2)
@@ -57,13 +91,17 @@ def _read_serial_and_date_from_excel(excel_path: Path) -> tuple[str | None, str 
             if _is_text_value(fecha_val):
                 fecha = str(fecha_val).strip()
 
-        # Serie base: última celda con texto en columna D (fila mayor)
-        serie = None
-        for r in range(nrows - 1, -1, -1):
-            val = df.iloc[r, EXCEL_COL_SERIE]
-            if _is_text_value(val):
-                serie = str(val).strip()
-                break
+        # Serie base: primera celda combinada E–I (openpyxl)
+        serie = _read_serial_from_merged_e_i(excel_path)
+        if not serie:
+            # Fallback: última celda con texto en columna D (índice 3)
+            for r in range(nrows - 1, -1, -1):
+                if ncols <= 3:
+                    break
+                val = df.iloc[r, 3]
+                if _is_text_value(val):
+                    serie = str(val).strip()
+                    break
 
         return serie, fecha
     except Exception:

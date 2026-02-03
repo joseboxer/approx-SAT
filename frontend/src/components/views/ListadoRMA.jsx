@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react'
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useGarantia } from '../../context/GarantiaContext'
-import { POR_PAGINA, OPCIONES_ESTADO, API_URL, AUTH_STORAGE_KEY } from '../../constants'
+import { POR_PAGINA, OPCIONES_ESTADO, API_URL, AUTH_STORAGE_KEY, VISTAS } from '../../constants'
 import {
   getRmaId,
   getValorOrden,
@@ -12,6 +12,8 @@ import {
 import HerramientasTabla from '../HerramientasTabla'
 import Paginacion from '../Paginacion'
 
+const COL_RMA = 'NÂº DE RMA'
+
 function getAuthHeaders() {
   try {
     const token = localStorage.getItem(AUTH_STORAGE_KEY)
@@ -20,7 +22,15 @@ function getAuthHeaders() {
   return {}
 }
 
-function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
+function ListadoRMA({
+  setVista,
+  setClienteDestacado,
+  setProductoDestacado,
+  setSerialDestacado,
+  rmaDestacado,
+  serialDestacado,
+  setRmaDestacado,
+}) {
   const {
     productosVisibles,
     cargando,
@@ -56,6 +66,25 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
   useEffect(() => {
     setPagina(1)
   }, [valorFiltro, columnaFiltro, estadoFiltro, filtroFechaRecogidaDesde, filtroFechaRecogidaHasta])
+
+  // Aplicar filtro al llegar desde Inicio (RMA concreto) o desde Productos RMA (serial concreto)
+  useEffect(() => {
+    if (rmaDestacado && String(rmaDestacado).trim()) {
+      setValorFiltro(String(rmaDestacado).trim())
+      setColumnaFiltro(COL_RMA)
+      setPagina(1)
+      setRmaDestacado?.(null)
+    }
+  }, [rmaDestacado, setRmaDestacado])
+
+  useEffect(() => {
+    if (serialDestacado && String(serialDestacado).trim()) {
+      setValorFiltro(String(serialDestacado).trim())
+      setColumnaFiltro(claveSerieReal)
+      setPagina(1)
+      setSerialDestacadoState?.(null)
+    }
+  }, [serialDestacado, claveSerieReal, setSerialDestacado])
 
   const grupos = useMemo(() => {
     const byId = {}
@@ -223,12 +252,20 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
   const selectedCount = selectedRmaIds.size
   const puedeAplicarMasivo = selectedCount > 0 && !aplicandoMasivo
 
+  const mostrarNoEncontrado =
+    valorFiltro.trim() !== '' && gruposFiltradosPorFechaRecogida.length === 0 && !cargando
+
   if (cargando) return <p className="loading">Cargando...</p>
   if (error) return <div className="error-msg">Error: {error}</div>
 
   return (
     <>
       <h1 className="page-title">Listado RMA</h1>
+      {mostrarNoEncontrado && (
+        <div className="rma-no-encontrado" role="alert">
+          No se encontró ningún RMA con ese criterio. Puede estar en la lista oculta.
+        </div>
+      )}
       {selectedCount > 0 && (
         <div className="rma-estado-masivo-bar">
           <label className="rma-estado-masivo-label">
@@ -405,7 +442,25 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
                         </div>
                       )}
                     </td>
-                    <td>{n === 1 ? getSerie(p) : '-'}</td>
+                    <td>
+                      {n === 1 && getSerie(p) !== '-' && setSerialDestacado && setVista ? (
+                        <button
+                          type="button"
+                          className="link-celda"
+                          onClick={() => {
+                            setSerialDestacado(getSerie(p))
+                            setVista(VISTAS.PRODUCTOS_RMA)
+                          }}
+                          title={`Ir a Productos RMA: ${getSerie(p)}`}
+                        >
+                          {getSerie(p)}
+                        </button>
+                      ) : n === 1 ? (
+                        getSerie(p)
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -492,7 +547,23 @@ function ListadoRMA({ setVista, setClienteDestacado, setProductoDestacado }) {
                                       '-'}
                                   </td>
                                   <td>{item.PRODUCTO ?? '-'}</td>
-                                  <td>{getSerie(item)}</td>
+                                  <td>
+                                    {getSerie(item) !== '-' && setSerialDestacado && setVista ? (
+                                      <button
+                                        type="button"
+                                        className="link-celda"
+                                        onClick={() => {
+                                          setSerialDestacado(getSerie(item))
+                                          setVista(VISTAS.PRODUCTOS_RMA)
+                                        }}
+                                        title={`Ir a Productos RMA: ${getSerie(item)}`}
+                                      >
+                                        {getSerie(item)}
+                                      </button>
+                                    ) : (
+                                      getSerie(item)
+                                    )}
+                                  </td>
                                   <td>
                                     {item['RAZON SOCIAL O NOMBRE'] ?? '-'}
                                   </td>

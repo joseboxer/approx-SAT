@@ -42,6 +42,11 @@ from database import (
     set_serial_warranty,
     unify_clients,
     remove_member_from_group,
+    get_all_repuestos,
+    get_repuesto_by_id,
+    create_repuesto,
+    update_repuesto,
+    delete_repuesto,
 )
 
 # CORS: en desarrollo solo localhost; en red local poner CORS_ORIGINS=* en .env
@@ -560,6 +565,98 @@ def servir_archivo_catalogo(path: str = ""):
     if not full.is_file():
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     return FileResponse(str(full), filename=full.name)
+
+
+# --- Repuestos (vinculados a productos, con inventario) ---
+
+
+@app.get("/api/repuestos")
+def listar_repuestos():
+    """Lista todos los repuestos con sus productos vinculados y cantidad."""
+    with get_connection() as conn:
+        return get_all_repuestos(conn)
+
+
+@app.get("/api/repuestos/{repuesto_id:int}")
+def obtener_repuesto(repuesto_id: int):
+    """Devuelve un repuesto por id."""
+    with get_connection() as conn:
+        r = get_repuesto_by_id(conn, repuesto_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Repuesto no encontrado")
+    return r
+
+
+class RepuestoBody(BaseModel):
+    nombre: str = ""
+    descripcion: str = ""
+    cantidad: int = 0
+    productos: list[str] = []
+
+
+class RepuestoPatchBody(BaseModel):
+    nombre: str | None = None
+    descripcion: str | None = None
+    cantidad: int | None = None
+    productos: list[str] | None = None
+
+
+@app.post("/api/repuestos")
+def crear_repuesto(body: RepuestoBody, username: str = Depends(get_current_username)):
+    """Crea un repuesto con nombre, descripción, cantidad y productos vinculados."""
+    nombre = (body.nombre or "").strip()
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+    with get_connection() as conn:
+        rid = create_repuesto(
+            conn,
+            nombre=nombre,
+            descripcion=(body.descripcion or "").strip(),
+            cantidad=max(0, body.cantidad),
+            productos=body.productos or [],
+        )
+    return {"id": rid, "mensaje": "Repuesto creado"}
+
+
+@app.patch("/api/repuestos/{repuesto_id:int}")
+def actualizar_repuesto(repuesto_id: int, body: RepuestoPatchBody, username: str = Depends(get_current_username)):
+    """Actualiza un repuesto (solo los campos enviados)."""
+    with get_connection() as conn:
+        ok = update_repuesto(
+            conn,
+            repuesto_id,
+            nombre=body.nombre.strip() if body.nombre is not None else None,
+            descripcion=body.descripcion.strip() if body.descripcion is not None else None,
+            cantidad=max(0, body.cantidad) if body.cantidad is not None else None,
+            productos=body.productos if body.productos is not None else None,
+        )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Repuesto no encontrado")
+    return {"mensaje": "Repuesto actualizado"}
+
+
+class CantidadBody(BaseModel):
+    cantidad: int = 0
+
+
+@app.patch("/api/repuestos/{repuesto_id:int}/cantidad")
+def actualizar_cantidad_repuesto(repuesto_id: int, body: CantidadBody, username: str = Depends(get_current_username)):
+    """Actualiza solo la cantidad en inventario de un repuesto."""
+    with get_connection() as conn:
+        ok = update_repuesto(conn, repuesto_id, cantidad=max(0, body.cantidad))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Repuesto no encontrado")
+    return {"mensaje": "Cantidad actualizada", "cantidad": max(0, body.cantidad)}
+
+
+@app.delete("/api/repuestos/{repuesto_id:int}")
+def eliminar_repuesto(repuesto_id: int, username: str = Depends(get_current_username)):
+    """Elimina un repuesto."""
+    with get_connection() as conn:
+        ok = delete_repuesto(conn, repuesto_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Repuesto no encontrado")
+    return {"mensaje": "Repuesto eliminado"}
 
 
 # Servir frontend compilado (para despliegue en un solo servidor)

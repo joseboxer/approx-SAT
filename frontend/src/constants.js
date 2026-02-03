@@ -47,6 +47,7 @@ export const VISTAS = {
   CLIENTES: 'clientes',
   PRODUCTOS: 'productos',
   PRODUCTOS_RMA: 'productos-rma',
+  REPUESTOS: 'repuestos',
   OCULTA: 'oculta',
   INFORMES: 'informes',
   CONFIGURACION: 'configuracion',

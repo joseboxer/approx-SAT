@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useGarantia } from '../context/GarantiaContext'
 import { useAuth } from '../context/AuthContext'
 import { VISTAS } from '../constants'
@@ -7,6 +7,10 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
   const { hiddenRmas } = useGarantia()
   const { user, logout } = useAuth()
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [showRmaMenu, setShowRmaMenu] = useState(false)
+  const [showHamburgerMenu, setShowHamburgerMenu] = useState(false)
+  const rmaMenuRef = useRef(null)
+  const hamburgerRef = useRef(null)
 
   const go = (v, clearCliente = true, clearProducto = true) => {
     setVista(v)
@@ -14,7 +18,30 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
     if (clearProducto) onProductoDestacado?.(null)
   }
 
-  const handleLogoutClick = () => setShowLogoutConfirm(true)
+  const rmaVistas = [
+    { key: VISTAS.RMA, label: 'Listado RMA' },
+    { key: VISTAS.CLIENTES, label: 'Clientes', clearProducto: false },
+    { key: VISTAS.PRODUCTOS, label: 'Productos', clearCliente: false },
+    { key: VISTAS.PRODUCTOS_RMA, label: 'Productos RMA' },
+    { key: VISTAS.REPUESTOS, label: 'Repuestos' },
+    { key: VISTAS.OCULTA, label: `Lista oculta${hiddenRmas.length > 0 ? ` (${hiddenRmas.length})` : ''}` },
+  ]
+
+  const isRmaVista = rmaVistas.some((r) => r.key === vista)
+
+  useEffect(() => {
+    const closeMenus = (e) => {
+      if (rmaMenuRef.current && !rmaMenuRef.current.contains(e.target)) setShowRmaMenu(false)
+      if (hamburgerRef.current && !hamburgerRef.current.contains(e.target)) setShowHamburgerMenu(false)
+    }
+    document.addEventListener('mousedown', closeMenus)
+    return () => document.removeEventListener('mousedown', closeMenus)
+  }, [])
+
+  const handleLogoutClick = () => {
+    setShowHamburgerMenu(false)
+    setShowLogoutConfirm(true)
+  }
   const handleLogoutConfirm = () => {
     setShowLogoutConfirm(false)
     logout()
@@ -32,6 +59,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
         />
         <span className="nav-brand-subtitle">SAT · Servicio de Asistencia Técnica</span>
       </div>
+
       <div className="nav-links">
         <button
           type="button"
@@ -40,59 +68,85 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
         >
           Inicio
         </button>
-        <button
-          type="button"
-          className={`nav-link ${vista === VISTAS.RMA ? 'active' : ''}`}
-          onClick={() => go(VISTAS.RMA)}
-        >
-          Listado RMA
-        </button>
-        <button
-          type="button"
-          className={`nav-link ${vista === VISTAS.CLIENTES ? 'active' : ''}`}
-          onClick={() => go(VISTAS.CLIENTES, true, false)}
-        >
-          Clientes
-        </button>
-        <button
-          type="button"
-          className={`nav-link ${vista === VISTAS.PRODUCTOS ? 'active' : ''}`}
-          onClick={() => go(VISTAS.PRODUCTOS, false, true)}
-        >
-          Productos
-        </button>
-        <button
-          type="button"
-          className={`nav-link ${vista === VISTAS.PRODUCTOS_RMA ? 'active' : ''}`}
-          onClick={() => go(VISTAS.PRODUCTOS_RMA)}
-        >
-          Productos RMA
-        </button>
-        <button
-          type="button"
-          className={`nav-link ${vista === VISTAS.OCULTA ? 'active' : ''}`}
-          onClick={() => setVista(VISTAS.OCULTA)}
-        >
-          Lista oculta {hiddenRmas.length > 0 && `(${hiddenRmas.length})`}
-        </button>
-        <button
-          type="button"
-          className={`nav-link ${vista === VISTAS.INFORMES ? 'active' : ''}`}
-          onClick={() => go(VISTAS.INFORMES)}
-        >
-          Informes
-        </button>
-        <button
-          type="button"
-          className={`nav-link ${vista === VISTAS.CONFIGURACION ? 'active' : ''}`}
-          onClick={() => go(VISTAS.CONFIGURACION)}
-        >
-          Configuración
-        </button>
-        {user && (
-          <button type="button" className="nav-link nav-logout" onClick={handleLogoutClick}>
-            Cerrar sesión
+
+        <div className="nav-dropdown" ref={rmaMenuRef}>
+          <button
+            type="button"
+            className={`nav-link nav-dropdown-trigger ${isRmaVista ? 'active' : ''}`}
+            onClick={() => setShowRmaMenu((s) => !s)}
+            aria-expanded={showRmaMenu}
+            aria-haspopup="true"
+          >
+            RMA <span className="nav-dropdown-arrow" aria-hidden>▼</span>
           </button>
+          {showRmaMenu && (
+            <div className="nav-dropdown-menu" role="menu">
+              {rmaVistas.map(({ key, label, clearCliente, clearProducto }) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="menuitem"
+                  className={`nav-dropdown-item ${vista === key ? 'active' : ''}`}
+                  onClick={() => {
+                    go(key, clearCliente !== false, clearProducto !== false)
+                    setShowRmaMenu(false)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="nav-right" ref={hamburgerRef}>
+        <button
+          type="button"
+          className="nav-hamburger-btn"
+          onClick={() => setShowHamburgerMenu((s) => !s)}
+          aria-expanded={showHamburgerMenu}
+          aria-label="Menú"
+        >
+          <span className="nav-hamburger-bar" />
+          <span className="nav-hamburger-bar" />
+          <span className="nav-hamburger-bar" />
+        </button>
+        {showHamburgerMenu && (
+          <div className="nav-hamburger-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              className={`nav-hamburger-item ${vista === VISTAS.CONFIGURACION ? 'active' : ''}`}
+              onClick={() => {
+                go(VISTAS.CONFIGURACION)
+                setShowHamburgerMenu(false)
+              }}
+            >
+              Configuración
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className={`nav-hamburger-item ${vista === VISTAS.INFORMES ? 'active' : ''}`}
+              onClick={() => {
+                go(VISTAS.INFORMES)
+                setShowHamburgerMenu(false)
+              }}
+            >
+              Informes
+            </button>
+            {user && (
+              <button
+                type="button"
+                role="menuitem"
+                className="nav-hamburger-item nav-hamburger-logout"
+                onClick={handleLogoutClick}
+              >
+                Cerrar sesión
+              </button>
+            )}
+          </div>
         )}
       </div>
     </nav>
