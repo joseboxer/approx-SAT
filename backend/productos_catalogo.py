@@ -5,8 +5,8 @@ Catálogo de productos desde carpeta de red (QNAP).
   el directorio y se revisan el resto (subcarpetas).
 - En un directorio producto: se usa el Excel visual para datos técnicos. Toda la información se busca solo en
   las primeras 40 filas y hasta la columna K. Fecha: se recopilan todos los valores que sean fechas válidas
-  y se elige la más antigua. Número de serie: se recorre la columna G desde G1 hacia abajo hasta encontrar
-  "TECHNICAL DEPARTMENT"; debajo las celdas están unidas y el número de serie está en columna E (a partir de esa fila).
+  y se elige la más antigua. Número de serie: se busca "TECHNICAL DEPARTMENT" en todo el rango (filas y columnas);
+  el serial está dos columnas a la izquierda, debajo (ej. TECHNICAL en H29 → serial en F30, F31...).
 """
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ import pandas as pd
 # Límites de búsqueda en el Excel: solo primeras 40 filas y hasta columna K
 EXCEL_MAX_ROWS = 40   # filas 0..39 (0-based)
 EXCEL_MAX_COL = 11    # columnas A..K = 0..10 (0-based), K = índice 10
-# Número de serie: buscar "TECHNICAL DEPARTMENT" en columna G; debajo las celdas están unidas y el valor está en E
-EXCEL_COL_G = 6   # columna G (0-based), donde se busca TECHNICAL DEPARTMENT
-EXCEL_COL_E = 4   # columna E (0-based), donde está el número de serie debajo (celdas combinadas)
+# Número de serie: buscar "TECHNICAL DEPARTMENT" en cualquier columna (A–K); el número de serie está
+# dos columnas a la izquierda, debajo (celdas unidas). Ej.: TECHNICAL en G29 → serial en E30,E31...; en H29 → F30,F31...
+SERIE_COL_OFFSET = 2   # columnas a la izquierda de TECHNICAL DEPARTMENT donde buscar el serial
 
 
 def _normalize_path(p: Path) -> Path:
@@ -123,32 +123,38 @@ def _find_oldest_date_in_range(df: pd.DataFrame) -> str | None:
 
 def _find_serial_below_technical_in_column_g(df: pd.DataFrame) -> str | None:
     """
-    Recorre la columna G desde la fila 1 (0-based 0) hacia abajo hasta encontrar una celda
-    que contenga "TECHNICAL DEPARTMENT". Debajo de esa fila las celdas están unidas y el número
-    de serie está en columna E (no en G). Busca en columna E a partir de la fila siguiente a la
-    de referencia el primer valor que sea texto no vacío; ese es el número de serie.
+    Busca "TECHNICAL DEPARTMENT" en todo el rango (primeras filas, columnas A–K). No tiene que estar
+    en la columna G; puede estar en cualquier columna. Una vez encontrada en (fila r, columna c),
+    el número de serie está dos columnas a la izquierda (c - 2), en las filas debajo (r+1, r+2...),
+    porque las celdas debajo están unidas. Ej.: TECHNICAL en H29 → serial en F30, F31, F32...
     """
     target = "technical department"
     rows = min(EXCEL_MAX_ROWS, len(df))
-    if len(df.shape) < 2 or df.shape[1] <= max(EXCEL_COL_G, EXCEL_COL_E):
+    cols = min(EXCEL_MAX_COL, df.shape[1]) if len(df.shape) > 1 else 0
+    if cols == 0:
         return None
     for r in range(rows):
-        try:
-            val = df.iloc[r, EXCEL_COL_G]
-            if not _is_text_value(val):
-                continue
-            if target in str(val).strip().lower():
-                # Debajo las celdas están combinadas; el valor está en columna E
-                for r2 in range(r + 1, rows):
-                    try:
-                        val2 = df.iloc[r2, EXCEL_COL_E]
-                        if _is_text_value(val2):
-                            return str(val2).strip()
-                    except (IndexError, KeyError):
+        for c in range(cols):
+            try:
+                val = df.iloc[r, c]
+                if not _is_text_value(val):
+                    continue
+                if target in str(val).strip().lower():
+                    serial_col = c - SERIE_COL_OFFSET
+                    if serial_col < 0:
                         continue
-                return None
-        except (IndexError, KeyError):
-            continue
+                    if serial_col >= df.shape[1]:
+                        continue
+                    for r2 in range(r + 1, rows):
+                        try:
+                            val2 = df.iloc[r2, serial_col]
+                            if _is_text_value(val2):
+                                return str(val2).strip()
+                        except (IndexError, KeyError):
+                            continue
+                    return None
+            except (IndexError, KeyError):
+                continue
     return None
 
 
@@ -156,7 +162,8 @@ def _read_serial_and_date_from_excel(excel_path: Path) -> tuple[str | None, str 
     """
     Lee el Excel limitado a las primeras 40 filas y columna K.
     Fecha: recopila todas las fechas válidas en ese rango y devuelve la más antigua (YYYY-MM-DD).
-    Serie base: busca "TECHNICAL DEPARTMENT" en columna G; debajo (celdas unidas) el primer texto en columna E.
+    Serie base: busca "TECHNICAL DEPARTMENT" en cualquier columna; debajo (celdas unidas) el primer texto
+    en la columna dos posiciones a la izquierda (G→E, H→F, etc.).
     """
     try:
         df = pd.read_excel(excel_path, sheet_name=0, header=None)
@@ -385,7 +392,7 @@ def get_productos_catalogo(
     Escanea la ruta base recursivamente. Solo se considera producto un directorio que contenga al menos un Excel
     cuyo nombre incluya "visual" (insensible a mayúsculas). En cada Excel visual: se buscan fecha y serie solo
     en las primeras 40 filas y hasta columna K; fecha = la más antigua entre las celdas con formato de fecha
-    válido; serie = primer texto en columna E debajo de la fila donde está "TECHNICAL DEPARTMENT" en G (celdas unidas).
+    válido; serie = primer texto en la columna (TECHNICAL - 2) debajo de la fila de "TECHNICAL DEPARTMENT".
     on_directory(path_rel, current, total) se invoca al entrar en cada directorio para progreso en tiempo real.
     """
     if not base_path or not str(base_path).strip():
