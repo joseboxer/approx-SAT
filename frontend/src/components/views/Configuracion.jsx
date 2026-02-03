@@ -76,8 +76,11 @@ if not defined CERT if exist "cert.cer" set "CERT=cert.cer"
 if not defined CERT (
   echo No se encontró cert.pem ni cert.cer en esta carpeta.
   echo.
+  echo Carpeta donde debe estar cert.pem:
+  echo   %~dp0
+  echo.
   echo Copia cert.pem desde la carpeta backend del servidor
-  echo a la misma carpeta donde está este script y vuelve a ejecutarlo.
+  echo a la ruta de arriba y vuelve a ejecutar este script.
   echo.
   pause
   exit /b 1
@@ -110,6 +113,29 @@ function downloadInstallCertBat() {
   URL.revokeObjectURL(url)
 }
 
+function downloadCertPem(onError) {
+  if (onError) onError(null)
+  fetch(`${API_URL}/api/settings/certificate`, { headers: getAuthHeaders() })
+    .then((res) => {
+      if (!res.ok) {
+        if (res.status === 404) throw new Error('El servidor no tiene certificado configurado (cert.pem).')
+        throw new Error('Error al descargar el certificado.')
+      }
+      return res.blob()
+    })
+    .then((blob) => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'cert.pem'
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+    .catch((err) => {
+      if (onError) onError(err.message)
+    })
+}
+
 /**
  * Vista Configuración: editar rutas de QNAP (catálogo productos) y Excel (sincronización RMA)
  * sin tocar archivos .env.
@@ -130,6 +156,7 @@ function Configuracion() {
   const [resetProgressMessage, setResetProgressMessage] = useState('')
   const [resetMensaje, setResetMensaje] = useState(null)
   const [resetError, setResetError] = useState(null)
+  const [certError, setCertError] = useState(null)
   const resetPollRef = useRef(null)
 
   const cargar = useCallback(() => {
@@ -371,10 +398,17 @@ function Configuracion() {
       <section className="configuracion-form configuracion-dominio" aria-label="Certificado HTTPS">
         <h2 className="configuracion-subtitle">Instalar certificado HTTPS (notificaciones)</h2>
         <p className="configuracion-desc">
-          Para que el navegador no muestre avisos de seguridad y las notificaciones funcionen en este equipo, instala el certificado del servidor. Copia <strong>cert.pem</strong> desde la carpeta <strong>backend</strong> del servidor a la misma carpeta donde guardes el script, luego ejecuta el script como administrador. Solo Windows.
+          Para que el navegador no muestre avisos de seguridad y las notificaciones funcionen en este equipo, descarga aquí el certificado y el script. Guarda ambos en la misma carpeta y ejecuta el script como administrador (clic derecho → Ejecutar como administrador). Solo Windows.
         </p>
         {typeof window !== 'undefined' && (
           <div className="configuracion-dominio-script">
+            <button
+              type="button"
+              className="btn btn-primary configuracion-dominio-download-bat"
+              onClick={() => downloadCertPem(setCertError)}
+            >
+              Descargar certificado (cert.pem)
+            </button>
             <button
               type="button"
               className="btn btn-primary configuracion-dominio-download-bat"
@@ -382,6 +416,7 @@ function Configuracion() {
             >
               Descargar script para instalar certificado (.bat)
             </button>
+            {certError && <p className="error-msg">{certError}</p>}
           </div>
         )}
       </section>

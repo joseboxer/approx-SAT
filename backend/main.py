@@ -516,6 +516,16 @@ def actualizar_settings(
     return {"mensaje": "Configuración guardada"}
 
 
+@app.get("/api/settings/certificate")
+def descargar_certificado(username: str = Depends(get_current_username)):
+    """Permite al cliente descargar cert.pem para instalar el certificado HTTPS en su equipo (solo certificado, no la clave privada)."""
+    backend_dir = Path(__file__).resolve().parent
+    cert_path = backend_dir / "cert.pem"
+    if not cert_path.is_file():
+        raise HTTPException(status_code=404, detail="No hay certificado configurado. Genera cert.pem en la carpeta backend del servidor para usar HTTPS.")
+    return FileResponse(str(cert_path), filename="cert.pem", media_type="application/x-pem-file")
+
+
 # --- Atractor: informe de ventas totalizadas ---
 
 

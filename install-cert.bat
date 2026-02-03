@@ -20,8 +20,11 @@ if not defined CERT if exist "cert.cer" set "CERT=cert.cer"
 if not defined CERT (
   echo No se encontró cert.pem ni cert.cer en esta carpeta.
   echo.
+  echo Carpeta donde debe estar cert.pem:
+  echo   %~dp0
+  echo.
   echo Copia cert.pem desde la carpeta backend del servidor
-  echo a la misma carpeta donde está este script y vuelve a ejecutarlo.
+  echo a la ruta de arriba y vuelve a ejecutar este script.
   echo.
   pause
   exit /b 1
