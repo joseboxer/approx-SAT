@@ -3,12 +3,19 @@ API Garantías: usuarios (auth), RMA/productos/clientes en base de datos.
 Carga de Excel: contrasta con la BD y solo añade registros nuevos.
 El Excel de sincronización puede ser una ruta fija (p. ej. QNAP) o subida manual.
 Tareas largas (sync, sync-reset, catalog refresh) devuelven task_id y reportan progreso vía GET /api/tasks/{task_id}.
+Integración Atractor: informe de ventas totalizadas por rango de fechas (configurable desde la app).
 """
+import base64
 import io
+import json
 import os
+import ssl
 import threading
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
+from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -465,17 +472,23 @@ def actualizar_garantia_serial(serial: str, body: GarantiaVigenteBody):
 
 @app.get("/api/settings")
 def obtener_settings(username: str = Depends(get_current_username)):
-    """Devuelve las claves de configuración editables (paths)."""
+    """Devuelve las claves de configuración editables (paths y Atractor). La contraseña de Atractor no se devuelve."""
     with get_connection() as conn:
         return {
             "PRODUCTOS_CATALOG_PATH": get_setting(conn, "PRODUCTOS_CATALOG_PATH") or "",
             "EXCEL_SYNC_PATH": get_setting(conn, "EXCEL_SYNC_PATH") or "",
+            "ATRACTOR_URL": get_setting(conn, "ATRACTOR_URL") or "",
+            "ATRACTOR_USER": get_setting(conn, "ATRACTOR_USER") or "",
+            "ATRACTOR_PASSWORD": "",  # Nunca devolver la contraseña
         }
 
 
 class SettingsBody(BaseModel):
     PRODUCTOS_CATALOG_PATH: str = ""
     EXCEL_SYNC_PATH: str = ""
+    ATRACTOR_URL: str = ""
+    ATRACTOR_USER: str = ""
+    ATRACTOR_PASSWORD: str = ""  # Si está vacío no se actualiza la guardada
 
 
 @app.patch("/api/settings")
@@ -483,11 +496,88 @@ def actualizar_settings(
     body: SettingsBody,
     username: str = Depends(get_current_username),
 ):
-    """Guarda las rutas de catálogo y Excel (sin tocar archivos)."""
+    """Guarda las rutas de catálogo, Excel y configuración de Atractor."""
     with get_connection() as conn:
         set_setting(conn, "PRODUCTOS_CATALOG_PATH", (body.PRODUCTOS_CATALOG_PATH or "").strip())
         set_setting(conn, "EXCEL_SYNC_PATH", (body.EXCEL_SYNC_PATH or "").strip())
+        set_setting(conn, "ATRACTOR_URL", (body.ATRACTOR_URL or "").strip())
+        set_setting(conn, "ATRACTOR_USER", (body.ATRACTOR_USER or "").strip())
+        if (body.ATRACTOR_PASSWORD or "").strip():
+            set_setting(conn, "ATRACTOR_PASSWORD", (body.ATRACTOR_PASSWORD or "").strip())
     return {"mensaje": "Configuración guardada"}
+
+
+# --- Atractor: informe de ventas totalizadas ---
+
+
+class AtractorInformeVentasBody(BaseModel):
+    desde: str = ""  # YYYY-MM-DD
+    hasta: str = ""  # YYYY-MM-DD
+
+
+@app.post("/api/atractor/informe-ventas")
+def atractor_informe_ventas(
+    body: AtractorInformeVentasBody,
+    username: str = Depends(get_current_username),
+):
+    """
+    Pide a Atractor un informe de ventas totalizadas para el rango de fechas dado.
+    Usa la URL, usuario y contraseña configurados en Configuración.
+    La URL configurada puede ser la base (ej. https://atractor.example.com) o el endpoint completo;
+    se añaden query params desde y hasta si la URL no los lleva.
+    """
+    with get_connection() as conn:
+        base_url = (get_setting(conn, "ATRACTOR_URL") or "").strip()
+        user = (get_setting(conn, "ATRACTOR_USER") or "").strip()
+        password = get_setting(conn, "ATRACTOR_PASSWORD") or ""
+
+    if not base_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Configura la ubicación de Atractor en Configuración (URL).",
+        )
+
+    desde = (body.desde or "").strip()[:10]
+    hasta = (body.hasta or "").strip()[:10]
+    if not desde or not hasta:
+        raise HTTPException(
+            status_code=400,
+            detail="Indica rango de fechas (desde y hasta, formato YYYY-MM-DD).",
+        )
+
+    sep = "&" if "?" in base_url else "?"
+    url = f"{base_url.rstrip('/')}{sep}{urlencode({'desde': desde, 'hasta': hasta})}"
+
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Accept", "application/json")
+    if user or password:
+        cred = base64.b64encode(f"{user}:{password}".encode()).decode()
+        req.add_header("Authorization", f"Basic {cred}")
+
+    try:
+        ctx = ssl.create_default_context()
+        if os.environ.get("ATRACTOR_SSL_VERIFY", "1").lower() in ("0", "false"):
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+            raw = resp.read().decode()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode()
+        except Exception:
+            detail = str(e)
+        raise HTTPException(status_code=502, detail=f"Atractor respondió con error: {e.code}. {detail[:500]}")
+    except urllib.error.URLError as e:
+        raise HTTPException(status_code=502, detail=f"No se pudo conectar con Atractor: {e.reason}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:500])
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        data = {"raw": raw}
+
+    return {"ok": True, "datos": data}
 
 
 # --- Catálogo de productos (carpeta QNAP: caché en BD; solo lo nuevo con refresh) ---

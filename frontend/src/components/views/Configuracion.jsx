@@ -17,6 +17,9 @@ function getAuthHeaders() {
 function Configuracion() {
   const [productosCatalogPath, setProductosCatalogPath] = useState('')
   const [excelSyncPath, setExcelSyncPath] = useState('')
+  const [atractorUrl, setAtractorUrl] = useState('')
+  const [atractorUser, setAtractorUser] = useState('')
+  const [atractorPassword, setAtractorPassword] = useState('')
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   const [guardando, setGuardando] = useState(false)
@@ -133,6 +136,9 @@ function Configuracion() {
       body: JSON.stringify({
         PRODUCTOS_CATALOG_PATH: productosCatalogPath.trim(),
         EXCEL_SYNC_PATH: excelSyncPath.trim(),
+        ATRACTOR_URL: atractorUrl.trim(),
+        ATRACTOR_USER: atractorUser.trim(),
+        ATRACTOR_PASSWORD: atractorPassword.trim(),
       }),
     })
       .then((res) => {
@@ -189,6 +195,45 @@ function Configuracion() {
           <span className="configuracion-hint">
             Ruta completa al archivo Excel (incluyendo nombre del archivo). Se usa al pulsar &quot;Sincronizar&quot; en Inicio (mismo origen que Lista RMA). El archivo puede llamarse como quieras; las rutas con espacios (ej. DEPT. TEC\archivo nombre.xlsx) se leen correctamente.
           </span>
+        </div>
+
+        <h2 className="configuracion-subtitle">Atractor</h2>
+        <p className="configuracion-desc">
+          Conexión con Atractor para informes (p. ej. ventas totalizadas). La URL puede ser la base (https://atractor.ejemplo.com) o el endpoint completo; se añadirán los parámetros de fechas al pedir el informe.
+        </p>
+        <div className="configuracion-field">
+          <label htmlFor="config-atractor-url">URL de Atractor</label>
+          <input
+            id="config-atractor-url"
+            type="text"
+            value={atractorUrl}
+            onChange={(e) => setAtractorUrl(e.target.value)}
+            placeholder="Ej. https://atractor.ejemplo.com/api/informe-ventas"
+            className="configuracion-input"
+          />
+        </div>
+        <div className="configuracion-field">
+          <label htmlFor="config-atractor-user">Usuario</label>
+          <input
+            id="config-atractor-user"
+            type="text"
+            value={atractorUser}
+            onChange={(e) => setAtractorUser(e.target.value)}
+            placeholder="Usuario de Atractor"
+            className="configuracion-input"
+          />
+        </div>
+        <div className="configuracion-field">
+          <label htmlFor="config-atractor-password">Contraseña</label>
+          <input
+            id="config-atractor-password"
+            type="password"
+            value={atractorPassword}
+            onChange={(e) => setAtractorPassword(e.target.value)}
+            placeholder="Dejar en blanco para no cambiar"
+            className="configuracion-input"
+            autoComplete="new-password"
+          />
         </div>
 
         <div className="configuracion-actions">
