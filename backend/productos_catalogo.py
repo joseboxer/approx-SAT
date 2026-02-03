@@ -3,24 +3,23 @@ Catálogo de productos desde carpeta de red (QNAP).
 - Se recorre la estructura recursivamente. Solo se considera "producto" un directorio que contenga al menos un Excel
   cuyo nombre incluya la palabra "visual" (insensible a mayúsculas). Si no hay ningún Excel con "visual", se ignora
   el directorio y se revisan el resto (subcarpetas).
-- En un directorio producto: se usa el Excel visual para datos técnicos (fecha en C3, serie base = primera celda
-  combinada en columnas E–I; el valor está en la celda superior izquierda del rango combinado). PDF más nuevo = visual.
-- El Excel más nuevo del directorio con "visual" o "datasheet" en el nombre puede ser el visual Excel.
+- En un directorio producto: se usa el Excel visual para datos técnicos. Toda la información se busca solo en
+  las primeras 40 filas y hasta la columna K. Fecha: se recopilan todos los valores que sean fechas válidas
+  y se elige la más antigua. Número de serie: se busca la celda "TECHNICAL DEPARTMENT" y debajo de ella el
+  primer texto encontrado (hacia abajo en la misma columna).
 """
 from __future__ import annotations
 
-import os
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 import pandas as pd
 
-# Fecha del producto: siempre celda C3 (0-based: col 2, row 2)
-EXCEL_COL_FECHA = 2   # C
-EXCEL_ROW_FECHA = 2   # fila 3
-# Número de serie base: primera celda combinada en columnas E–I (openpyxl 1-based: E=5, I=9)
-EXCEL_COL_SERIE_FIRST = 5   # E (1-based)
-EXCEL_COL_SERIE_LAST = 9    # I (1-based)
+# Límites de búsqueda en el Excel: solo primeras 40 filas y hasta columna K
+EXCEL_MAX_ROWS = 40   # filas 0..39 (0-based)
+EXCEL_MAX_COL = 11    # columnas A..K = 0..10 (0-based), K = índice 10
 
 
 def _normalize_path(p: Path) -> Path:
@@ -41,68 +40,127 @@ def _is_text_value(val) -> bool:
     return len(s) > 0
 
 
-def _read_serial_from_merged_e_i(excel_path: Path) -> str | None:
+def _parse_date(val) -> datetime | None:
     """
-    Busca la primera celda combinada que abarque columnas E a I (1-based: 5–9).
-    La altura de fila puede variar; el número de serie está en la celda superior izquierda del rango combinado.
-    Devuelve el valor de esa celda si es texto no vacío, si no None.
+    Intenta interpretar el valor como fecha. Devuelve datetime o None.
+    Acepta: número serial de Excel, string ISO, string DD/MM/YYYY o similares.
     """
-    try:
-        from openpyxl import load_workbook
-        wb = load_workbook(excel_path, read_only=False, data_only=True)
-        ws = wb.active
-        if not ws or not ws.merged_cells:
-            wb.close()
-            return None
-        candidates = []
-        for rng in ws.merged_cells.ranges:
-            min_col, min_row, max_col, max_row = rng.bounds
-            if min_col <= EXCEL_COL_SERIE_LAST and max_col >= EXCEL_COL_SERIE_FIRST:
-                candidates.append((min_row, min_col))
-        if not candidates:
-            wb.close()
-            return None
-        candidates.sort(key=lambda x: (x[0], x[1]))
-        min_row, min_col = candidates[0]
-        val = ws.cell(row=min_row, column=min_col).value
-        wb.close()
-        if _is_text_value(val):
-            return str(val).strip()
+    if val is None:
         return None
-    except Exception:
+    if isinstance(val, float):
+        if pd.isna(val):
+            return None
+        # Excel serial: días desde 1900-01-01
+        try:
+            from datetime import timedelta
+            base = datetime(1899, 12, 30)
+            d = base + timedelta(days=int(val)) if val == int(val) else base + timedelta(days=val)
+            return d
+        except (ValueError, OverflowError):
+            return None
+    if isinstance(val, datetime):
+        return val
+    s = str(val).strip()
+    if not s:
         return None
+    # Formatos de cadena comunes
+    formats = (
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%d/%m/%Y",
+        "%d/%m/%Y %H:%M:%S",
+        "%d-%m-%Y",
+        "%d.%m.%Y",
+    )
+    for fmt in formats:
+        try:
+            s_ = s[:19] if " " in fmt else s[:10]
+            return datetime.strptime(s_, fmt)
+        except ValueError:
+            continue
+    # Regex: YYYY-MM-DD
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", s)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+    # Regex: DD/MM/YYYY o DD-MM-YYYY
+    m = re.match(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})", s)
+    if m:
+        try:
+            return datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except ValueError:
+            pass
+    return None
+
+
+def _find_oldest_date_in_range(df: pd.DataFrame) -> str | None:
+    """
+    Recorre las primeras EXCEL_MAX_ROWS filas y hasta columna K; recopila todos los valores
+    que sean fechas válidas y devuelve la más antigua como string YYYY-MM-DD.
+    """
+    dates = []
+    rows = min(EXCEL_MAX_ROWS, len(df))
+    cols = min(EXCEL_MAX_COL, df.shape[1]) if len(df.shape) > 1 else 0
+    for r in range(rows):
+        for c in range(cols):
+            try:
+                val = df.iloc[r, c]
+                d = _parse_date(val)
+                if d is not None:
+                    dates.append(d)
+            except (IndexError, KeyError):
+                continue
+    if not dates:
+        return None
+    oldest = min(dates)
+    return oldest.strftime("%Y-%m-%d")
+
+
+def _find_serial_below_technical_department(df: pd.DataFrame) -> str | None:
+    """
+    Busca la celda que contenga exactamente "TECHNICAL DEPARTMENT" (insensible a mayúsculas).
+    A partir de la fila siguiente, en la misma columna, busca hacia abajo el primer valor que sea texto;
+    ese es el número de serie. Solo se buscan las primeras EXCEL_MAX_ROWS y hasta columna K.
+    """
+    target = "technical department"
+    rows = min(EXCEL_MAX_ROWS, len(df))
+    cols = min(EXCEL_MAX_COL, df.shape[1]) if len(df.shape) > 1 else 0
+    for r in range(rows):
+        for c in range(cols):
+            try:
+                val = df.iloc[r, c]
+                if not _is_text_value(val):
+                    continue
+                if str(val).strip().lower() == target:
+                    # Buscar debajo en la misma columna
+                    for r2 in range(r + 1, rows):
+                        try:
+                            val2 = df.iloc[r2, c]
+                            if _is_text_value(val2):
+                                return str(val2).strip()
+                        except (IndexError, KeyError):
+                            continue
+                    return None
+            except (IndexError, KeyError):
+                continue
+    return None
 
 
 def _read_serial_and_date_from_excel(excel_path: Path) -> tuple[str | None, str | None]:
     """
-    Lee fecha desde C3 (siempre) y número de serie base desde la primera celda combinada
-    en columnas E–I (valor en la celda superior izquierda del rango combinado).
+    Lee el Excel limitado a las primeras 40 filas y columna K.
+    Fecha: recopila todas las fechas válidas en ese rango y devuelve la más antigua (YYYY-MM-DD).
+    Serie base: busca la celda "TECHNICAL DEPARTMENT" y debajo el primer texto en la misma columna.
     """
     try:
         df = pd.read_excel(excel_path, sheet_name=0, header=None)
-        nrows, ncols = df.shape
-        if ncols <= EXCEL_COL_FECHA:
+        if df.empty or df.shape[0] == 0:
             return None, None
 
-        # Fecha: siempre C3 (0-based: col 2, row 2)
-        fecha = None
-        if nrows > EXCEL_ROW_FECHA:
-            fecha_val = df.iloc[EXCEL_ROW_FECHA, EXCEL_COL_FECHA]
-            if _is_text_value(fecha_val):
-                fecha = str(fecha_val).strip()
-
-        # Serie base: primera celda combinada E–I (openpyxl)
-        serie = _read_serial_from_merged_e_i(excel_path)
-        if not serie:
-            # Fallback: última celda con texto en columna D (índice 3)
-            for r in range(nrows - 1, -1, -1):
-                if ncols <= 3:
-                    break
-                val = df.iloc[r, 3]
-                if _is_text_value(val):
-                    serie = str(val).strip()
-                    break
-
+        fecha = _find_oldest_date_in_range(df)
+        serie = _find_serial_below_technical_department(df)
         return serie, fecha
     except Exception:
         return None, None
@@ -321,10 +379,10 @@ def get_productos_catalogo(
 ) -> list[dict]:
     """
     Escanea la ruta base recursivamente. Solo se considera producto un directorio que contenga al menos un Excel
-    cuyo nombre incluya "visual" (insensible a mayúsculas). En ese directorio: fecha en C3, serie base = última celda con texto en col D;
-    PDF más nuevo = visual; Excel con "visual"/"datasheet" en nombre = visual Excel opcional.
-    on_directory(path_rel, current, total) se invoca al entrar en cada directorio: current/total permite mostrar % en tiempo real.
-    Si on_directory está definido, se hace un primer pase para contar directorios y así poder dar porcentaje aproximado.
+    cuyo nombre incluya "visual" (insensible a mayúsculas). En cada Excel visual: se buscan fecha y serie solo
+    en las primeras 40 filas y hasta columna K; fecha = la más antigua entre las celdas con formato de fecha
+    válido; serie = primer texto encontrado debajo de la celda "TECHNICAL DEPARTMENT".
+    on_directory(path_rel, current, total) se invoca al entrar en cada directorio para progreso en tiempo real.
     """
     if not base_path or not str(base_path).strip():
         return []

@@ -18,20 +18,27 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
     if (clearProducto) onProductoDestacado?.(null)
   }
 
+  const [showProductosMenu, setShowProductosMenu] = useState(false)
+  const productosMenuRef = useRef(null)
+
   const rmaVistas = [
-    { key: VISTAS.RMA, label: 'Listado RMA' },
-    { key: VISTAS.CLIENTES, label: 'Clientes', clearProducto: false },
-    { key: VISTAS.PRODUCTOS, label: 'Productos', clearCliente: false },
+    { key: VISTAS.RMA, label: 'Lista RMA' },
     { key: VISTAS.PRODUCTOS_RMA, label: 'Productos RMA' },
-    { key: VISTAS.REPUESTOS, label: 'Repuestos' },
     { key: VISTAS.OCULTA, label: `Lista oculta${hiddenRmas.length > 0 ? ` (${hiddenRmas.length})` : ''}` },
   ]
 
+  const productosVistas = [
+    { key: VISTAS.PRODUCTOS, label: 'Catálogo', clearCliente: false },
+    { key: VISTAS.REPUESTOS, label: 'Repuestos' },
+  ]
+
   const isRmaVista = rmaVistas.some((r) => r.key === vista)
+  const isProductosVista = productosVistas.some((p) => p.key === vista)
 
   useEffect(() => {
     const closeMenus = (e) => {
       if (rmaMenuRef.current && !rmaMenuRef.current.contains(e.target)) setShowRmaMenu(false)
+      if (productosMenuRef.current && !productosMenuRef.current.contains(e.target)) setShowProductosMenu(false)
       if (hamburgerRef.current && !hamburgerRef.current.contains(e.target)) setShowHamburgerMenu(false)
     }
     document.addEventListener('mousedown', closeMenus)
@@ -69,7 +76,15 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
           Inicio
         </button>
 
-        <div className="nav-dropdown" ref={rmaMenuRef}>
+        <button
+          type="button"
+          className={`nav-link ${vista === VISTAS.CLIENTES ? 'active' : ''}`}
+          onClick={() => go(VISTAS.CLIENTES, true, false)}
+        >
+          Clientes
+        </button>
+
+        <div className="nav-dropdown nav-dropdown-inline-wrap" ref={rmaMenuRef}>
           <button
             type="button"
             className={`nav-link nav-dropdown-trigger ${isRmaVista ? 'active' : ''}`}
@@ -77,19 +92,49 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
             aria-expanded={showRmaMenu}
             aria-haspopup="true"
           >
-            RMA <span className="nav-dropdown-arrow" aria-hidden>▼</span>
+            RMA <span className="nav-dropdown-arrow" aria-hidden>{showRmaMenu ? '▲' : '▼'}</span>
           </button>
           {showRmaMenu && (
-            <div className="nav-dropdown-menu" role="menu">
-              {rmaVistas.map(({ key, label, clearCliente, clearProducto }) => (
+            <div className="nav-dropdown-inline" role="menu">
+              {rmaVistas.map(({ key, label }) => (
                 <button
                   key={key}
                   type="button"
                   role="menuitem"
-                  className={`nav-dropdown-item ${vista === key ? 'active' : ''}`}
+                  className={`nav-link nav-dropdown-inline-item ${vista === key ? 'active' : ''}`}
                   onClick={() => {
-                    go(key, clearCliente !== false, clearProducto !== false)
+                    go(key)
                     setShowRmaMenu(false)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="nav-dropdown nav-dropdown-inline-wrap" ref={productosMenuRef}>
+          <button
+            type="button"
+            className={`nav-link nav-dropdown-trigger ${isProductosVista ? 'active' : ''}`}
+            onClick={() => setShowProductosMenu((s) => !s)}
+            aria-expanded={showProductosMenu}
+            aria-haspopup="true"
+          >
+            Productos <span className="nav-dropdown-arrow" aria-hidden>{showProductosMenu ? '▲' : '▼'}</span>
+          </button>
+          {showProductosMenu && (
+            <div className="nav-dropdown-inline" role="menu">
+              {productosVistas.map(({ key, label, clearCliente }) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="menuitem"
+                  className={`nav-link nav-dropdown-inline-item ${vista === key ? 'active' : ''}`}
+                  onClick={() => {
+                    go(key, clearCliente !== false, key !== VISTAS.PRODUCTOS)
+                    setShowProductosMenu(false)
                   }}
                 >
                   {label}
