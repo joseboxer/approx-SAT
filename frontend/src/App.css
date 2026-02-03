@@ -1475,6 +1475,115 @@
   color: var(--color-success, #0a7);
 }
 
+/* Estado del sistema y validación de rutas */
+.configuracion-estado-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+@media (max-width: 640px) {
+  .configuracion-estado-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.configuracion-estado-block {
+  padding: 0.75rem;
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border-light);
+}
+.configuracion-estado-line {
+  margin: 0 0 0.25rem;
+  font-size: 0.9rem;
+}
+.configuracion-validate-result {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+.configuracion-validate-result p {
+  margin: 0.25rem 0;
+}
+.configuracion-audit-table-wrap {
+  margin-top: 1rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.configuracion-audit-tabla {
+  min-width: 480px;
+}
+.configuracion-audit-tabla th,
+.configuracion-audit-tabla td {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+/* Ayuda contextual (UX y accesibilidad) */
+.help-tip-wrap {
+  position: relative;
+  display: inline-flex;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+.help-tip-trigger {
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-bg-subtle);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.help-tip-trigger:hover,
+.help-tip-trigger:focus-visible {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+  outline: none;
+}
+.help-tip-popover {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  max-width: 280px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+  color: var(--text-body);
+  white-space: normal;
+}
+.help-tip-wrap .help-tip-popover {
+  left: 50%;
+  top: auto;
+  bottom: 100%;
+  margin-left: 0;
+  margin-bottom: 0.35rem;
+  transform: translateX(-50%);
+}
+
+/* Tablas responsive (evitar scroll horizontal roto en móvil) */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Configuración dominio (hosts en equipo cliente) */
 .configuracion-dominio {
   margin-top: 1.5rem;

@@ -6,6 +6,7 @@ Tareas largas (sync, sync-reset, catalog refresh) devuelven task_id y reportan p
 Integración Atractor: informe de ventas totalizadas por rango de fechas (configurable desde la app).
 """
 import base64
+import csv
 import io
 import json
 import os
@@ -14,6 +15,8 @@ import threading
 import urllib.error
 import urllib.request
 import uuid
+from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -22,7 +25,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import pandas as pd
 import numpy as np
@@ -38,6 +41,8 @@ from database import (
     get_productos_rma,
     get_setting,
     set_setting,
+    insert_audit_log,
+    list_audit_log,
     get_catalog_cache,
     set_catalog_cache,
     insert_rma_item,
@@ -163,6 +168,23 @@ def leer_productos():
         return get_all_rma_items(conn)
 
 
+def _save_last_sync_error(message: str) -> None:
+    """Guarda en settings el último error de sincronización para mostrarlo en Estado."""
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as c:
+        set_setting(c, "LAST_SYNC_AT", now)
+        set_setting(c, "LAST_SYNC_STATUS", "error")
+        set_setting(c, "LAST_SYNC_MESSAGE", message[:500])
+
+
+def _save_last_catalog_error(message: str) -> None:
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as c:
+        set_setting(c, "LAST_CATALOG_AT", now)
+        set_setting(c, "LAST_CATALOG_STATUS", "error")
+        set_setting(c, "LAST_CATALOG_MESSAGE", message[:500])
+
+
 def _run_sync_reset_task(task_id: str, excel_path: str) -> None:
     """Ejecuta sync-reset en segundo plano y actualiza progreso en _tasks[task_id]."""
     try:
@@ -216,8 +238,23 @@ def _run_sync_reset_task(task_id: str, excel_path: str) -> None:
             message="Completado",
             result={"mensaje": "Lista RMA recargada desde Excel. Todos los registros tienen número de fila.", "cargados": loaded},
         )
+        _now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        with get_connection() as c:
+            set_setting(c, "LAST_SYNC_AT", _now)
+            set_setting(c, "LAST_SYNC_STATUS", "ok")
+            set_setting(c, "LAST_SYNC_MESSAGE", f"Recargados {loaded} registros desde Excel.")
+    except FileNotFoundError as e:
+        msg = f"No se encuentra el archivo Excel: {e}"
+        _update_task(task_id, status="error", percent=0, message=msg, result=None)
+        _save_last_sync_error(msg)
+    except PermissionError as e:
+        msg = f"Sin permiso para leer el Excel (puede estar abierto en otro programa): {e}"
+        _update_task(task_id, status="error", percent=0, message=msg, result=None)
+        _save_last_sync_error(msg)
     except Exception as e:
-        _update_task(task_id, status="error", percent=0, message=str(e), result=None)
+        msg = str(e)
+        _update_task(task_id, status="error", percent=0, message=msg, result=None)
+        _save_last_sync_error(msg)
 
 
 @app.post("/api/productos/sync-reset")
@@ -228,6 +265,7 @@ async def recargar_rma_desde_excel(username: str = Depends(get_current_username)
     """
     with get_connection() as conn:
         excel_path = _get_excel_sync_path(conn)
+        insert_audit_log(conn, username, "sync_reset_started", "rma", "", excel_path or "")
     path = Path(excel_path)
     if not path.is_file():
         raise HTTPException(
@@ -312,12 +350,29 @@ def _run_sync_task(task_id: str, excel_path: str | None, file_content: bytes | N
             message="Completado",
             result={"mensaje": "Sincronización completada", "añadidos": added},
         )
+        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        with get_connection() as c:
+            set_setting(c, "LAST_SYNC_AT", now)
+            set_setting(c, "LAST_SYNC_STATUS", "ok")
+            set_setting(c, "LAST_SYNC_MESSAGE", f"Sincronización completada. Añadidos: {added}.")
+    except FileNotFoundError as e:
+        msg = f"No se encuentra el archivo Excel: {e}"
+        _update_task(task_id, status="error", percent=0, message=msg, result=None)
+        _save_last_sync_error(msg)
+    except PermissionError as e:
+        msg = f"Sin permiso para leer el Excel (puede estar abierto en otro programa): {e}"
+        _update_task(task_id, status="error", percent=0, message=msg, result=None)
+        _save_last_sync_error(msg)
     except Exception as e:
         _update_task(task_id, status="error", percent=0, message=str(e), result=None)
+        _save_last_sync_error(str(e))
 
 
 @app.post("/api/productos/sync")
-async def sincronizar_excel(file: UploadFile = File(None)):
+async def sincronizar_excel(
+    file: UploadFile = File(None),
+    username: str = Depends(get_current_username),
+):
     """
     Sincroniza con la BD leyendo el Excel (ruta configurada o archivo subido).
     Solo se insertan filas nuevas. Devuelve task_id para consultar progreso en GET /api/tasks/{task_id}.
@@ -331,6 +386,7 @@ async def sincronizar_excel(file: UploadFile = File(None)):
     else:
         with get_connection() as conn:
             excel_path = _get_excel_sync_path(conn)
+            insert_audit_log(conn, username, "sync_started", "rma", "", excel_path or "")
         path = Path(excel_path)
         if not path.is_file():
             raise HTTPException(status_code=400, detail=f"No se encuentra el Excel en la ruta configurada: {path}")
@@ -515,6 +571,7 @@ def actualizar_settings(
         set_setting(conn, "ATRACTOR_USER", (body.ATRACTOR_USER or "").strip())
         if (body.ATRACTOR_PASSWORD or "").strip():
             set_setting(conn, "ATRACTOR_PASSWORD", (body.ATRACTOR_PASSWORD or "").strip())
+        insert_audit_log(conn, username, "settings_updated", "settings", "", "Rutas y Atractor")
     return {"mensaje": "Configuración guardada"}
 
 
@@ -535,6 +592,139 @@ def descargar_certificado(username: str = Depends(get_current_username)):
     if not cert_path.is_file():
         raise HTTPException(status_code=404, detail="No hay certificado configurado. Genera cert.pem en la carpeta backend del servidor para usar HTTPS.")
     return FileResponse(str(cert_path), filename="cert.pem", media_type="application/x-pem-file")
+
+
+@app.get("/api/settings/status")
+def obtener_estado_sistema(username: str = Depends(get_current_username)):
+    """Devuelve el estado de la última sincronización RMA y del último refresco de catálogo (para la sección Estado en Configuración)."""
+    with get_connection() as conn:
+        return {
+            "last_sync_at": get_setting(conn, "LAST_SYNC_AT") or "",
+            "last_sync_status": get_setting(conn, "LAST_SYNC_STATUS") or "",
+            "last_sync_message": get_setting(conn, "LAST_SYNC_MESSAGE") or "",
+            "last_catalog_at": get_setting(conn, "LAST_CATALOG_AT") or "",
+            "last_catalog_status": get_setting(conn, "LAST_CATALOG_STATUS") or "",
+            "last_catalog_message": get_setting(conn, "LAST_CATALOG_MESSAGE") or "",
+        }
+
+
+class ValidatePathsBody(BaseModel):
+    excel_path: str = ""
+    catalog_path: str = ""
+
+
+@app.post("/api/settings/validate-paths")
+def validar_rutas(
+    body: ValidatePathsBody,
+    username: str = Depends(get_current_username),
+):
+    """Comprueba si las rutas de Excel y catálogo existen y son accesibles. Operación: no modifica nada."""
+    def check_excel(p: str) -> dict:
+        if not (p or "").strip():
+            return {"path": p or "", "exists": False, "readable": False, "message": "Ruta vacía"}
+        path = Path(p.strip())
+        if not path.exists():
+            return {"path": str(path), "exists": False, "readable": False, "message": "No existe el archivo o la ruta"}
+        if not path.is_file():
+            return {"path": str(path), "exists": True, "readable": False, "message": "La ruta no es un archivo"}
+        try:
+            with open(path, "rb") as f:
+                f.read(1)
+            return {"path": str(path), "exists": True, "readable": True, "message": "OK"}
+        except PermissionError:
+            return {"path": str(path), "exists": True, "readable": False, "message": "Sin permiso de lectura (p. ej. archivo abierto en otro programa)"}
+        except OSError as e:
+            return {"path": str(path), "exists": True, "readable": False, "message": str(e)[:200]}
+
+    def check_catalog(p: str) -> dict:
+        if not (p or "").strip():
+            return {"path": p or "", "exists": False, "readable": False, "message": "Ruta vacía"}
+        path = Path(p.strip())
+        if not path.exists():
+            return {"path": str(path), "exists": False, "readable": False, "message": "No existe la carpeta"}
+        if not path.is_dir():
+            return {"path": str(path), "exists": True, "readable": False, "message": "La ruta no es una carpeta"}
+        try:
+            next(path.iterdir(), None)
+            return {"path": str(path), "exists": True, "readable": True, "message": "OK"}
+        except PermissionError:
+            return {"path": str(path), "exists": True, "readable": False, "message": "Sin permiso de lectura"}
+        except OSError as e:
+            return {"path": str(path), "exists": True, "readable": False, "message": str(e)[:200]}
+
+    return {
+        "excel": check_excel(body.excel_path or ""),
+        "catalog": check_catalog(body.catalog_path or ""),
+    }
+
+
+@app.get("/api/audit-log")
+def listar_audit_log(
+    limit: int = 50,
+    offset: int = 0,
+    username: str = Depends(get_current_username),
+):
+    """Lista las últimas entradas del log de auditoría (trazabilidad)."""
+    limit = max(1, min(200, limit))
+    offset = max(0, offset)
+    with get_connection() as conn:
+        items = list_audit_log(conn, limit=limit, offset=offset)
+    return {"items": items}
+
+
+# --- Exportación (datos y trazabilidad) ---
+
+
+@app.get("/api/export/rma")
+def exportar_rma_csv(username: str = Depends(get_current_username)):
+    """Exporta todos los registros RMA a CSV."""
+    with get_connection() as conn:
+        rows = get_all_rma_items(conn)
+    if not rows:
+        raise HTTPException(status_code=404, detail="No hay registros RMA para exportar")
+
+    def to_dict(r) -> dict:
+        return dict(r) if hasattr(r, "keys") else r
+
+    keys = ["rma_number", "product", "serial", "client_name", "client_email", "client_phone", "date_received", "averia", "observaciones", "estado", "excel_row", "created_at"]
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=keys, extrasaction="ignore", lineterminator="\n")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({k: (to_dict(r).get(k) or "") for k in keys})
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=export-rma.csv"},
+    )
+
+
+@app.get("/api/export/clientes")
+def exportar_clientes_csv(username: str = Depends(get_current_username)):
+    """Exporta lista de clientes (nombre, email, teléfono, nº RMAs) desde RMA a CSV."""
+    with get_connection() as conn:
+        rows = get_all_rma_items(conn)
+    # Agrupar por (client_name, client_email, client_phone) y contar
+    counts = defaultdict(int)
+    for r in rows:
+        row = dict(r) if hasattr(r, "keys") else r
+        key = (row.get("client_name") or "", row.get("client_email") or "", row.get("client_phone") or "")
+        counts[key] += 1
+    if not counts:
+        raise HTTPException(status_code=404, detail="No hay clientes para exportar")
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(["nombre", "email", "telefono", "num_rmas"])
+    for (name, email, phone), count in sorted(counts.items(), key=lambda x: (-x[1], x[0][0])):
+        writer.writerow([name, email, phone, count])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=export-clientes.csv"},
+    )
 
 
 # --- Atractor: informe de ventas totalizadas ---
@@ -646,8 +836,22 @@ def _run_catalog_refresh_task(task_id: str, catalog_path: str) -> None:
             message="Completado",
             result={"productos": productos, "mensaje": f"Catálogo actualizado: {len(productos)} productos."},
         )
+        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        with get_connection() as c:
+            set_setting(c, "LAST_CATALOG_AT", now)
+            set_setting(c, "LAST_CATALOG_STATUS", "ok")
+            set_setting(c, "LAST_CATALOG_MESSAGE", f"Catálogo actualizado: {len(productos)} productos.")
+    except FileNotFoundError as e:
+        msg = f"Carpeta de catálogo no encontrada: {e}"
+        _update_task(task_id, status="error", percent=0, message=msg, result=None)
+        _save_last_catalog_error(msg)
+    except PermissionError as e:
+        msg = f"Sin permiso para acceder al catálogo: {e}"
+        _update_task(task_id, status="error", percent=0, message=msg, result=None)
+        _save_last_catalog_error(msg)
     except Exception as e:
         _update_task(task_id, status="error", percent=0, message=str(e), result=None)
+        _save_last_catalog_error(str(e))
 
 
 @app.post("/api/productos-catalogo/refresh")
@@ -658,6 +862,7 @@ def refrescar_catalogo(username: str = Depends(get_current_username)):
     """
     with get_connection() as conn:
         catalog_path = _get_productos_catalog_path(conn)
+        insert_audit_log(conn, username, "catalog_refresh_started", "catalog", "", catalog_path or "")
     if not catalog_path or not catalog_path.strip():
         raise HTTPException(status_code=400, detail="Configura la ruta del catálogo en Configuración.")
     task_id = str(uuid.uuid4())
@@ -804,6 +1009,7 @@ def crear_usuario(body: CreateUserBody, username: str = Depends(get_current_user
             get_password_hash(DEFAULT_NEW_USER_PASSWORD),
             email_placeholder,
         )
+        insert_audit_log(conn, username, "user_created", "user", username_clean, "Contraseña por defecto")
     return {"mensaje": f"Usuario '{username_clean}' creado. Contraseña por defecto: {DEFAULT_NEW_USER_PASSWORD}"}
 
 

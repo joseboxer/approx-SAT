@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useGarantia } from '../context/GarantiaContext'
 
 function ModalEditarRma() {
@@ -11,6 +11,13 @@ function ModalEditarRma() {
     guardarFechaRecogidaRma,
     OPCIONES_ESTADO,
   } = useGarantia()
+
+  useEffect(() => {
+    if (editandoRmaId == null) return
+    const onKey = (e) => { if (e.key === 'Escape') setEditandoRmaId(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [editandoRmaId, setEditandoRmaId])
 
   if (editandoRmaId == null) return null
 

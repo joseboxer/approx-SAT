@@ -128,6 +128,18 @@ def _init_db(conn: sqlite3.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_notifications_to_user ON notifications(to_user_id);
         CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
+
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at TEXT NOT NULL DEFAULT (datetime('now')),
+            username TEXT NOT NULL,
+            action TEXT NOT NULL,
+            entity_type TEXT,
+            entity_id TEXT,
+            details TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_log_at ON audit_log(at);
+        CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username);
     """)
     # Migración: añadir hidden_by y hidden_at si no existen (BD ya creada)
     cur = conn.execute("PRAGMA table_info(rma_items)")
@@ -765,6 +777,50 @@ def set_setting(conn: sqlite3.Connection, key: str, value: str | None) -> None:
         "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (k, v),
     )
+
+
+# --- Auditoría (trazabilidad) ---
+
+
+def insert_audit_log(
+    conn: sqlite3.Connection,
+    username: str,
+    action: str,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    details: str | None = None,
+) -> None:
+    """Registra una acción en el log de auditoría."""
+    conn.execute(
+        """INSERT INTO audit_log (username, action, entity_type, entity_id, details)
+           VALUES (?, ?, ?, ?, ?)""",
+        (username.strip(), action.strip(), entity_type or None, entity_id or None, details[:2000] if details else None),
+    )
+
+
+def list_audit_log(
+    conn: sqlite3.Connection,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict]:
+    """Lista entradas del log de auditoría, más recientes primero."""
+    cur = conn.execute(
+        """SELECT id, at, username, action, entity_type, entity_id, details
+           FROM audit_log ORDER BY at DESC LIMIT ? OFFSET ?""",
+        (limit, offset),
+    )
+    return [
+        {
+            "id": row["id"],
+            "at": row["at"],
+            "username": row["username"],
+            "action": row["action"],
+            "entity_type": row["entity_type"],
+            "entity_id": row["entity_id"],
+            "details": row["details"] or "",
+        }
+        for row in cur.fetchall()
+    ]
 
 
 # --- Caché catálogo productos (QNAP) ---

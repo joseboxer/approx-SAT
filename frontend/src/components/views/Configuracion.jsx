@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { API_URL, AUTH_STORAGE_KEY } from '../../constants'
 import ProgressBar from '../ProgressBar'
+import HelpTip from '../HelpTip'
 
 function getAuthHeaders() {
   try {
@@ -188,6 +189,11 @@ function Configuracion() {
   const [changePasswordLoading, setChangePasswordLoading] = useState(false)
   const [changePasswordError, setChangePasswordError] = useState(null)
   const [changePasswordOk, setChangePasswordOk] = useState(null)
+  const [status, setStatus] = useState(null)
+  const [validateResult, setValidateResult] = useState(null)
+  const [validateLoading, setValidateLoading] = useState(false)
+  const [auditLog, setAuditLog] = useState([])
+  const [auditLoading, setAuditLoading] = useState(false)
   const resetPollRef = useRef(null)
   const { user } = useAuth()
 
@@ -220,6 +226,60 @@ function Configuracion() {
       .then((data) => setServerIp(data.ip || null))
       .catch(() => setServerIp(null))
   }, [])
+
+  const cargarEstado = useCallback(() => {
+    fetch(`${API_URL}/api/settings/status`, { headers: getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((data) => setStatus(data))
+      .catch(() => setStatus(null))
+  }, [])
+
+  useEffect(() => {
+    cargarEstado()
+  }, [cargarEstado])
+
+  const comprobarRutas = () => {
+    setValidateLoading(true)
+    setValidateResult(null)
+    fetch(`${API_URL}/api/settings/validate-paths`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        excel_path: excelSyncPath || '',
+        catalog_path: productosCatalogPath || '',
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((data) => setValidateResult(data))
+      .catch(() => setValidateResult({ excel: { message: 'Error al comprobar' }, catalog: { message: 'Error al comprobar' } }))
+      .finally(() => setValidateLoading(false))
+  }
+
+  const cargarAuditLog = () => {
+    setAuditLoading(true)
+    fetch(`${API_URL}/api/audit-log?limit=30`, { headers: getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((data) => setAuditLog(data.items || []))
+      .catch(() => setAuditLog([]))
+      .finally(() => setAuditLoading(false))
+  }
+
+  const descargarExport = (path, filename) => {
+    fetch(`${API_URL}${path}`, { headers: getAuthHeaders() })
+      .then((r) => {
+        if (!r.ok) throw new Error('Error al exportar')
+        return r.blob()
+      })
+      .then((blob) => {
+        const u = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = u
+        a.download = filename
+        a.click()
+        URL.revokeObjectURL(u)
+      })
+      .catch(() => {})
+  }
 
   const parseErrorResponse = (res) =>
     res.text().then((text) => {
@@ -336,6 +396,7 @@ function Configuracion() {
                 const cargados = t.result?.cargados
                 setResetMensaje(cargados != null ? `${msg} Registros cargados: ${cargados}.` : msg)
                 setResetting(false)
+                cargarEstado()
               } else if (t.status === 'error') {
                 if (resetPollRef.current) clearInterval(resetPollRef.current)
                 resetPollRef.current = null
@@ -359,6 +420,15 @@ function Configuracion() {
       if (resetPollRef.current) clearInterval(resetPollRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (!showResetConfirm) return
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !resetting) setShowResetConfirm(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showResetConfirm, resetting])
 
   const guardar = () => {
     setGuardando(true)
@@ -384,6 +454,7 @@ function Configuracion() {
       })
       .then(() => {
         setMensaje('Configuración guardada correctamente.')
+        cargarEstado()
       })
       .catch((err) => setError(err.message || 'Error al guardar'))
       .finally(() => setGuardando(false))
@@ -399,7 +470,50 @@ function Configuracion() {
         Rutas de red y archivos. Se guardan en la aplicación (no se modifican archivos del servidor).
       </p>
 
+      <section className="configuracion-form configuracion-estado" aria-label="Estado del sistema">
+        <h2 className="configuracion-subtitle">
+          Estado y operación
+          <HelpTip text="Aquí ves la última vez que se recargó la lista RMA o se actualizó el catálogo. Usa «Comprobar rutas» antes de guardar para verificar que el servidor puede leer Excel y la carpeta del catálogo." />
+        </h2>
+        <p className="configuracion-desc">
+          Última sincronización RMA y último refresco de catálogo. Comprueba que las rutas configuradas existen y son accesibles antes de ejecutar una recarga.
+        </p>
+        {status && (
+          <div className="configuracion-estado-grid">
+            <div className="configuracion-estado-block">
+              <strong>Sincronización RMA</strong>
+              <p className="configuracion-estado-line">
+                {status.last_sync_at ? `${status.last_sync_at} — ${status.last_sync_status === 'ok' ? 'OK' : 'Error'}` : 'Aún no ejecutada'}
+              </p>
+              {status.last_sync_message && <p className="configuracion-hint">{status.last_sync_message}</p>}
+            </div>
+            <div className="configuracion-estado-block">
+              <strong>Catálogo de productos</strong>
+              <p className="configuracion-estado-line">
+                {status.last_catalog_at ? `${status.last_catalog_at} — ${status.last_catalog_status === 'ok' ? 'OK' : 'Error'}` : 'Aún no ejecutado'}
+              </p>
+              {status.last_catalog_message && <p className="configuracion-hint">{status.last_catalog_message}</p>}
+            </div>
+          </div>
+        )}
+        <div className="configuracion-actions" style={{ marginTop: '0.5rem' }}>
+          <button type="button" className="btn btn-secondary" onClick={comprobarRutas} disabled={validateLoading}>
+            {validateLoading ? 'Comprobando…' : 'Comprobar rutas (Excel y catálogo)'}
+          </button>
+        </div>
+        {validateResult && (
+          <div className="configuracion-validate-result">
+            <p><strong>Excel:</strong> {validateResult.excel?.message ?? '—'}</p>
+            <p><strong>Catálogo:</strong> {validateResult.catalog?.message ?? '—'}</p>
+          </div>
+        )}
+      </section>
+
       <section className="configuracion-form" aria-label="Rutas">
+        <h2 className="configuracion-subtitle">
+          Rutas
+          <HelpTip text="Ruta de red (ej. \\\\servidor\\carpeta) o local. El Excel de RMA debe ser un archivo .xlsx; el catálogo es una carpeta con subcarpetas de productos." />
+        </h2>
         <div className="configuracion-field">
           <label htmlFor="config-productos-catalog-path">
             Ruta catálogo de productos (QNAP)
@@ -644,7 +758,65 @@ function Configuracion() {
           </button>
         </div>
         {resetMensaje && <p className="configuracion-ok">{resetMensaje}</p>}
-        {resetError && <p className="error-msg">{resetError}</p>}
+        {resetError && (
+          <p className="error-msg">
+            {resetError}
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: '0.75rem' }} onClick={() => { setResetError(null); setShowResetConfirm(true); }}>
+              Reintentar
+            </button>
+          </p>
+        )}
+      </section>
+
+      <section className="configuracion-form" aria-label="Exportar datos">
+        <h2 className="configuracion-subtitle">Exportar datos (trazabilidad)</h2>
+        <p className="configuracion-desc">
+          Descarga los datos en CSV para copias de seguridad o uso externo.
+        </p>
+        <div className="configuracion-actions">
+          <button type="button" className="btn btn-primary" onClick={() => descargarExport('/api/export/rma', 'export-rma.csv')}>
+            Exportar RMA (CSV)
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => descargarExport('/api/export/clientes', 'export-clientes.csv')}>
+            Exportar clientes (CSV)
+          </button>
+        </div>
+      </section>
+
+      <section className="configuracion-form" aria-label="Registro de actividad">
+        <h2 className="configuracion-subtitle">Registro de actividad</h2>
+        <p className="configuracion-desc">
+          Quién hizo qué y cuándo (sincronizaciones, cambios de configuración, usuarios creados).
+        </p>
+        <div className="configuracion-actions">
+          <button type="button" className="btn btn-secondary" onClick={cargarAuditLog} disabled={auditLoading}>
+            {auditLoading ? 'Cargando…' : 'Cargar registro'}
+          </button>
+        </div>
+        {auditLog.length > 0 && (
+          <div className="configuracion-audit-table-wrap">
+            <table className="tabla configuracion-audit-tabla">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Usuario</th>
+                  <th>Acción</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditLog.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.at}</td>
+                    <td>{item.username}</td>
+                    <td>{item.action}</td>
+                    <td>{item.details || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {showResetConfirm && (

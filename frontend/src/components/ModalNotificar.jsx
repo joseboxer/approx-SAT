@@ -43,6 +43,13 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
     }
   }, [open, refetchUsers])
 
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
   const handleSubmit = (e) => {
     e.preventDefault()
     const uid = toUserId === '' ? null : parseInt(toUserId, 10)

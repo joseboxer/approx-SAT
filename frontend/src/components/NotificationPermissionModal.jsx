@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 
 const STORAGE_KEY = 'garantia-sat-notification-permission-asked'
 
@@ -23,6 +23,13 @@ export function markNotificationPermissionAsked() {
  * Se muestra una sola vez por navegador si el usuario no ha aceptado ni denegado.
  */
 function NotificationPermissionModal({ open, onActivar, onCerrar }) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e) => { if (e.key === 'Escape') onCerrar?.() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onCerrar])
+
   if (!open) return null
 
   const handleActivar = async () => {
