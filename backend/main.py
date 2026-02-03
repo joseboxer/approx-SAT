@@ -143,14 +143,20 @@ _DEFAULT_PRODUCTOS_CATALOG_PATH = os.environ.get("PRODUCTOS_CATALOG_PATH", "").s
 
 def _normalize_unc_path(raw: str) -> str:
     """
-    Normaliza ruta UNC en Windows: \\server\\share debe tener dos barras al inicio.
-    Si el usuario escribe \\server\\share o \server\share, dejamos formato correcto para Path.
-    En Windows, Path('\\\\server\\share') es la forma correcta para rutas de red.
+    Normaliza ruta para acceso a red (UNC) en Windows.
+    - \\server\\share o \server\share -> \\server\\share (dos barras al inicio).
+    - server\\share o Qnap-approx2\\z\\... (sin barras al inicio) -> \\server\\share (interpretado como UNC).
+    - En Windows la ruta debe pasarse como una sola cadena a Path() para que no se normalice mal.
     """
     if not raw or not raw.strip():
         return raw.strip() if raw is not None else ""
     s = raw.strip()
+    # Ya tiene una barra al inicio pero no dos: \server\share -> \\server\share
     if len(s) > 1 and s[0] == "\\" and s[1] != "\\":
+        s = "\\" + s
+    # Sin barras al inicio pero parece UNC: "server\share" o "Qnap-approx2\z\DEPT. TEC\..."
+    # (en Windows una ruta que no sea C:\ etc. y contenga \ puede ser host\share)
+    elif s and s[0] != "\\" and "\\" in s and (len(s) < 2 or s[1] != ":"):
         s = "\\" + s
     return s
 
@@ -200,9 +206,9 @@ def _save_last_catalog_error(message: str) -> None:
 def _run_sync_reset_task(task_id: str, excel_path: str) -> None:
     """Ejecuta sync-reset en segundo plano y actualiza progreso en _tasks[task_id]."""
     try:
-        path = Path(excel_path)
+        path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path.startswith("\\\\")) else excel_path
         _update_task(task_id, percent=0, message="Leyendo Excel...")
-        df = pd.read_excel(path, sheet_name=0)
+        df = pd.read_excel(path_str, sheet_name=0)
         df = df.replace({np.nan: None})
         col_map = _excel_row_to_columns(df)
         if "rma_number" not in col_map:
@@ -278,12 +284,14 @@ async def recargar_rma_desde_excel(username: str = Depends(get_current_username)
     with get_connection() as conn:
         excel_path = _get_excel_sync_path(conn)
         insert_audit_log(conn, username, "sync_reset_started", "rma", "", excel_path or "")
-    path = Path(excel_path)
-    if not path.is_file():
+    path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path.startswith("\\\\")) else excel_path
+    if not os.path.exists(path_str):
         raise HTTPException(
             status_code=400,
-            detail=f"No se encuentra el archivo Excel en la ruta configurada: {path}",
+            detail=f"No se encuentra el archivo Excel en la ruta configurada. Comprueba que el servidor tiene acceso a la unidad de red. Ruta: {path_str}",
         )
+    if not os.path.isfile(path_str):
+        raise HTTPException(status_code=400, detail=f"La ruta no es un archivo: {path_str}")
     task_id = str(uuid.uuid4())
     with _tasks_lock:
         _tasks[task_id] = {"status": "running", "percent": 0, "message": "Iniciando...", "result": None}
@@ -314,8 +322,8 @@ def _run_sync_task(task_id: str, excel_path: str | None, file_content: bytes | N
             df = pd.read_excel(io.BytesIO(file_content), sheet_name=0)
         else:
             _update_task(task_id, percent=0, message="Leyendo Excel...")
-            path = Path(excel_path)
-            df = pd.read_excel(path, sheet_name=0)
+            path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path.startswith("\\\\")) else excel_path
+            df = pd.read_excel(path_str, sheet_name=0)
         df = df.replace({np.nan: None})
         col_map = _excel_row_to_columns(df)
         if "rma_number" not in col_map:
@@ -399,9 +407,9 @@ async def sincronizar_excel(
         with get_connection() as conn:
             excel_path = _get_excel_sync_path(conn)
             insert_audit_log(conn, username, "sync_started", "rma", "", excel_path or "")
-        path = Path(excel_path)
-        if not path.is_file():
-            raise HTTPException(status_code=400, detail=f"No se encuentra el Excel en la ruta configurada: {path}")
+        path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path.startswith("\\\\")) else excel_path
+        if not os.path.isfile(path_str):
+            raise HTTPException(status_code=400, detail=f"No se encuentra el Excel en la ruta configurada. Ruta: {path_str}")
     task_id = str(uuid.uuid4())
     with _tasks_lock:
         _tasks[task_id] = {"status": "running", "percent": 0, "message": "Iniciando...", "result": None}
@@ -575,10 +583,10 @@ def actualizar_settings(
     body: SettingsBody,
     username: str = Depends(get_current_username),
 ):
-    """Guarda las rutas de catálogo, Excel y configuración de Atractor."""
+    """Guarda las rutas de catálogo, Excel y configuración de Atractor. Las rutas se normalizan (UNC) antes de guardar."""
     with get_connection() as conn:
-        set_setting(conn, "PRODUCTOS_CATALOG_PATH", (body.PRODUCTOS_CATALOG_PATH or "").strip())
-        set_setting(conn, "EXCEL_SYNC_PATH", (body.EXCEL_SYNC_PATH or "").strip())
+        set_setting(conn, "PRODUCTOS_CATALOG_PATH", _normalize_unc_path(body.PRODUCTOS_CATALOG_PATH or ""))
+        set_setting(conn, "EXCEL_SYNC_PATH", _normalize_unc_path(body.EXCEL_SYNC_PATH or ""))
         set_setting(conn, "ATRACTOR_URL", (body.ATRACTOR_URL or "").strip())
         set_setting(conn, "ATRACTOR_USER", (body.ATRACTOR_USER or "").strip())
         if (body.ATRACTOR_PASSWORD or "").strip():
@@ -630,41 +638,65 @@ def validar_rutas(
     body: ValidatePathsBody,
     username: str = Depends(get_current_username),
 ):
-    """Comprueba si las rutas de Excel y catálogo existen y son accesibles. Operación: no modifica nada."""
+    """Comprueba si las rutas de Excel y catálogo existen y son accesibles. Operación: no modifica nada.
+    Usa os.path para comprobar (más fiable con rutas UNC en Windows). Devuelve path_used para diagnosticar."""
     def check_excel(p: str) -> dict:
         if not (p or "").strip():
-            return {"path": p or "", "exists": False, "readable": False, "message": "Ruta vacía"}
+            return {"path": p or "", "path_used": "", "exists": False, "readable": False, "message": "Ruta vacía"}
         p = _normalize_unc_path(p)
-        path = Path(p)
-        if not path.exists():
-            return {"path": str(path), "exists": False, "readable": False, "message": "No existe el archivo o la ruta"}
-        if not path.is_file():
-            return {"path": str(path), "exists": True, "readable": False, "message": "La ruta no es un archivo"}
+        path_str = os.path.normpath(p) if os.name == "nt" and p.startswith("\\\\") else p
+        exists_os = os.path.exists(path_str)
+        if not exists_os:
+            return {
+                "path": p,
+                "path_used": path_str,
+                "exists": False,
+                "readable": False,
+                "message": "No existe el archivo o la ruta. Comprueba que el servidor (donde corre la app) tiene acceso a la unidad de red.",
+            }
+        if not os.path.isfile(path_str):
+            return {"path": p, "path_used": path_str, "exists": True, "readable": False, "message": "La ruta no es un archivo"}
         try:
-            with open(path, "rb") as f:
+            with open(path_str, "rb") as f:
                 f.read(1)
-            return {"path": str(path), "exists": True, "readable": True, "message": "OK"}
-        except PermissionError:
-            return {"path": str(path), "exists": True, "readable": False, "message": "Sin permiso de lectura (p. ej. archivo abierto en otro programa)"}
+            return {"path": p, "path_used": path_str, "exists": True, "readable": True, "message": "OK"}
+        except PermissionError as e:
+            return {"path": p, "path_used": path_str, "exists": True, "readable": False, "message": f"Sin permiso de lectura (p. ej. archivo abierto en otro programa): {e}"}
         except OSError as e:
-            return {"path": str(path), "exists": True, "readable": False, "message": str(e)[:200]}
+            err = getattr(e, "errno", None)
+            msg = str(e)[:200]
+            if err is not None:
+                msg = f"[errno {err}] {msg}"
+            return {"path": p, "path_used": path_str, "exists": True, "readable": False, "message": msg}
 
     def check_catalog(p: str) -> dict:
         if not (p or "").strip():
-            return {"path": p or "", "exists": False, "readable": False, "message": "Ruta vacía"}
+            return {"path": p or "", "path_used": "", "exists": False, "readable": False, "message": "Ruta vacía"}
         p = _normalize_unc_path(p)
-        path = Path(p)
-        if not path.exists():
-            return {"path": str(path), "exists": False, "readable": False, "message": "No existe la carpeta"}
-        if not path.is_dir():
-            return {"path": str(path), "exists": True, "readable": False, "message": "La ruta no es una carpeta"}
+        path_str = os.path.normpath(p) if os.name == "nt" and p.startswith("\\\\") else p
+        exists_os = os.path.exists(path_str)
+        if not exists_os:
+            return {
+                "path": p,
+                "path_used": path_str,
+                "exists": False,
+                "readable": False,
+                "message": "No existe la carpeta. Comprueba que el servidor (donde corre la app) tiene acceso a la unidad de red (QNAP).",
+            }
+        if not os.path.isdir(path_str):
+            return {"path": p, "path_used": path_str, "exists": True, "readable": False, "message": "La ruta no es una carpeta"}
         try:
-            next(path.iterdir(), None)
-            return {"path": str(path), "exists": True, "readable": True, "message": "OK"}
-        except PermissionError:
-            return {"path": str(path), "exists": True, "readable": False, "message": "Sin permiso de lectura"}
+            with os.scandir(path_str) as it:
+                next(it, None)
+            return {"path": p, "path_used": path_str, "exists": True, "readable": True, "message": "OK"}
+        except PermissionError as e:
+            return {"path": p, "path_used": path_str, "exists": True, "readable": False, "message": f"Sin permiso de lectura: {e}"}
         except OSError as e:
-            return {"path": str(path), "exists": True, "readable": False, "message": str(e)[:200]}
+            err = getattr(e, "errno", None)
+            msg = str(e)[:200]
+            if err is not None:
+                msg = f"[errno {err}] {msg}"
+            return {"path": p, "path_used": path_str, "exists": True, "readable": False, "message": msg}
 
     return {
         "excel": check_excel(body.excel_path or ""),
@@ -879,10 +911,15 @@ def refrescar_catalogo(username: str = Depends(get_current_username)):
         insert_audit_log(conn, username, "catalog_refresh_started", "catalog", "", catalog_path or "")
     if not catalog_path or not catalog_path.strip():
         raise HTTPException(status_code=400, detail="Configura la ruta del catálogo en Configuración.")
+    path_str = os.path.normpath(catalog_path) if (os.name == "nt" and catalog_path.startswith("\\\\")) else catalog_path
+    if not os.path.exists(path_str):
+        raise HTTPException(status_code=400, detail=f"No se encuentra la carpeta del catálogo. Comprueba que el servidor tiene acceso a la unidad de red. Ruta: {path_str}")
+    if not os.path.isdir(path_str):
+        raise HTTPException(status_code=400, detail=f"La ruta del catálogo no es una carpeta: {path_str}")
     task_id = str(uuid.uuid4())
     with _tasks_lock:
         _tasks[task_id] = {"status": "running", "percent": 0, "message": "Iniciando...", "result": None}
-    threading.Thread(target=_run_catalog_refresh_task, args=(task_id, catalog_path), daemon=True).start()
+    threading.Thread(target=_run_catalog_refresh_task, args=(task_id, path_str), daemon=True).start()
     return {"task_id": task_id}
 
 

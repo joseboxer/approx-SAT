@@ -504,7 +504,9 @@ function Configuracion() {
         {validateResult && (
           <div className="configuracion-validate-result">
             <p><strong>Excel:</strong> {validateResult.excel?.message ?? '—'}</p>
+            {validateResult.excel?.path_used && <p className="configuracion-hint">Ruta comprobada: {validateResult.excel.path_used}</p>}
             <p><strong>Catálogo:</strong> {validateResult.catalog?.message ?? '—'}</p>
+            {validateResult.catalog?.path_used && <p className="configuracion-hint">Ruta comprobada: {validateResult.catalog.path_used}</p>}
           </div>
         )}
       </section>

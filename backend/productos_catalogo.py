@@ -10,6 +10,7 @@ Catálogo de productos desde carpeta de red (QNAP).
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -398,11 +399,15 @@ def get_productos_catalogo(
     if not base_path or not str(base_path).strip():
         return []
 
-    base = Path(base_path)
+    base_path_str = str(base_path).strip()
+    # En Windows, rutas UNC (\\server\share) se normalizan con os.path para acceso fiable
+    if os.name == "nt" and base_path_str.startswith("\\\\"):
+        base_path_str = os.path.normpath(base_path_str)
+    base = Path(base_path_str)
     if not base.exists():
-        raise FileNotFoundError(f"La ruta no existe: {base_path}")
+        raise FileNotFoundError(f"La ruta no existe: {base_path_str}")
     if not base.is_dir():
-        raise NotADirectoryError(f"La ruta no es una carpeta: {base_path}")
+        raise NotADirectoryError(f"La ruta no es una carpeta: {base_path_str}")
 
     base = _normalize_path(base)
     out = []
