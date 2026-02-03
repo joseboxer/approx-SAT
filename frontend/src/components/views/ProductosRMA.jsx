@@ -173,7 +173,13 @@ function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleG
   )
 }
 
-function ProductosRMA() {
+function ProductosRMA(props) {
+  const {
+    serialDestacado = null,
+    setSerialDestacado,
+    setVista,
+    setProductoDestacado,
+  } = props || {}
   const [list, setList] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
@@ -217,12 +223,11 @@ function ProductosRMA() {
 
   // Aplicar serial al llegar desde Listado RMA
   useEffect(() => {
-    if (serialDestacado && String(serialDestacado).trim()) {
-      setFiltroSerial(String(serialDestacado).trim())
-      setPagina(1)
-      setPaginaSinFecha(1)
-      setSerialDestacado?.(null)
-    }
+    if (!serialDestacado || String(serialDestacado).trim() === '') return
+    setFiltroSerial(String(serialDestacado).trim())
+    setPagina(1)
+    setPaginaSinFecha(1)
+    if (typeof setSerialDestacado === 'function') setSerialDestacado(null)
   }, [serialDestacado, setSerialDestacado])
 
   useEffect(() => {

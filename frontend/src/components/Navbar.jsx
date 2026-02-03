@@ -83,7 +83,9 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
         >
           Clientes
         </button>
+      </div>
 
+      <div className="nav-right">
         <div className="nav-dropdown nav-dropdown-inline-wrap" ref={rmaMenuRef}>
           <button
             type="button"
@@ -102,10 +104,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
                   type="button"
                   role="menuitem"
                   className={`nav-link nav-dropdown-inline-item ${vista === key ? 'active' : ''}`}
-                  onClick={() => {
-                    go(key)
-                    setShowRmaMenu(false)
-                  }}
+                  onClick={() => go(key)}
                 >
                   {label}
                 </button>
@@ -132,10 +131,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
                   type="button"
                   role="menuitem"
                   className={`nav-link nav-dropdown-inline-item ${vista === key ? 'active' : ''}`}
-                  onClick={() => {
-                    go(key, clearCliente !== false, key !== VISTAS.PRODUCTOS)
-                    setShowProductosMenu(false)
-                  }}
+                  onClick={() => go(key, clearCliente !== false, key !== VISTAS.PRODUCTOS)}
                 >
                   {label}
                 </button>
@@ -143,9 +139,8 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
             </div>
           )}
         </div>
-      </div>
 
-      <div className="nav-right" ref={hamburgerRef}>
+        <div ref={hamburgerRef}>
         <button
           type="button"
           className="nav-hamburger-btn"
@@ -163,10 +158,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
               type="button"
               role="menuitem"
               className={`nav-hamburger-item ${vista === VISTAS.CONFIGURACION ? 'active' : ''}`}
-              onClick={() => {
-                go(VISTAS.CONFIGURACION)
-                setShowHamburgerMenu(false)
-              }}
+              onClick={() => go(VISTAS.CONFIGURACION)}
             >
               Configuración
             </button>
@@ -174,10 +166,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
               type="button"
               role="menuitem"
               className={`nav-hamburger-item ${vista === VISTAS.INFORMES ? 'active' : ''}`}
-              onClick={() => {
-                go(VISTAS.INFORMES)
-                setShowHamburgerMenu(false)
-              }}
+              onClick={() => go(VISTAS.INFORMES)}
             >
               Informes
             </button>
@@ -193,6 +182,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado }) {
             )}
           </div>
         )}
+        </div>
       </div>
     </nav>
 
