@@ -64,6 +64,7 @@ from database import (
     get_user_by_id,
     list_users,
     create_user,
+    user_is_admin,
     get_notifications_for_user,
     count_unread_notifications,
     create_notification,
@@ -77,6 +78,26 @@ _cors_origins = os.getenv("CORS_ORIGINS", _default_cors).strip()
 _cors_list = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins != "*" else ["*"]
 
 app = FastAPI(title="API Garantías")
+
+
+@app.on_event("startup")
+def ensure_admin_user():
+    """Si no existe ningún usuario administrador, crea uno por defecto: admin / approx2026."""
+    with get_connection() as conn:
+        cur = conn.execute("SELECT 1 FROM users WHERE COALESCE(is_admin, 0) = 1 LIMIT 1")
+        if cur.fetchone() is not None:
+            return
+        if get_user_by_username(conn, "admin"):
+            return
+        create_user(
+            conn,
+            "admin",
+            get_password_hash(DEFAULT_NEW_USER_PASSWORD),
+            "admin@approx.es",
+            is_admin=True,
+        )
+
+
 app.include_router(auth_router)
 app.add_middleware(
     CORSMiddleware,
@@ -1053,14 +1074,19 @@ class CreateUserBody(BaseModel):
 
 @app.post("/api/users")
 def crear_usuario(body: CreateUserBody, username: str = Depends(get_current_username)):
-    """Crea un usuario nuevo (solo nombre). Contraseña por defecto: approx2026. Solo para uso desde Configuración."""
+    """Crea un usuario nuevo (solo nombre). Contraseña por defecto: approx2026. Solo administradores."""
     username_clean = (body.username or "").strip()
     if not username_clean:
         raise HTTPException(status_code=400, detail="El nombre de usuario no puede estar vacío")
-    email_placeholder = f"{username_clean}@approx.es"
     with get_connection() as conn:
+        if not user_is_admin(conn, username):
+            raise HTTPException(
+                status_code=403,
+                detail="Solo un usuario administrador puede crear cuentas desde Configuración.",
+            )
         if get_user_by_username(conn, username_clean):
             raise HTTPException(status_code=400, detail="Ya existe un usuario con ese nombre")
+        email_placeholder = f"{username_clean}@approx.es"
         create_user(
             conn,
             username_clean,

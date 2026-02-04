@@ -34,6 +34,7 @@ def _init_db(conn: sqlite3.Connection):
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
+            is_admin INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -154,6 +155,8 @@ def _init_db(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE rma_items ADD COLUMN date_sent TEXT")
     if "excel_row" not in cols:
         conn.execute("ALTER TABLE rma_items ADD COLUMN excel_row INTEGER")
+    if "is_admin" not in [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]:
+        conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
 
 
 @contextmanager
@@ -171,7 +174,7 @@ def get_connection():
 
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
     cur = conn.execute(
-        "SELECT id, username, password_hash, email, created_at FROM users WHERE username = ?",
+        "SELECT id, username, password_hash, email, COALESCE(is_admin, 0) AS is_admin, created_at FROM users WHERE username = ?",
         (username.strip(),),
     )
     return cur.fetchone()
@@ -185,11 +188,26 @@ def get_user_by_email(conn: sqlite3.Connection, email: str) -> sqlite3.Row | Non
     return cur.fetchone()
 
 
-def create_user(conn: sqlite3.Connection, username: str, password_hash: str, email: str) -> None:
+def create_user(
+    conn: sqlite3.Connection,
+    username: str,
+    password_hash: str,
+    email: str,
+    is_admin: bool = False,
+) -> None:
     conn.execute(
-        "INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)",
-        (username.strip(), password_hash, email.strip().lower()),
+        "INSERT INTO users (username, password_hash, email, is_admin) VALUES (?, ?, ?, ?)",
+        (username.strip(), password_hash, email.strip().lower(), 1 if is_admin else 0),
     )
+
+
+def user_is_admin(conn: sqlite3.Connection, username: str) -> bool:
+    """True si el usuario tiene is_admin=1."""
+    cur = conn.execute(
+        "SELECT 1 FROM users WHERE username = ? AND COALESCE(is_admin, 0) = 1",
+        (username.strip(),),
+    )
+    return cur.fetchone() is not None
 
 
 def update_password_by_username(conn: sqlite3.Connection, username: str, password_hash: str) -> bool:
