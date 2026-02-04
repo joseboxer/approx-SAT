@@ -231,9 +231,9 @@ def _save_last_catalog_error(message: str) -> None:
 
 
 def _run_sync_reset_task(task_id: str, excel_path: str) -> None:
-    """Ejecuta sync-reset en segundo plano y actualiza progreso en _tasks[task_id]."""
+    """Ejecuta sync-reset en segundo plano. La ruta Excel viene ya normalizada desde settings."""
     try:
-        path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path.startswith("\\\\")) else excel_path
+        path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path and excel_path.startswith("\\\\")) else (excel_path or "")
         _update_task(task_id, percent=0, message="Leyendo Excel...")
         df = pd.read_excel(path_str, sheet_name=0)
         df = df.replace({np.nan: None})
@@ -311,11 +311,13 @@ async def recargar_rma_desde_excel(username: str = Depends(get_current_username)
     with get_connection() as conn:
         excel_path = _get_excel_sync_path(conn)
         insert_audit_log(conn, username, "sync_reset_started", "rma", "", excel_path or "")
-    path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path.startswith("\\\\")) else excel_path
+    path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path and excel_path.startswith("\\\\")) else (excel_path or "")
+    if not path_str or not path_str.strip():
+        raise HTTPException(status_code=400, detail="No hay ruta de Excel configurada. Configura la ruta en Configuración (solo administrador).")
     if not os.path.exists(path_str):
         raise HTTPException(
             status_code=400,
-            detail=f"No se encuentra el archivo Excel en la ruta configurada. Comprueba que el servidor tiene acceso a la unidad de red. Ruta: {path_str}",
+            detail=f"No se encuentra el archivo Excel. Comprueba que el servidor tiene acceso a la unidad de red. Ruta: {path_str}",
         )
     if not os.path.isfile(path_str):
         raise HTTPException(status_code=400, detail=f"La ruta no es un archivo: {path_str}")
@@ -342,14 +344,14 @@ def get_task_progress(task_id: str):
 
 
 def _run_sync_task(task_id: str, excel_path: str | None, file_content: bytes | None) -> None:
-    """Ejecuta sync (añadir solo nuevos) en segundo plano."""
+    """Ejecuta sync (añadir solo nuevos) en segundo plano. La ruta Excel viene ya normalizada desde settings."""
     try:
         if file_content is not None:
             _update_task(task_id, percent=0, message="Leyendo Excel subido...")
             df = pd.read_excel(io.BytesIO(file_content), sheet_name=0)
         else:
             _update_task(task_id, percent=0, message="Leyendo Excel...")
-            path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path.startswith("\\\\")) else excel_path
+            path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path and excel_path.startswith("\\\\")) else (excel_path or "")
             df = pd.read_excel(path_str, sheet_name=0)
         df = df.replace({np.nan: None})
         col_map = _excel_row_to_columns(df)
@@ -434,9 +436,13 @@ async def sincronizar_excel(
         with get_connection() as conn:
             excel_path = _get_excel_sync_path(conn)
             insert_audit_log(conn, username, "sync_started", "rma", "", excel_path or "")
-        path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path.startswith("\\\\")) else excel_path
+        path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path and excel_path.startswith("\\\\")) else (excel_path or "")
+        if not path_str or not path_str.strip():
+            raise HTTPException(status_code=400, detail="No hay ruta de Excel configurada. Configura la ruta en Configuración (solo administrador).")
+        if not os.path.exists(path_str):
+            raise HTTPException(status_code=400, detail=f"No se encuentra el archivo o la ruta. Comprueba que el servidor tiene acceso. Ruta: {path_str}")
         if not os.path.isfile(path_str):
-            raise HTTPException(status_code=400, detail=f"No se encuentra el Excel en la ruta configurada. Ruta: {path_str}")
+            raise HTTPException(status_code=400, detail=f"La ruta no es un archivo: {path_str}")
     task_id = str(uuid.uuid4())
     with _tasks_lock:
         _tasks[task_id] = {"status": "running", "percent": 0, "message": "Iniciando...", "result": None}
@@ -610,10 +616,14 @@ def actualizar_settings(
     body: SettingsBody,
     username: str = Depends(get_current_username),
 ):
-    """Guarda las rutas de catálogo, Excel y configuración de Atractor. Las rutas se normalizan (UNC) antes de guardar."""
+    """Guarda las rutas de catálogo, Excel y configuración de Atractor. Solo administradores pueden cambiar las rutas."""
     with get_connection() as conn:
-        set_setting(conn, "PRODUCTOS_CATALOG_PATH", _normalize_unc_path(body.PRODUCTOS_CATALOG_PATH or ""))
-        set_setting(conn, "EXCEL_SYNC_PATH", _normalize_unc_path(body.EXCEL_SYNC_PATH or ""))
+        if user_is_admin(conn, username):
+            set_setting(conn, "PRODUCTOS_CATALOG_PATH", _normalize_unc_path(body.PRODUCTOS_CATALOG_PATH or ""))
+            set_setting(conn, "EXCEL_SYNC_PATH", _normalize_unc_path(body.EXCEL_SYNC_PATH or ""))
+        else:
+            # No administrador: no modificar rutas (mantener las actuales)
+            pass
         set_setting(conn, "ATRACTOR_URL", (body.ATRACTOR_URL or "").strip())
         set_setting(conn, "ATRACTOR_USER", (body.ATRACTOR_USER or "").strip())
         if (body.ATRACTOR_PASSWORD or "").strip():

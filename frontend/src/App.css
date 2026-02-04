@@ -1048,6 +1048,16 @@
 .table-wrapper.tabla-rma thead th:nth-child(11) { width: 9%; } /* Estado */
 .table-wrapper.tabla-rma thead th:nth-child(12) { width: 7%; } /* Acciones */
 .table-wrapper.tabla-rma tr.row-selected { background: var(--color-bg-subtle); }
+.rma-estado-inline-select {
+  min-width: 7rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--color-border, #ccc);
+  border-radius: var(--radius, 4px);
+  background: var(--color-bg, #fff);
+  cursor: pointer;
+}
+.rma-estado-inline-select:disabled { opacity: 0.7; cursor: wait; }
 .table-wrapper.tabla-rma .col-checkbox input { cursor: pointer; }
 /* Celdas de texto largo: no solapar, truncar con ellipsis; usar title para ver completo al pasar el ratón */
 .table-wrapper.tabla-rma td:nth-child(4),
@@ -2530,7 +2540,7 @@
   line-height: 1.5;
 }
 
-/* ========== Recorrido de aprendizaje (tour) ========== */
+/* ========== Recorrido guiado (tour) ========== */
 .tour-overlay {
   position: fixed;
   inset: 0;
@@ -2547,6 +2557,17 @@
   inset: 0;
   background: rgba(15, 23, 42, 0.6);
   cursor: pointer;
+}
+
+/* Resaltado del elemento que se está explicando en el tour */
+.tour-step-target {
+  position: relative;
+  z-index: 2001;
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.35);
+  border-radius: 6px;
+  transition: outline-color 0.2s, box-shadow 0.2s;
 }
 
 .tour-card {

@@ -35,13 +35,13 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
   const productosMenuRef = useRef(null)
 
   const rmaVistas = [
-    { key: VISTAS.RMA, label: 'Lista RMA' },
-    { key: VISTAS.PRODUCTOS_RMA, label: 'Productos RMA' },
-    { key: VISTAS.OCULTA, label: `Lista oculta${hiddenRmas.length > 0 ? ` (${hiddenRmas.length})` : ''}` },
+    { key: VISTAS.RMA, label: 'Listado de reparaciones' },
+    { key: VISTAS.PRODUCTOS_RMA, label: 'Productos en reparación' },
+    { key: VISTAS.OCULTA, label: `Reparaciones ocultas${hiddenRmas.length > 0 ? ` (${hiddenRmas.length})` : ''}` },
   ]
 
   const productosVistas = [
-    { key: VISTAS.PRODUCTOS, label: 'Catálogo', clearCliente: false },
+    { key: VISTAS.PRODUCTOS, label: 'Catálogo de productos', clearCliente: false },
     { key: VISTAS.REPUESTOS, label: 'Repuestos' },
   ]
 
@@ -119,6 +119,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
         onSubmit={handleSerialSubmit}
         role="search"
         aria-label="Buscar por número de serie"
+        data-tour="busqueda-serie"
       >
         <label htmlFor="nav-serial-input" className="nav-serial-label">
           Nº serie
@@ -134,7 +135,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
           autoComplete="off"
           aria-label="Número de serie (escanear código de barras o escribir)"
         />
-        <button type="submit" className="nav-serial-btn" title="Ir a Productos RMA con este número de serie">
+        <button type="submit" className="nav-serial-btn" title="Ir a productos en reparación con este número de serie">
           Ir
         </button>
       </form>
@@ -147,8 +148,9 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
             onClick={() => setShowRmaMenu((s) => !s)}
             aria-expanded={showRmaMenu}
             aria-haspopup="true"
+            aria-label="Reparaciones (listado, productos, ocultas)"
           >
-            RMA <span className="nav-dropdown-arrow" aria-hidden>{showRmaMenu ? '▲' : '▼'}</span>
+            Reparaciones <span className="nav-dropdown-arrow" aria-hidden>{showRmaMenu ? '▲' : '▼'}</span>
           </button>
           {showRmaMenu && (
             <div className="nav-dropdown-inline" role="menu">
@@ -174,6 +176,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
             onClick={() => setShowProductosMenu((s) => !s)}
             aria-expanded={showProductosMenu}
             aria-haspopup="true"
+            aria-label="Productos (catálogo y repuestos)"
           >
             Productos <span className="nav-dropdown-arrow" aria-hidden>{showProductosMenu ? '▲' : '▼'}</span>
           </button>
@@ -200,7 +203,8 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
           className="nav-hamburger-btn"
           onClick={() => setShowHamburgerMenu((s) => !s)}
           aria-expanded={showHamburgerMenu}
-          aria-label={unreadCount > 0 ? `Menú (${unreadCount} notificaciones sin leer)` : 'Menú'}
+          aria-label={unreadCount > 0 ? `Menú principal (${unreadCount} avisos sin leer)` : 'Menú principal'}
+          data-tour="hamburger"
         >
           <span className="nav-hamburger-bar" />
           <span className="nav-hamburger-bar" />
@@ -219,7 +223,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
               className={`nav-hamburger-item ${vista === VISTAS.NOTIFICACIONES ? 'active' : ''}`}
               onClick={() => go(VISTAS.NOTIFICACIONES)}
             >
-              Notificaciones
+              Mensajes y avisos
               {unreadCount > 0 && (
                 <span className="nav-notif-badge" aria-label={`${unreadCount} sin leer`}>
                   {unreadCount > 99 ? '99+' : unreadCount}
@@ -232,7 +236,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
               className={`nav-hamburger-item ${vista === VISTAS.CONFIGURACION ? 'active' : ''}`}
               onClick={() => go(VISTAS.CONFIGURACION)}
             >
-              Configuración
+              Ajustes y configuración
             </button>
             {user?.isAdmin && (
               <button
@@ -241,7 +245,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
                 className={`nav-hamburger-item ${vista === VISTAS.ADMIN ? 'active' : ''}`}
                 onClick={() => go(VISTAS.ADMIN)}
               >
-                Panel de administrador
+                Gestionar usuarios
               </button>
             )}
             <button
@@ -250,7 +254,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
               className={`nav-hamburger-item ${vista === VISTAS.INFORMES ? 'active' : ''}`}
               onClick={() => go(VISTAS.INFORMES)}
             >
-              Informes
+              Informes y reportes
             </button>
             <button
               type="button"
@@ -261,7 +265,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
                 startTour?.()
               }}
             >
-              Recorrido de aprendizaje
+              Ver guía de la aplicación
             </button>
             {user && (
               <button

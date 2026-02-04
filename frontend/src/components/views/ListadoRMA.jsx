@@ -39,11 +39,14 @@ function ListadoRMA({
     getSerie,
     getEstadoLabel,
     estadoRma,
+    guardarEstadoRma,
     setEditandoRmaId,
     ocultarRmaGroup,
     claveSerieReal,
     refetchProductos,
   } = useGarantia()
+
+  const [updatingEstadoRmaId, setUpdatingEstadoRmaId] = useState(null)
 
   const [pagina, setPagina] = useState(1)
   const [columnaFiltro, setColumnaFiltro] = useState('PRODUCTO')
@@ -262,7 +265,7 @@ function ListadoRMA({
   if (error) return <div className="error-msg">Error: {error}</div>
 
   return (
-    <>
+    <div data-tour="rma">
       <h1 className="page-title">Listado RMA</h1>
       {mostrarNoEncontrado && (
         <div className="rma-no-encontrado" role="alert">
@@ -503,7 +506,26 @@ function ListadoRMA({
                       {(p.OBSERVACIONES ?? '').toString().slice(0, 50)}
                       {p.OBSERVACIONES?.length > 50 ? '…' : ''}
                     </td>
-                    <td>{getEstadoLabel(estadoRma[grupo.rmaId])}</td>
+                    <td>
+                      <select
+                        className="rma-estado-inline-select"
+                        value={estadoRma[grupo.rmaId] ?? ''}
+                        onChange={(e) => {
+                          const nuevo = e.target.value
+                          setUpdatingEstadoRmaId(grupo.rmaId)
+                          guardarEstadoRma(grupo.rmaId, nuevo).finally(() => setUpdatingEstadoRmaId(null))
+                        }}
+                        disabled={updatingEstadoRmaId === grupo.rmaId}
+                        aria-label={`Estado del RMA ${p['NÂº DE RMA'] ?? p['Nº DE RMA'] ?? ''}`}
+                        title="Cambiar estado"
+                      >
+                        {OPCIONES_ESTADO.map((o) => (
+                          <option key={o.value === '' ? '__' : o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -648,7 +670,7 @@ function ListadoRMA({
         type="rma"
         referenceData={notificarRef || {}}
       />
-    </>
+    </div>
   )
 }
 

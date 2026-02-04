@@ -229,7 +229,7 @@ function Clientes({ clienteDestacado }) {
   if (error) return <div className="error-msg">Error: {error}</div>
 
   return (
-    <>
+    <div data-tour="clientes">
       <h1 className="page-title">Clientes</h1>
 
       <section className="unificar-clientes-seccion" aria-labelledby="unificar-clientes-titulo">
@@ -398,7 +398,7 @@ function Clientes({ clienteDestacado }) {
         type="cliente"
         referenceData={notificarRef || {}}
       />
-    </>
+    </div>
   )
 }
 

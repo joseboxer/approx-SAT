@@ -162,7 +162,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   if (error) return <div className="error-msg">Error: {error}</div>
 
   return (
-    <>
+    <div data-tour="productos">
       <h1 className="page-title">Productos (catálogo)</h1>
       {productoNoEncontrado && (
         <div className="rma-no-encontrado productos-catalogo-no-encontrado" role="alert">
@@ -464,7 +464,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
         type="catalogo"
         referenceData={notificarRef || {}}
       />
-    </>
+    </div>
   )
 }
 

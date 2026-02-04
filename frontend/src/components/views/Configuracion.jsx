@@ -485,6 +485,11 @@ function Configuracion({ setVista }) {
           Rutas
           <HelpTip text="Ruta de red (ej. \\\\servidor\\carpeta) o local. El Excel de RMA debe ser un archivo .xlsx; el catálogo es una carpeta con subcarpetas de productos. Para QNAP: quien accede a los archivos es el servidor donde corre la app; ese equipo debe tener acceso de lectura a la unidad de red (misma red, usuario con permiso en el QNAP). Usa «Comprobar rutas» para verificar antes de guardar." />
         </h2>
+        {!user?.isAdmin && (
+          <p className="configuracion-desc" style={{ marginBottom: '0.5rem' }}>
+            Solo el administrador puede modificar las rutas de catálogo y Excel.
+          </p>
+        )}
         <div className="configuracion-field">
           <label htmlFor="config-productos-catalog-path">
             Ruta catálogo de productos (QNAP)
@@ -493,9 +498,12 @@ function Configuracion({ setVista }) {
             id="config-productos-catalog-path"
             type="text"
             value={productosCatalogPath}
-            onChange={(e) => setProductosCatalogPath(e.target.value)}
+            onChange={(e) => user?.isAdmin && setProductosCatalogPath(e.target.value)}
             placeholder="Ej. \\\\Qnap-approx2\\z\\DEPT. TEC\\PRODUCTOS"
             className="configuracion-input"
+            readOnly={!user?.isAdmin}
+            disabled={!user?.isAdmin}
+            aria-readonly={!user?.isAdmin}
           />
           <span className="configuracion-hint">
             Carpeta donde están las marcas y productos (Excel: fecha en C3, serie base = última celda con texto en col D). Las rutas con espacios (ej. DEPT. TEC\PRODUCTOS) se leen correctamente.
@@ -510,9 +518,12 @@ function Configuracion({ setVista }) {
             id="config-excel-sync-path"
             type="text"
             value={excelSyncPath}
-            onChange={(e) => setExcelSyncPath(e.target.value)}
+            onChange={(e) => user?.isAdmin && setExcelSyncPath(e.target.value)}
             placeholder="Ej. \\\\Qnap-approx2\\ruta\\productos.xlsx o ruta local"
             className="configuracion-input"
+            readOnly={!user?.isAdmin}
+            disabled={!user?.isAdmin}
+            aria-readonly={!user?.isAdmin}
           />
           <span className="configuracion-hint">
             Ruta completa al archivo Excel (incluyendo nombre del archivo). Se usa al pulsar &quot;Sincronizar&quot; en Inicio (mismo origen que Lista RMA). El archivo puede llamarse como quieras; las rutas con espacios (ej. DEPT. TEC\archivo nombre.xlsx) se leen correctamente.

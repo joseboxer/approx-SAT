@@ -112,14 +112,14 @@ function Inicio({ setVista, setRmaDestacado }) {
   }
 
   return (
-    <>
-      <div className="card-welcome">
+    <div data-tour="inicio">
+      <div className="card-welcome" data-tour="fin">
         <h1 className="card-welcome-title">
           Bienvenido al SAT
           <span className="card-welcome-accent" aria-hidden>▲</span>
         </h1>
         <p className="card-welcome-lead">
-          SAT · Menú superior: listado RMA, clientes, productos.
+          SAT · Menú superior: reparaciones, clientes, productos.
         </p>
 
         <section className="sync-excel" aria-labelledby="sync-title">
@@ -340,7 +340,7 @@ function Inicio({ setVista, setRmaDestacado }) {
           </div>
         )}
       </section>
-    </>
+    </div>
   )
 }
 

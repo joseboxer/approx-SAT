@@ -448,7 +448,7 @@ function ProductosRMA(props) {
   if (error) return <div className="error-msg">Error: {error}</div>
 
   return (
-    <>
+    <div data-tour="productos-rma">
       <h1 className="page-title">Productos RMA</h1>
       {mostrarSerialNoEncontrado && (
         <div className="rma-no-encontrado productos-rma-no-encontrado" role="alert">
@@ -707,7 +707,7 @@ function ProductosRMA(props) {
         type="producto_rma"
         referenceData={notificarRef || {}}
       />
-    </>
+    </div>
   )
 }
 

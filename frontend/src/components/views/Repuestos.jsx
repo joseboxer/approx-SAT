@@ -166,7 +166,7 @@ function Repuestos() {
   if (error) return <div className="error-msg">Error: {error}</div>
 
   return (
-    <>
+    <div data-tour="repuestos">
       <h1 className="page-title">Repuestos</h1>
       <p className="repuestos-desc">
         Repuestos para garantía. Vincula cada repuesto con uno o varios productos del catálogo y lleva el control de cantidad en inventario.
@@ -331,7 +331,7 @@ function Repuestos() {
           </div>
         </div>
       )}
-    </>
+    </div>
   )
 }
 
