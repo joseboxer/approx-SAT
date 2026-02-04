@@ -184,7 +184,7 @@ def login(body: LoginBody):
     if not user or not _verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
     token = _create_token(user["username"])
-    is_admin = bool(user.get("is_admin"))
+    is_admin = bool(user["is_admin"]) if "is_admin" in user.keys() else False
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -202,7 +202,7 @@ def me(username: str = Depends(get_current_username)):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return {
         "username": user["username"],
-        "is_admin": bool(user.get("is_admin")),
+        "is_admin": bool(user["is_admin"]) if "is_admin" in user.keys() else False,
     }
 
 

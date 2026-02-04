@@ -29,7 +29,8 @@ function loadStoredUser() {
           return { username: parsed.username, token: t, isAdmin: Boolean(parsed.is_admin) }
         }
       } catch (_) {}
-      return { username: u, token: t, isAdmin: false }
+      // Formato antiguo: u era solo el username (string). Dejamos isAdmin undefined para que refreshUser llame a /me
+      return { username: u, token: t, isAdmin: undefined }
     }
     return null
   } catch (_) {
