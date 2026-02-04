@@ -2544,7 +2544,7 @@
 .tour-overlay {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  z-index: 2010;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2559,10 +2559,10 @@
   cursor: pointer;
 }
 
-/* Resaltado del elemento que se está explicando en el tour */
+/* Resaltado del elemento que se está explicando (por debajo del overlay de la guía) */
 .tour-step-target {
   position: relative;
-  z-index: 2001;
+  z-index: 2005;
   outline: 3px solid var(--color-primary);
   outline-offset: 2px;
   box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.35);
@@ -2572,6 +2572,7 @@
 
 .tour-card {
   position: relative;
+  z-index: 2011;
   background: var(--color-card-bg);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);

@@ -169,10 +169,10 @@ _DEFAULT_PRODUCTOS_CATALOG_PATH = os.environ.get("PRODUCTOS_CATALOG_PATH", "").s
 
 
 def _normalize_unc_path(raw: str) -> str:
-    """
+    r"""
     Normaliza ruta para acceso a red (UNC) en Windows.
-    - \\server\\share o \server\share -> \\server\\share (dos barras al inicio).
-    - server\\share o Qnap-approx2\\z\\... (sin barras al inicio) -> \\server\\share (interpretado como UNC).
+    - \\server\share o \server\share -> \\server\share (dos barras al inicio).
+    - server\share o Qnap-approx2\z\... (sin barras al inicio) -> \\server\share (interpretado como UNC).
     - En Windows la ruta debe pasarse como una sola cadena a Path() para que no se normalice mal.
     """
     if not raw or not raw.strip():
