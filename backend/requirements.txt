@@ -7,3 +7,5 @@ python-jose[cryptography]
 bcrypt
 python-multipart
 python-dotenv
+pywebpush
+py_vapid

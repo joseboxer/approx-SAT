@@ -12,6 +12,8 @@ export const API_URL = typeof import.meta.env?.VITE_API_URL === 'string' && impo
 
 export const AUTH_STORAGE_KEY = 'garantia-sat-token'
 export const AUTH_USER_KEY = 'garantia-sat-user'
+export const NOTIFICATIONS_TAB_KEY = 'garantia-notifications-tab' // 'recibidos' | 'enviados'
+export const LAST_NOTIFICATION_TO_USER_KEY = 'garantia-last-notification-to-user-id'
 
 export const OPCIONES_ESTADO = [
   { value: '', label: '—' },

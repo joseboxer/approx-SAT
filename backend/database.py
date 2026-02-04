@@ -130,6 +130,17 @@ def _init_db(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_notifications_to_user ON notifications(to_user_id);
         CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
 
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            endpoint TEXT NOT NULL,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(endpoint)
+        );
+        CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+
         CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -157,6 +168,21 @@ def _init_db(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE rma_items ADD COLUMN excel_row INTEGER")
     if "is_admin" not in [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]:
         conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+    # Tabla push_subscriptions (Web Push) - creada en _init_db con CREATE IF NOT EXISTS
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='push_subscriptions'")
+    if cur.fetchone() is None:
+        conn.execute("""
+            CREATE TABLE push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                endpoint TEXT NOT NULL,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(endpoint)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)")
 
 
 @contextmanager
@@ -325,6 +351,33 @@ def get_notifications_for_user(conn: sqlite3.Connection, to_user_id: int) -> lis
     return out
 
 
+def get_notifications_sent_by_user(conn: sqlite3.Connection, from_user_id: int) -> list[dict]:
+    """Lista notificaciones enviadas por el usuario, con to_username. Orden: más recientes primero."""
+    cur = conn.execute(
+        """SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.reference_data, n.message, n.created_at, n.read_at,
+                  u.username AS to_username
+           FROM notifications n
+           JOIN users u ON u.id = n.to_user_id
+           WHERE n.from_user_id = ?
+           ORDER BY n.created_at DESC""",
+        (from_user_id,),
+    )
+    out = []
+    for row in cur.fetchall():
+        out.append({
+            "id": row["id"],
+            "from_user_id": row["from_user_id"],
+            "to_user_id": row["to_user_id"],
+            "to_username": row["to_username"],
+            "type": row["type"],
+            "reference_data": row["reference_data"],
+            "message": row["message"] or "",
+            "created_at": row["created_at"],
+            "read_at": row["read_at"],
+        })
+    return out
+
+
 def count_unread_notifications(conn: sqlite3.Connection, to_user_id: int) -> int:
     """Cuenta notificaciones no leídas del usuario."""
     cur = conn.execute(
@@ -358,6 +411,37 @@ def mark_notification_read(conn: sqlite3.Connection, notification_id: int, to_us
         (notification_id, to_user_id),
     )
     return cur.rowcount > 0
+
+
+# --- Web Push (suscripciones para notificaciones push en el navegador) ---
+
+
+def save_push_subscription(
+    conn: sqlite3.Connection,
+    user_id: int,
+    endpoint: str,
+    p256dh: str,
+    auth: str,
+) -> None:
+    """Guarda o actualiza una suscripción push. Mismo endpoint = reemplaza (por usuario)."""
+    conn.execute(
+        """INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(endpoint) DO UPDATE SET user_id = ?, p256dh = ?, auth = ?, created_at = datetime('now')""",
+        (user_id, endpoint.strip(), p256dh.strip(), auth.strip(), user_id, p256dh.strip(), auth.strip()),
+    )
+
+
+def get_push_subscriptions_for_user(conn: sqlite3.Connection, user_id: int) -> list[dict]:
+    """Devuelve las suscripciones push del usuario para enviar Web Push."""
+    cur = conn.execute(
+        "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?",
+        (user_id,),
+    )
+    return [
+        {"endpoint": row["endpoint"], "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+        for row in cur.fetchall()
+    ]
 
 
 def get_user_by_id(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:

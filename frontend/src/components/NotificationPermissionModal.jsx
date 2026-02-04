@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { registerPushSubscription } from '../utils/pushSubscription'
 
 const STORAGE_KEY = 'garantia-sat-notification-permission-asked'
 
@@ -37,6 +38,9 @@ function NotificationPermissionModal({ open, onActivar, onCerrar }) {
       await Notification.requestPermission()
     }
     markNotificationPermissionAsked()
+    if (Notification.permission === 'granted') {
+      registerPushSubscription().catch(() => {})
+    }
     onActivar?.()
     onCerrar?.()
   }
@@ -59,7 +63,7 @@ function NotificationPermissionModal({ open, onActivar, onCerrar }) {
           Notificaciones del navegador
         </h2>
         <p className="modal-notification-permission-desc">
-          ¿Quieres activar las notificaciones para recibir avisos cuando otro usuario te envíe una notificación (compartir un RMA, cliente, producto, etc.)?
+          ¿Quieres activar las notificaciones (Web Push) para recibir avisos cuando otro usuario te envíe un mensaje (compartir un RMA, cliente, producto, etc.)? Podrás recibirlas aunque cierres el navegador.
         </p>
         <div className="modal-pie modal-pie-actions">
           <button type="button" className="btn btn-secondary" onClick={handleAhoraNo}>

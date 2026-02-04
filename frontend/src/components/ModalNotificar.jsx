@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, NOTIFICATION_TYPES } from '../constants'
+import { API_URL, AUTH_STORAGE_KEY, NOTIFICATION_TYPES, LAST_NOTIFICATION_TO_USER_KEY } from '../constants'
 
 function getAuthHeaders() {
   try {
@@ -36,10 +36,16 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
 
   useEffect(() => {
     if (open) {
-      setToUserId('')
       setMessage('')
       setError(null)
       refetchUsers()
+      try {
+        const lastId = localStorage.getItem(LAST_NOTIFICATION_TO_USER_KEY)
+        if (lastId) setToUserId(lastId)
+        else setToUserId('')
+      } catch {
+        setToUserId('')
+      }
     }
   }, [open, refetchUsers])
 
@@ -77,6 +83,9 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
         return r.json()
       })
       .then(() => {
+        try {
+          localStorage.setItem(LAST_NOTIFICATION_TO_USER_KEY, String(uid))
+        } catch (_) {}
         onSuccess?.()
         onClose()
       })

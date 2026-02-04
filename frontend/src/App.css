@@ -346,7 +346,7 @@
 
 @media (min-width: 1440px) {
   .main {
-    max-width: 1400px;
+    max-width: 1800px;
   }
 }
 
@@ -1033,8 +1033,12 @@
   table-layout: fixed;
 }
 
+/* Tabla RMA: ancho mínimo para que Estado y Acciones no se compriman; sin scroll lateral */
+.table-wrapper.tabla-rma {
+  min-width: 1200px;
+}
 /* Reparto de ancho tablas RMA (12 columnas: checkbox + Nº RMA + Producto + serie + Cliente + 3 fechas + Avería + Observaciones + Estado + Acciones) */
-.table-wrapper.tabla-rma table { table-layout: fixed; }
+.table-wrapper.tabla-rma table { table-layout: fixed; width: 100%; min-width: 1200px; }
 .table-wrapper.tabla-rma .col-checkbox { width: 3%; text-align: center; }
 .table-wrapper.tabla-rma thead th:nth-child(2) { width: 5%; }   /* Nº RMA */
 .table-wrapper.tabla-rma thead th:nth-child(3) { width: 9%; }  /* Producto */
@@ -1045,10 +1049,10 @@
 .table-wrapper.tabla-rma thead th:nth-child(8) { width: 6%; }  /* Fecha recogida */
 .table-wrapper.tabla-rma thead th:nth-child(9) { width: 11%; } /* Avería */
 .table-wrapper.tabla-rma thead th:nth-child(10) { width: 11%; } /* Observaciones */
-.table-wrapper.tabla-rma thead th:nth-child(11) { width: 10%; min-width: 8.5rem; } /* Estado: espacio para el desplegable */
-.table-wrapper.tabla-rma thead th:nth-child(12) { width: 8%; min-width: 7rem; } /* Acciones */
+.table-wrapper.tabla-rma thead th:nth-child(11) { width: 10%; min-width: 9rem; } /* Estado */
+.table-wrapper.tabla-rma thead th:nth-child(12) { width: 9%; min-width: 8rem; } /* Acciones */
 .table-wrapper.tabla-rma tr.row-selected { background: var(--color-bg-subtle); }
-/* Celda Estado: contener el select; queda por encima de Acciones para que el desplegable no quede detrás de los botones */
+/* Celda Estado: select visible sin solapar botones */
 .table-wrapper.tabla-rma td:nth-child(11) {
   position: relative;
   z-index: 2;
@@ -2433,6 +2437,34 @@
 }
 
 /* Vista Notificaciones */
+.notificaciones-bandejas {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.notificaciones-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg-subtle);
+  color: var(--text-heading);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.notificaciones-tab:hover {
+  background: var(--color-border-light);
+}
+
+.notificaciones-tab.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
 .notificaciones-desc {
   margin: 0 0 1.5rem;
   font-size: 0.9375rem;

@@ -20,6 +20,7 @@ import ModalEditarRma from './components/ModalEditarRma'
 import NotificationPermissionModal, { shouldShowNotificationPermissionPrompt } from './components/NotificationPermissionModal'
 import TourRecorrido from './components/TourRecorrido'
 import { VISTAS, API_URL, AUTH_STORAGE_KEY } from './constants'
+import { registerPushSubscription } from './utils/pushSubscription'
 import './App.css'
 
 function getAuthHeaders() {
@@ -162,6 +163,12 @@ function App() {
   useEffect(() => {
     if (user && shouldShowNotificationPermissionPrompt()) {
       setShowNotificationPermissionModal(true)
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (user && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      registerPushSubscription().catch(() => {})
     }
   }, [user])
 

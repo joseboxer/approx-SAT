@@ -72,7 +72,10 @@ from database import (
     delete_user,
     user_is_admin,
     get_notifications_for_user,
+    get_notifications_sent_by_user,
     count_unread_notifications,
+    save_push_subscription,
+    get_push_subscriptions_for_user,
     create_notification,
     mark_notification_read,
 )
@@ -1215,6 +1218,17 @@ def listar_notificaciones(username: str = Depends(get_current_username)):
     return items
 
 
+@app.get("/api/notifications/sent")
+def listar_notificaciones_enviadas(username: str = Depends(get_current_username)):
+    """Lista notificaciones enviadas por el usuario actual."""
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        items = get_notifications_sent_by_user(conn, user["id"])
+    return items
+
+
 @app.get("/api/notifications/unread-count")
 def contar_notificaciones_no_leidas(username: str = Depends(get_current_username)):
     """Cuenta notificaciones no leídas del usuario actual."""
@@ -1226,6 +1240,39 @@ def contar_notificaciones_no_leidas(username: str = Depends(get_current_username
     return {"count": count}
 
 
+# --- Web Push (notificaciones aunque el navegador esté cerrado) ---
+
+_VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+
+
+@app.get("/api/push/vapid-public")
+def obtener_vapid_public(username: str = Depends(get_current_username)):
+    """Devuelve la clave pública VAPID para que el frontend registre la suscripción push."""
+    if not _VAPID_PUBLIC_KEY:
+        raise HTTPException(status_code=503, detail="Web Push no configurado (falta VAPID_PUBLIC_KEY)")
+    return {"publicKey": _VAPID_PUBLIC_KEY}
+
+
+class PushSubscribeBody(BaseModel):
+    endpoint: str
+    keys: dict  # {"p256dh": "...", "auth": "..."}
+
+
+@app.post("/api/push/subscribe")
+def suscribir_push(body: PushSubscribeBody, username: str = Depends(get_current_username)):
+    """Guarda la suscripción push del navegador para enviar notificaciones Web Push."""
+    p256dh = (body.keys or {}).get("p256dh") or (body.keys or {}).get("p256dh")
+    auth = (body.keys or {}).get("auth")
+    if not body.endpoint or not p256dh or not auth:
+        raise HTTPException(status_code=400, detail="Faltan endpoint o keys (p256dh, auth)")
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        save_push_subscription(conn, user["id"], body.endpoint, p256dh, auth)
+    return {"mensaje": "Suscripción guardada"}
+
+
 class NotificationBody(BaseModel):
     to_user_id: int
     type: str  # 'rma' | 'catalogo' | 'producto_rma' | 'cliente'
@@ -1233,9 +1280,38 @@ class NotificationBody(BaseModel):
     message: str = ""
 
 
+def _send_web_push_to_user(to_user_id: int, from_username: str, type_label: str, ref_summary: str, message: str | None) -> None:
+    """Envía Web Push a todas las suscripciones del usuario. No bloquea; ignora errores."""
+    vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+    if not vapid_private:
+        return
+    try:
+        from pywebpush import webpush
+    except ImportError:
+        return
+    payload = json.dumps({
+        "title": "SAT · Nuevo mensaje",
+        "body": f"{from_username}: {type_label}" + (f" — {ref_summary}" if ref_summary else ""),
+        "message": message or "",
+        "tag": "garantia-notification",
+    }, ensure_ascii=False)
+    with get_connection() as conn:
+        subs = get_push_subscriptions_for_user(conn, to_user_id)
+    for sub in subs:
+        try:
+            webpush(
+                sub,
+                payload,
+                vapid_private_key=vapid_private,
+                vapid_claims={"sub": "mailto:notificaciones@approx.es"},
+            )
+        except Exception:
+            pass
+
+
 @app.post("/api/notifications")
 def crear_notificacion(body: NotificationBody, username: str = Depends(get_current_username)):
-    """Crea una notificación para otro usuario (compartir fila de RMA, catálogo, etc.)."""
+    """Crea una notificación para otro usuario (compartir fila de RMA, catálogo, etc.). Envía Web Push si está configurado."""
     with get_connection() as conn:
         from_user = get_user_by_username(conn, username)
         if not from_user:
@@ -1254,6 +1330,16 @@ def crear_notificacion(body: NotificationBody, username: str = Depends(get_curre
             reference_data=ref_json,
             message=body.message.strip() or None,
         )
+    type_labels = {"rma": "Lista RMA", "catalogo": "Catálogo", "producto_rma": "Productos RMA", "cliente": "Clientes"}
+    ref_summary = (body.reference_data.get("rma_number") or body.reference_data.get("serial") or
+                   body.reference_data.get("product_ref") or body.reference_data.get("nombre") or "")
+    if isinstance(ref_summary, str) and len(ref_summary) > 40:
+        ref_summary = ref_summary[:37] + "..."
+    threading.Thread(
+        target=_send_web_push_to_user,
+        args=(body.to_user_id, from_user["username"], type_labels.get(body.type.strip(), body.type), str(ref_summary), body.message.strip() or None),
+        daemon=True,
+    ).start()
     return {"id": nid, "mensaje": "Notificación enviada"}
 
 
