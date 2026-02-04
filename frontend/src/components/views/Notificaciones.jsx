@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, VISTAS, NOTIFICATION_TYPES, NOTIFICATIONS_TAB_KEY } from '../../constants'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { API_URL, AUTH_STORAGE_KEY, VISTAS, NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_VALUES, NOTIFICATION_CATEGORY_SIN_FILTRO, NOTIFICATIONS_TAB_KEY, NOTIFICATIONS_CATEGORY_KEY } from '../../constants'
 
 function getAuthHeaders() {
   try {
@@ -28,6 +28,38 @@ function parseRef(ref) {
 const BANDEJA_RECIBIDOS = 'recibidos'
 const BANDEJA_ENVIADOS = 'enviados'
 
+/** Devuelve etiqueta de fecha al estilo WhatsApp: "Hoy", "Ayer" o "31 ene 2025" */
+function getDateLabel(createdAt) {
+  if (!createdAt) return ''
+  const d = new Date(createdAt)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const diffDays = Math.floor((today - dateOnly) / (1000 * 60 * 60 * 24))
+  if (diffDays === 0) return 'Hoy'
+  if (diffDays === 1) return 'Ayer'
+  return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/** Agrupa notificaciones por etiqueta de fecha (orden ya es DESC por created_at) */
+function groupByDate(items) {
+  const groups = []
+  let currentLabel = null
+  let currentItems = []
+  for (const n of items) {
+    const label = getDateLabel(n.created_at)
+    if (label !== currentLabel) {
+      if (currentItems.length > 0) groups.push({ dateLabel: currentLabel, items: currentItems })
+      currentLabel = label
+      currentItems = [n]
+    } else {
+      currentItems.push(n)
+    }
+  }
+  if (currentItems.length > 0) groups.push({ dateLabel: currentLabel, items: currentItems })
+  return groups
+}
+
 function Notificaciones({
   setVista,
   setRmaDestacado,
@@ -44,6 +76,14 @@ function Notificaciones({
       return BANDEJA_RECIBIDOS
     }
   })
+  const [categoria, setCategoria] = useState(() => {
+    try {
+      const c = localStorage.getItem(NOTIFICATIONS_CATEGORY_KEY)
+      return NOTIFICATION_CATEGORY_VALUES.includes(c) ? c : NOTIFICATION_CATEGORY_SIN_FILTRO
+    } catch {
+      return NOTIFICATION_CATEGORY_SIN_FILTRO
+    }
+  })
   const [list, setList] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
@@ -53,13 +93,21 @@ function Notificaciones({
       localStorage.setItem(NOTIFICATIONS_TAB_KEY, bandeja)
     } catch (_) {}
   }, [bandeja])
+  useEffect(() => {
+    try {
+      localStorage.setItem(NOTIFICATIONS_CATEGORY_KEY, categoria)
+    } catch (_) {}
+  }, [categoria])
 
   const refetch = useCallback(() => {
     setCargando(true)
     setError(null)
-    const url = bandeja === BANDEJA_ENVIADOS
+    const base = bandeja === BANDEJA_ENVIADOS
       ? `${API_URL}/api/notifications/sent`
       : `${API_URL}/api/notifications`
+    const url = categoria
+      ? `${base}?category=${encodeURIComponent(categoria)}`
+      : base
     fetch(url, { headers: getAuthHeaders() })
       .then((r) => {
         if (!r.ok) throw new Error('Error al cargar notificaciones')
@@ -68,11 +116,13 @@ function Notificaciones({
       .then((data) => setList(Array.isArray(data) ? data : []))
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
-  }, [bandeja])
+  }, [bandeja, categoria])
 
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  const groupedList = useMemo(() => groupByDate(list), [list])
 
   const handleVer = (n) => {
     let ref
@@ -139,49 +189,76 @@ function Notificaciones({
         </button>
       </div>
 
+      <div className="notificaciones-categorias" role="tablist" aria-label="Filtro por categoría">
+        {NOTIFICATION_CATEGORY_VALUES.map((cat) => (
+          <button
+            key={cat || 'sin-filtro'}
+            type="button"
+            role="tab"
+            aria-selected={categoria === cat}
+            className={`notificaciones-tab notificaciones-tab-cat ${categoria === cat ? 'active' : ''}`}
+            onClick={() => setCategoria(cat)}
+          >
+            {NOTIFICATION_CATEGORIES[cat]}
+          </button>
+        ))}
+      </div>
+
       <p className="notificaciones-desc">
         {bandeja === BANDEJA_RECIBIDOS
-          ? 'Mensajes que otros usuarios te han enviado. Pulsa «Ver» para ir al apartado correspondiente.'
-          : 'Mensajes que tú has enviado a otros usuarios.'}
+          ? `Recibidos${categoria ? ` · Filtro: ${NOTIFICATION_CATEGORIES[categoria]}` : ''}. Pulsa «Ver» para ir al apartado correspondiente.`
+          : `Enviados${categoria ? ` · Filtro: ${NOTIFICATION_CATEGORIES[categoria]}` : ''}.`}
       </p>
 
       {list.length === 0 ? (
         <p className="notificaciones-empty">
-          {bandeja === BANDEJA_RECIBIDOS ? 'No tienes mensajes recibidos.' : 'No has enviado ningún mensaje.'}
+          {bandeja === BANDEJA_RECIBIDOS
+            ? (categoria ? `No tienes mensajes recibidos en ${NOTIFICATION_CATEGORIES[categoria]}.` : 'No tienes mensajes recibidos.')
+            : (categoria ? `No has enviado ningún mensaje en ${NOTIFICATION_CATEGORIES[categoria]}.` : 'No has enviado ningún mensaje.')}
         </p>
       ) : (
         <ul className="notificaciones-list">
-          {list.map((n) => (
-            <li
-              key={n.id}
-              className={`notificaciones-item ${bandeja === BANDEJA_RECIBIDOS && !n.read_at ? 'notificaciones-item-unread' : ''}`}
-            >
-              <div className="notificaciones-item-header">
-                <span className="notificaciones-item-from">
-                  {bandeja === BANDEJA_RECIBIDOS ? n.from_username : n.to_username}
-                  {bandeja === BANDEJA_RECIBIDOS && !n.read_at && <span className="notificaciones-badge">Nueva</span>}
-                </span>
-                <span className="notificaciones-item-date">
-                  {n.created_at ? new Date(n.created_at).toLocaleString('es-ES') : ''}
-                </span>
-              </div>
-              <div className="notificaciones-item-type">
-                {NOTIFICATION_TYPES[n.type] || n.type}
-              </div>
-              <div className="notificaciones-item-ref">
-                {parseRef(n.reference_data)}
-              </div>
-              {n.message && (
-                <p className="notificaciones-item-message">{n.message}</p>
-              )}
-              <button
-                type="button"
-                className="btn btn-primary btn-sm notificaciones-btn-ver"
-                onClick={() => handleVer(n)}
-              >
-                Ver
-              </button>
-            </li>
+          {groupedList.map(({ dateLabel, items }) => (
+            <React.Fragment key={dateLabel}>
+              <li className="notificaciones-date-separator" aria-hidden>
+                {dateLabel}
+              </li>
+              {items.map((n) => (
+                <li
+                  key={n.id}
+                  className={`notificaciones-item ${bandeja === BANDEJA_RECIBIDOS && !n.read_at ? 'notificaciones-item-unread' : ''}`}
+                >
+                  <div className="notificaciones-item-header">
+                    <span className="notificaciones-item-from">
+                      {bandeja === BANDEJA_RECIBIDOS ? n.from_username : n.to_username}
+                      {bandeja === BANDEJA_RECIBIDOS && !n.read_at && <span className="notificaciones-badge">Nueva</span>}
+                    </span>
+                    <span className="notificaciones-item-date">
+                      {n.created_at ? new Date(n.created_at).toLocaleString('es-ES') : ''}
+                    </span>
+                  </div>
+                  <div className="notificaciones-item-type">
+                    {NOTIFICATION_TYPES[n.type] || n.type}
+                    {n.category && n.category !== 'sin_categoria' && (
+                      <span className="notificaciones-item-cat"> · {NOTIFICATION_CATEGORIES[n.category] || n.category}</span>
+                    )}
+                  </div>
+                  <div className="notificaciones-item-ref">
+                    {parseRef(n.reference_data)}
+                  </div>
+                  {n.message && (
+                    <p className="notificaciones-item-message">{n.message}</p>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm notificaciones-btn-ver"
+                    onClick={() => handleVer(n)}
+                  >
+                    Ver
+                  </button>
+                </li>
+              ))}
+            </React.Fragment>
           ))}
         </ul>
       )}

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, NOTIFICATION_TYPES, LAST_NOTIFICATION_TO_USER_KEY } from '../constants'
+import { API_URL, AUTH_STORAGE_KEY, NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_SIN_FILTRO, LAST_NOTIFICATION_TO_USER_KEY, NOTIFICATIONS_CATEGORY_KEY } from '../constants'
+
+const CATEGORIAS_ENVIO = ['abono', 'envio', 'sin_categoria']
 
 function getAuthHeaders() {
   try {
@@ -16,6 +18,7 @@ function getAuthHeaders() {
 function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
   const [users, setUsers] = useState([])
   const [toUserId, setToUserId] = useState('')
+  const [category, setCategory] = useState('sin_categoria')
   const [message, setMessage] = useState('')
   const [cargando, setCargando] = useState(false)
   const [cargandoUsers, setCargandoUsers] = useState(false)
@@ -43,8 +46,12 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
         const lastId = localStorage.getItem(LAST_NOTIFICATION_TO_USER_KEY)
         if (lastId) setToUserId(lastId)
         else setToUserId('')
+        const lastCat = localStorage.getItem(NOTIFICATIONS_CATEGORY_KEY)
+        if (CATEGORIAS_ENVIO.includes(lastCat)) setCategory(lastCat)
+        else setCategory('sin_categoria')
       } catch {
         setToUserId('')
+        setCategory('sin_categoria')
       }
     }
   }, [open, refetchUsers])
@@ -74,6 +81,7 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
       body: JSON.stringify({
         to_user_id: uid,
         type: type.trim(),
+        category: CATEGORIAS_ENVIO.includes(category) ? category : 'sin_categoria',
         reference_data: referenceData,
         message: (message || '').trim() || undefined,
       }),
@@ -85,6 +93,7 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
       .then(() => {
         try {
           localStorage.setItem(LAST_NOTIFICATION_TO_USER_KEY, String(uid))
+          localStorage.setItem(NOTIFICATIONS_CATEGORY_KEY, CATEGORIAS_ENVIO.includes(category) ? category : 'sin_categoria')
         } catch (_) {}
         onSuccess?.()
         onClose()
@@ -113,6 +122,21 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
           Compartir esta fila ({typeLabel}) con otro usuario. Recibirá una notificación y podrá abrirla desde el apartado Notificaciones.
         </p>
         <form onSubmit={handleSubmit}>
+          <div className="modal-notificar-field">
+            <label htmlFor="modal-notificar-category">Categoría</label>
+            <select
+              id="modal-notificar-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              disabled={cargando}
+            >
+              {CATEGORIAS_ENVIO.map((c) => (
+                <option key={c} value={c}>
+                  {NOTIFICATION_CATEGORIES[c]}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="modal-notificar-field">
             <label htmlFor="modal-notificar-user">
               Usuario destinatario <span className="required">*</span>

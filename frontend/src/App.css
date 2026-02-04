@@ -76,6 +76,16 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+/* Botón Mensajes visible en la barra (notificaciones) */
+.nav-link-notif {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.nav-notif-badge-inline {
+  flex-shrink: 0;
+}
+
 /* Búsqueda por nº de serie (lector de códigos de barras) */
 .nav-serial-search {
   display: flex;
@@ -2465,6 +2475,22 @@
   color: #fff;
 }
 
+.notificaciones-categorias {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.notificaciones-tab-cat {
+  font-size: 0.875rem;
+  padding: 0.4rem 0.85rem;
+}
+
+.notificaciones-item-cat {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
 .notificaciones-desc {
   margin: 0 0 1.5rem;
   font-size: 0.9375rem;
@@ -2480,6 +2506,26 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* Separador de fecha al estilo WhatsApp (Hoy, Ayer, 31 ene 2025) */
+.notificaciones-date-separator {
+  list-style: none;
+  text-align: center;
+  margin: 1rem 0 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--color-bg-subtle);
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.notificaciones-date-separator:first-child {
+  margin-top: 0;
 }
 
 .notificaciones-item {

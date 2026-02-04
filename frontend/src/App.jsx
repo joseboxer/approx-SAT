@@ -20,7 +20,7 @@ import ModalEditarRma from './components/ModalEditarRma'
 import NotificationPermissionModal, { shouldShowNotificationPermissionPrompt } from './components/NotificationPermissionModal'
 import TourRecorrido from './components/TourRecorrido'
 import { VISTAS, API_URL, AUTH_STORAGE_KEY } from './constants'
-import { registerPushSubscription } from './utils/pushSubscription'
+import { ensurePushSubscription } from './utils/pushSubscription'
 import './App.css'
 
 function getAuthHeaders() {
@@ -156,19 +156,40 @@ function AppContent() {
   )
 }
 
+// Intervalo para volver a asegurar la suscripción push (p. ej. suscripción expirada en el navegador)
+const PUSH_ENSURE_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 h
+
 function App() {
   const { user } = useAuth()
   const [showNotificationPermissionModal, setShowNotificationPermissionModal] = useState(false)
 
+  // Trigger único: comprobar suscripción push al cargar, al recuperar visibilidad y cada 24 h
   useEffect(() => {
-    if (user && shouldShowNotificationPermissionPrompt()) {
-      setShowNotificationPermissionModal(true)
-    }
-  }, [user])
+    if (!user) return
 
-  useEffect(() => {
-    if (user && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      registerPushSubscription().catch(() => {})
+    const run = async () => {
+      const result = await ensurePushSubscription().catch(() => ({ showModal: false }))
+      if (result.showModal && shouldShowNotificationPermissionPrompt()) {
+        setShowNotificationPermissionModal(true)
+      }
+    }
+
+    run()
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') run()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    const intervalId = setInterval(() => {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        ensurePushSubscription().catch(() => {})
+      }
+    }, PUSH_ENSURE_INTERVAL_MS)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(intervalId)
     }
   }, [user])
 

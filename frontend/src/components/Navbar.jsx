@@ -112,6 +112,21 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
         >
           Clientes
         </button>
+
+        <button
+          type="button"
+          className={`nav-link nav-link-notif ${vista === VISTAS.NOTIFICACIONES ? 'active' : ''}`}
+          onClick={() => go(VISTAS.NOTIFICACIONES)}
+          aria-label={unreadCount > 0 ? `Mensajes (${unreadCount} sin leer)` : 'Mensajes'}
+          title="Mensajes y avisos"
+        >
+          Mensajes
+          {unreadCount > 0 && (
+            <span className="nav-notif-badge nav-notif-badge-inline" aria-hidden>
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </button>
       </div>
 
       <form

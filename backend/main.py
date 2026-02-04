@@ -1208,24 +1208,30 @@ def eliminar_usuario(user_id: int, username: str = Depends(get_current_username)
 
 
 @app.get("/api/notifications")
-def listar_notificaciones(username: str = Depends(get_current_username)):
-    """Lista notificaciones recibidas por el usuario actual."""
+def listar_notificaciones(
+    category: str | None = None,
+    username: str = Depends(get_current_username),
+):
+    """Lista notificaciones recibidas por el usuario actual. category opcional: abono, envio, sin_categoria."""
     with get_connection() as conn:
         user = get_user_by_username(conn, username)
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-        items = get_notifications_for_user(conn, user["id"])
+        items = get_notifications_for_user(conn, user["id"], category=category if category else None)
     return items
 
 
 @app.get("/api/notifications/sent")
-def listar_notificaciones_enviadas(username: str = Depends(get_current_username)):
-    """Lista notificaciones enviadas por el usuario actual."""
+def listar_notificaciones_enviadas(
+    category: str | None = None,
+    username: str = Depends(get_current_username),
+):
+    """Lista notificaciones enviadas por el usuario actual. category opcional: abono, envio, sin_categoria."""
     with get_connection() as conn:
         user = get_user_by_username(conn, username)
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-        items = get_notifications_sent_by_user(conn, user["id"])
+        items = get_notifications_sent_by_user(conn, user["id"], category=category if category else None)
     return items
 
 
@@ -1276,6 +1282,7 @@ def suscribir_push(body: PushSubscribeBody, username: str = Depends(get_current_
 class NotificationBody(BaseModel):
     to_user_id: int
     type: str  # 'rma' | 'catalogo' | 'producto_rma' | 'cliente'
+    category: str = "sin_categoria"  # 'abono' | 'envio' | 'sin_categoria'
     reference_data: dict
     message: str = ""
 
@@ -1322,6 +1329,9 @@ def crear_notificacion(body: NotificationBody, username: str = Depends(get_curre
         if from_user["id"] == body.to_user_id:
             raise HTTPException(status_code=400, detail="No puedes notificarte a ti mismo")
         ref_json = json.dumps(body.reference_data, ensure_ascii=False)
+        cat = (body.category or "sin_categoria").strip() or "sin_categoria"
+        if cat not in ("abono", "envio", "sin_categoria"):
+            cat = "sin_categoria"
         nid = create_notification(
             conn,
             from_user_id=from_user["id"],
@@ -1329,6 +1339,7 @@ def crear_notificacion(body: NotificationBody, username: str = Depends(get_curre
             type_=body.type.strip(),
             reference_data=ref_json,
             message=body.message.strip() or None,
+            category=cat,
         )
     type_labels = {"rma": "Lista RMA", "catalogo": "Catálogo", "producto_rma": "Productos RMA", "cliente": "Clientes"}
     ref_summary = (body.reference_data.get("rma_number") or body.reference_data.get("serial") or

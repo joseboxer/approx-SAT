@@ -122,6 +122,7 @@ def _init_db(conn: sqlite3.Connection):
             from_user_id INTEGER NOT NULL REFERENCES users(id),
             to_user_id INTEGER NOT NULL REFERENCES users(id),
             type TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'sin_categoria',
             reference_data TEXT NOT NULL,
             message TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -129,6 +130,7 @@ def _init_db(conn: sqlite3.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_notifications_to_user ON notifications(to_user_id);
         CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
+        CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category);
 
         CREATE TABLE IF NOT EXISTS push_subscriptions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,6 +185,12 @@ def _init_db(conn: sqlite3.Connection):
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)")
+    # Migración: categoría en notificaciones (abono, envio, sin_categoria)
+    notif_cols = [row[1] for row in conn.execute("PRAGMA table_info(notifications)").fetchall()]
+    if "category" not in notif_cols:
+        conn.execute("ALTER TABLE notifications ADD COLUMN category TEXT DEFAULT 'sin_categoria'")
+        conn.execute("UPDATE notifications SET category = 'sin_categoria' WHERE category IS NULL")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category)")
 
 
 @contextmanager
@@ -324,17 +332,21 @@ def delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
 # --- Notificaciones (compartir fila con otro usuario) ---
 
 
-def get_notifications_for_user(conn: sqlite3.Connection, to_user_id: int) -> list[dict]:
-    """Lista notificaciones recibidas por el usuario, con from_username. Orden: más recientes primero."""
-    cur = conn.execute(
-        """SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.reference_data, n.message, n.created_at, n.read_at,
+def get_notifications_for_user(
+    conn: sqlite3.Connection, to_user_id: int, category: str | None = None
+) -> list[dict]:
+    """Lista notificaciones recibidas por el usuario, con from_username. Opcionalmente filtradas por category (abono, envio, sin_categoria)."""
+    q = """SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.category, n.reference_data, n.message, n.created_at, n.read_at,
                   u.username AS from_username
            FROM notifications n
            JOIN users u ON u.id = n.from_user_id
-           WHERE n.to_user_id = ?
-           ORDER BY n.created_at DESC""",
-        (to_user_id,),
-    )
+           WHERE n.to_user_id = ?"""
+    params: list = [to_user_id]
+    if category and category.strip():
+        q += " AND n.category = ?"
+        params.append(category.strip())
+    q += " ORDER BY n.created_at DESC"
+    cur = conn.execute(q, params)
     out = []
     for row in cur.fetchall():
         out.append({
@@ -343,6 +355,7 @@ def get_notifications_for_user(conn: sqlite3.Connection, to_user_id: int) -> lis
             "from_username": row["from_username"],
             "to_user_id": row["to_user_id"],
             "type": row["type"],
+            "category": row["category"] if row["category"] else "sin_categoria",
             "reference_data": row["reference_data"],
             "message": row["message"] or "",
             "created_at": row["created_at"],
@@ -351,17 +364,21 @@ def get_notifications_for_user(conn: sqlite3.Connection, to_user_id: int) -> lis
     return out
 
 
-def get_notifications_sent_by_user(conn: sqlite3.Connection, from_user_id: int) -> list[dict]:
-    """Lista notificaciones enviadas por el usuario, con to_username. Orden: más recientes primero."""
-    cur = conn.execute(
-        """SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.reference_data, n.message, n.created_at, n.read_at,
+def get_notifications_sent_by_user(
+    conn: sqlite3.Connection, from_user_id: int, category: str | None = None
+) -> list[dict]:
+    """Lista notificaciones enviadas por el usuario, con to_username. Opcionalmente filtradas por category."""
+    q = """SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.category, n.reference_data, n.message, n.created_at, n.read_at,
                   u.username AS to_username
            FROM notifications n
            JOIN users u ON u.id = n.to_user_id
-           WHERE n.from_user_id = ?
-           ORDER BY n.created_at DESC""",
-        (from_user_id,),
-    )
+           WHERE n.from_user_id = ?"""
+    params: list = [from_user_id]
+    if category and category.strip():
+        q += " AND n.category = ?"
+        params.append(category.strip())
+    q += " ORDER BY n.created_at DESC"
+    cur = conn.execute(q, params)
     out = []
     for row in cur.fetchall():
         out.append({
@@ -370,6 +387,7 @@ def get_notifications_sent_by_user(conn: sqlite3.Connection, from_user_id: int) 
             "to_user_id": row["to_user_id"],
             "to_username": row["to_username"],
             "type": row["type"],
+            "category": row["category"] if row["category"] else "sin_categoria",
             "reference_data": row["reference_data"],
             "message": row["message"] or "",
             "created_at": row["created_at"],
@@ -394,12 +412,16 @@ def create_notification(
     type_: str,
     reference_data: str,
     message: str | None = None,
+    category: str = "sin_categoria",
 ) -> int:
-    """Crea una notificación. Devuelve el id."""
+    """Crea una notificación. category: abono, envio o sin_categoria. Devuelve el id."""
+    cat = (category or "sin_categoria").strip() or "sin_categoria"
+    if cat not in ("abono", "envio", "sin_categoria"):
+        cat = "sin_categoria"
     cur = conn.execute(
-        """INSERT INTO notifications (from_user_id, to_user_id, type, reference_data, message)
-           VALUES (?, ?, ?, ?, ?)""",
-        (from_user_id, to_user_id, type_, reference_data, (message or "").strip() or None),
+        """INSERT INTO notifications (from_user_id, to_user_id, type, category, reference_data, message)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (from_user_id, to_user_id, type_, cat, reference_data, (message or "").strip() or None),
     )
     return cur.lastrowid
 
