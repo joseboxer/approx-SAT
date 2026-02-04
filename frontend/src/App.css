@@ -1045,19 +1045,35 @@
 .table-wrapper.tabla-rma thead th:nth-child(8) { width: 6%; }  /* Fecha recogida */
 .table-wrapper.tabla-rma thead th:nth-child(9) { width: 11%; } /* Avería */
 .table-wrapper.tabla-rma thead th:nth-child(10) { width: 11%; } /* Observaciones */
-.table-wrapper.tabla-rma thead th:nth-child(11) { width: 9%; } /* Estado */
-.table-wrapper.tabla-rma thead th:nth-child(12) { width: 7%; } /* Acciones */
+.table-wrapper.tabla-rma thead th:nth-child(11) { width: 10%; min-width: 8.5rem; } /* Estado: espacio para el desplegable */
+.table-wrapper.tabla-rma thead th:nth-child(12) { width: 8%; min-width: 7rem; } /* Acciones */
 .table-wrapper.tabla-rma tr.row-selected { background: var(--color-bg-subtle); }
+/* Celda Estado: contener el select; queda por encima de Acciones para que el desplegable no quede detrás de los botones */
+.table-wrapper.tabla-rma td:nth-child(11) {
+  position: relative;
+  z-index: 2;
+  overflow: visible;
+  vertical-align: middle;
+}
+.table-wrapper.tabla-rma td:nth-child(12) {
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+}
 .rma-estado-inline-select {
-  min-width: 7rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 0.25rem 0.4rem;
   font-size: 0.875rem;
   border: 1px solid var(--color-border, #ccc);
   border-radius: var(--radius, 4px);
   background: var(--color-bg, #fff);
   cursor: pointer;
+  box-sizing: border-box;
 }
 .rma-estado-inline-select:disabled { opacity: 0.7; cursor: wait; }
+.rma-estado-inline-select:focus { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 .table-wrapper.tabla-rma .col-checkbox input { cursor: pointer; }
 /* Celdas de texto largo: no solapar, truncar con ellipsis; usar title para ver completo al pasar el ratón */
 .table-wrapper.tabla-rma td:nth-child(4),
