@@ -165,11 +165,16 @@ def verify(body: VerifyBody):
         if not row:
             raise HTTPException(status_code=400, detail="Código incorrecto o expirado. Solicita uno nuevo desde el registro.")
 
-        create_user(conn, row["username"], row["password_hash"], row["email"])
+        create_user(conn, row["username"], row["password_hash"], row["email"], is_admin=False)
         delete_verification_code(conn, email_normalized, code_clean)
 
     token = _create_token(row["username"])
-    return {"access_token": token, "token_type": "bearer", "username": row["username"]}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "username": row["username"],
+        "is_admin": False,
+    }
 
 
 @router.post("/login")
@@ -179,7 +184,26 @@ def login(body: LoginBody):
     if not user or not _verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
     token = _create_token(user["username"])
-    return {"access_token": token, "token_type": "bearer", "username": user["username"]}
+    is_admin = bool(user.get("is_admin"))
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "username": user["username"],
+        "is_admin": is_admin,
+    }
+
+
+@router.get("/me")
+def me(username: str = Depends(get_current_username)):
+    """Devuelve el usuario actual (username, is_admin) para el frontend."""
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return {
+        "username": user["username"],
+        "is_admin": bool(user.get("is_admin")),
+    }
 
 
 class ChangePasswordBody(BaseModel):

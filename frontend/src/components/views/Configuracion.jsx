@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { API_URL, AUTH_STORAGE_KEY } from '../../constants'
+import { API_URL, AUTH_STORAGE_KEY, VISTAS } from '../../constants'
 import ProgressBar from '../ProgressBar'
 import HelpTip from '../HelpTip'
 
@@ -161,7 +161,7 @@ function downloadCertPem(onError) {
  * Vista Configuración: editar rutas de QNAP (catálogo productos) y Excel (sincronización RMA)
  * sin tocar archivos .env.
  */
-function Configuracion() {
+function Configuracion({ setVista }) {
   const [productosCatalogPath, setProductosCatalogPath] = useState('')
   const [excelSyncPath, setExcelSyncPath] = useState('')
   const [atractorUrl, setAtractorUrl] = useState('')
@@ -179,10 +179,6 @@ function Configuracion() {
   const [resetError, setResetError] = useState(null)
   const [certError, setCertError] = useState(null)
   const [serverIp, setServerIp] = useState(null)
-  const [newUsername, setNewUsername] = useState('')
-  const [createUserLoading, setCreateUserLoading] = useState(false)
-  const [createUserError, setCreateUserError] = useState(null)
-  const [createUserOk, setCreateUserOk] = useState(null)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newPasswordRepeat, setNewPasswordRepeat] = useState('')
@@ -292,33 +288,6 @@ function Configuracion() {
       }
       throw new Error(detail)
     })
-
-  const crearUsuario = () => {
-    const name = (newUsername || '').trim()
-    if (!name) {
-      setCreateUserError('Escribe un nombre de usuario')
-      setCreateUserOk(null)
-      return
-    }
-    setCreateUserLoading(true)
-    setCreateUserError(null)
-    setCreateUserOk(null)
-    fetch(`${API_URL}/api/users`, {
-      method: 'POST',
-      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: name }),
-    })
-      .then((res) => {
-        if (!res.ok) return res.json().then((d) => { throw new Error(d.detail || 'Error al crear usuario') })
-        return res.json()
-      })
-      .then((data) => {
-        setCreateUserOk(data.mensaje || `Usuario '${name}' creado. Contraseña por defecto: approx2026`)
-        setNewUsername('')
-      })
-      .catch((err) => setCreateUserError(err.message))
-      .finally(() => setCreateUserLoading(false))
-  }
 
   const cambiarContrasena = () => {
     if (!currentPassword.trim()) {
@@ -658,36 +627,23 @@ function Configuracion() {
         )}
       </section>
 
-      <section className="configuracion-form" aria-label="Usuarios">
-        <h2 className="configuracion-subtitle">Crear usuario</h2>
-        <p className="configuracion-desc">
-          Crea un usuario nuevo para que pueda iniciar sesión. La contraseña por defecto será <strong>approx2026</strong> (el usuario puede cambiarla después en esta misma página).
-        </p>
-        <div className="configuracion-field">
-          <label htmlFor="config-new-username">Nombre de usuario</label>
-          <input
-            id="config-new-username"
-            type="text"
-            value={newUsername}
-            onChange={(e) => { setNewUsername(e.target.value); setCreateUserError(null); setCreateUserOk(null); }}
-            placeholder="Ej. maria"
-            className="configuracion-input"
-            autoComplete="off"
-          />
-        </div>
-        <div className="configuracion-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={crearUsuario}
-            disabled={createUserLoading}
-          >
-            {createUserLoading ? 'Creando…' : 'Crear usuario'}
-          </button>
-        </div>
-        {createUserOk && <p className="configuracion-ok">{createUserOk}</p>}
-        {createUserError && <p className="error-msg">{createUserError}</p>}
-      </section>
+      {user?.isAdmin && setVista && (
+        <section className="configuracion-form" aria-label="Usuarios">
+          <h2 className="configuracion-subtitle">Usuarios</h2>
+          <p className="configuracion-desc">
+            Para crear usuarios, editar email y rol de administrador, restablecer contraseñas o eliminar cuentas, usa el Panel de administrador.
+          </p>
+          <div className="configuracion-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setVista(VISTAS.ADMIN)}
+            >
+              Abrir Panel de administrador
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="configuracion-form" aria-label="Cambiar mi contraseña">
         <h2 className="configuracion-subtitle">Cambiar mi contraseña</h2>

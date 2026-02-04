@@ -234,6 +234,16 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
             >
               Configuración
             </button>
+            {user?.isAdmin && (
+              <button
+                type="button"
+                role="menuitem"
+                className={`nav-hamburger-item ${vista === VISTAS.ADMIN ? 'active' : ''}`}
+                onClick={() => go(VISTAS.ADMIN)}
+              >
+                Panel de administrador
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"

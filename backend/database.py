@@ -225,6 +225,76 @@ def list_users(conn: sqlite3.Connection) -> list[dict]:
     return [{"id": row["id"], "username": row["username"]} for row in cur.fetchall()]
 
 
+def list_users_admin(conn: sqlite3.Connection) -> list[dict]:
+    """Lista todos los usuarios con datos completos para el panel de administración."""
+    cur = conn.execute(
+        "SELECT id, username, email, COALESCE(is_admin, 0) AS is_admin, created_at FROM users ORDER BY username"
+    )
+    return [
+        {
+            "id": row["id"],
+            "username": row["username"],
+            "email": row["email"] or "",
+            "is_admin": bool(row["is_admin"]),
+            "created_at": row["created_at"] or "",
+        }
+        for row in cur.fetchall()
+    ]
+
+
+def get_user_by_id_full(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
+    """Obtiene un usuario por id con todos los campos (para edición por admin)."""
+    cur = conn.execute(
+        "SELECT id, username, email, COALESCE(is_admin, 0) AS is_admin, created_at FROM users WHERE id = ?",
+        (user_id,),
+    )
+    return cur.fetchone()
+
+
+def update_user(
+    conn: sqlite3.Connection,
+    user_id: int,
+    *,
+    email: str | None = None,
+    is_admin: bool | None = None,
+) -> bool:
+    """Actualiza email y/o is_admin de un usuario. None = no cambiar. Devuelve True si se actualizó."""
+    updates = []
+    params = []
+    if email is not None:
+        updates.append("email = ?")
+        params.append(email.strip().lower())
+    if is_admin is not None:
+        updates.append("is_admin = ?")
+        params.append(1 if is_admin else 0)
+    if not updates:
+        return False
+    params.append(user_id)
+    cur = conn.execute(
+        f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+        params,
+    )
+    return cur.rowcount > 0
+
+
+def update_password_by_id(conn: sqlite3.Connection, user_id: int, password_hash: str) -> bool:
+    """Actualiza la contraseña de un usuario por id. Devuelve True si se actualizó."""
+    cur = conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+    return cur.rowcount > 0
+
+
+def count_admins(conn: sqlite3.Connection) -> int:
+    """Número de usuarios con is_admin=1."""
+    cur = conn.execute("SELECT COUNT(*) FROM users WHERE COALESCE(is_admin, 0) = 1")
+    return cur.fetchone()[0] or 0
+
+
+def delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
+    """Elimina un usuario por id. Devuelve True si se eliminó."""
+    cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return cur.rowcount > 0
+
+
 # --- Notificaciones (compartir fila con otro usuario) ---
 
 

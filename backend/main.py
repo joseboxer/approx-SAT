@@ -62,8 +62,14 @@ from database import (
     delete_repuesto,
     get_user_by_username,
     get_user_by_id,
+    get_user_by_id_full,
     list_users,
+    list_users_admin,
     create_user,
+    update_user,
+    update_password_by_id,
+    count_admins,
+    delete_user,
     user_is_admin,
     get_notifications_for_user,
     count_unread_notifications,
@@ -1107,6 +1113,85 @@ def listar_usuarios(username: str = Depends(get_current_username)):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     current_id = current["id"]
     return [u for u in users if u["id"] != current_id]
+
+
+@app.get("/api/users/admin")
+def listar_usuarios_admin(username: str = Depends(get_current_username)):
+    """Lista todos los usuarios con datos completos. Solo administradores."""
+    with get_connection() as conn:
+        if not user_is_admin(conn, username):
+            raise HTTPException(status_code=403, detail="Solo administradores pueden acceder al panel de usuarios.")
+        return list_users_admin(conn)
+
+
+class UpdateUserBody(BaseModel):
+    email: str | None = None
+    is_admin: bool | None = None
+
+
+@app.patch("/api/users/{user_id:int}")
+def actualizar_usuario(
+    user_id: int,
+    body: UpdateUserBody,
+    username: str = Depends(get_current_username),
+):
+    """Actualiza email y/o is_admin de un usuario. Solo administradores."""
+    with get_connection() as conn:
+        if not user_is_admin(conn, username):
+            raise HTTPException(status_code=403, detail="Solo administradores pueden modificar usuarios.")
+        target = get_user_by_id_full(conn, user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        email = body.email.strip() if body.email is not None and body.email.strip() else None
+        if email is not None:
+            update_user(conn, user_id, email=email)
+        if body.is_admin is not None:
+            admins = count_admins(conn)
+            if admins <= 1 and target["is_admin"] and not body.is_admin:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se puede quitar el rol de administrador al último admin.",
+                )
+            update_user(conn, user_id, is_admin=body.is_admin)
+        insert_audit_log(conn, username, "user_updated", "user", target["username"], str(body.model_dump()))
+    return {"mensaje": "Usuario actualizado"}
+
+
+@app.post("/api/users/{user_id:int}/reset-password")
+def restablecer_password_usuario(
+    user_id: int,
+    username: str = Depends(get_current_username),
+):
+    """Establece la contraseña del usuario a la por defecto (approx2026). Solo administradores."""
+    with get_connection() as conn:
+        if not user_is_admin(conn, username):
+            raise HTTPException(status_code=403, detail="Solo administradores pueden restablecer contraseñas.")
+        target = get_user_by_id(conn, user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        new_hash = get_password_hash(DEFAULT_NEW_USER_PASSWORD)
+        update_password_by_id(conn, user_id, new_hash)
+        insert_audit_log(conn, username, "user_password_reset", "user", target["username"], "")
+    return {"mensaje": f"Contraseña de '{target['username']}' restablecida a {DEFAULT_NEW_USER_PASSWORD}"}
+
+
+@app.delete("/api/users/{user_id:int}")
+def eliminar_usuario(user_id: int, username: str = Depends(get_current_username)):
+    """Elimina un usuario. Solo administradores. No se puede eliminar a uno mismo ni al último admin."""
+    with get_connection() as conn:
+        if not user_is_admin(conn, username):
+            raise HTTPException(status_code=403, detail="Solo administradores pueden eliminar usuarios.")
+        current = get_user_by_username(conn, username)
+        target = get_user_by_id_full(conn, user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        if current and current["id"] == user_id:
+            raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta.")
+        if target["is_admin"] and count_admins(conn) <= 1:
+            raise HTTPException(status_code=400, detail="No se puede eliminar al único administrador.")
+        delete_user(conn, user_id)
+        insert_audit_log(conn, username, "user_deleted", "user", target["username"], "")
+    return {"mensaje": "Usuario eliminado"}
 
 
 @app.get("/api/notifications")

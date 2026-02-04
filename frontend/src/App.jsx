@@ -14,6 +14,7 @@ import Repuestos from './components/views/Repuestos'
 import ListaOculta from './components/views/ListaOculta'
 import Informes from './components/views/Informes'
 import Configuracion from './components/views/Configuracion'
+import AdminPanel from './components/views/AdminPanel'
 import Notificaciones from './components/views/Notificaciones'
 import ModalEditarRma from './components/ModalEditarRma'
 import NotificationPermissionModal, { shouldShowNotificationPermissionPrompt } from './components/NotificationPermissionModal'
@@ -116,7 +117,9 @@ function AppContent() {
       case VISTAS.INFORMES:
         return <Informes />
       case VISTAS.CONFIGURACION:
-        return <Configuracion />
+        return <Configuracion setVista={setVista} />
+      case VISTAS.ADMIN:
+        return <AdminPanel />
       case VISTAS.NOTIFICACIONES:
         return (
           <Notificaciones

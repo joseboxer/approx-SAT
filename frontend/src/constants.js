@@ -52,6 +52,7 @@ export const VISTAS = {
   INFORMES: 'informes',
   CONFIGURACION: 'configuracion',
   NOTIFICACIONES: 'notificaciones',
+  ADMIN: 'admin',
 }
 
 export const NOTIFICATION_TYPES = {
