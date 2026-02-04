@@ -19,10 +19,11 @@ export function useAuth() {
 
 function loadStoredUser() {
   try {
+    if (typeof localStorage === 'undefined') return null
     const t = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (!t) return null
+    if (!t || typeof t !== 'string') return null
     const u = localStorage.getItem(AUTH_USER_KEY)
-    if (u) {
+    if (u != null && u !== '') {
       try {
         const parsed = JSON.parse(u)
         if (parsed && typeof parsed.username === 'string') {
@@ -30,7 +31,8 @@ function loadStoredUser() {
         }
       } catch (_) {}
       // Formato antiguo: u era solo el username (string). Dejamos isAdmin undefined para que refreshUser llame a /me
-      return { username: u, token: t, isAdmin: undefined }
+      const name = typeof u === 'string' ? u : String(u)
+      return { username: name, token: t, isAdmin: undefined }
     }
     return null
   } catch (_) {
