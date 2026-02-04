@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import { API_URL, AUTH_STORAGE_KEY, AUTH_USER_KEY } from '../constants'
 
 const FETCH_TIMEOUT_MS = 30000 // 30 s; evita carga infinita si el backend no responde
