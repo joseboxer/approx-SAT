@@ -948,6 +948,7 @@ def _scan_rma_especiales_folder_impl(
     with get_connection() as conn:
         aliases = _get_rma_especiales_aliases(conn)
         formats = get_all_rma_especial_formats(conn)
+        existing_rma_numbers = {r["rma_number"] for r in get_all_rma_especiales(conn)}
     base = Path(base_path) if base_path else None
     if not base or not base.is_dir():
         return []
@@ -994,6 +995,8 @@ def _scan_rma_especiales_folder_impl(
                 message=f"Leyendo Excel ({idx + 1}/{total}): {year_name} / {month_name} / {f.name}",
             )
         rma_number = _extract_rma_from_filename(f)
+        if rma_number in existing_rma_numbers:
+            continue
         try:
             grid = _read_excel_grid(str(f), max_rows=20, max_cols=30)
             matched = _find_matching_format(grid, formats)
@@ -1011,6 +1014,7 @@ def _scan_rma_especiales_folder_impl(
                         nid = _import_rma_especial_excel_by_indices(
                             str(f), rma_number, header_row_idx, serial_col, fallo_col, resolucion_col, conn
                         )
+                    existing_rma_numbers.add(rma_number)
                     out.append({
                         "path": str(f),
                         "rma_number": rma_number,
@@ -1031,16 +1035,8 @@ def _scan_rma_especiales_folder_impl(
                         "error": str(imp_e),
                     })
             else:
-                headers = [str(c).strip() if c is not None else "" for c in (grid[0] if grid else [])]
-                mapped = _especial_columns_from_headers(headers, aliases)
-                missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
-                out.append({
-                    "path": str(f),
-                    "rma_number": rma_number,
-                    "headers": headers,
-                    "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
-                    "missing": missing,
-                })
+                # Formato no reconocido: no se añade a la lista (todo es importación automática)
+                pass
         except Exception as e:
             out.append({
                 "path": str(f),
