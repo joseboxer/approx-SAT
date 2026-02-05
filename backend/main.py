@@ -5,6 +5,7 @@ El Excel de sincronización puede ser una ruta fija (p. ej. QNAP) o subida manua
 Tareas largas (sync, sync-reset, catalog refresh) devuelven task_id y reportan progreso vía GET /api/tasks/{task_id}.
 Integración Atractor: informe de ventas totalizadas por rango de fechas (configurable desde la app).
 """
+import asyncio
 import base64
 import csv
 import io
@@ -14,6 +15,7 @@ import ssl
 import threading
 import urllib.error
 import urllib.request
+import sys
 import uuid
 from collections import defaultdict
 from datetime import datetime
@@ -99,6 +101,21 @@ _cors_origins = os.getenv("CORS_ORIGINS", _default_cors).strip()
 _cors_list = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins != "*" else ["*"]
 
 app = FastAPI(title="API Garantías")
+
+
+@app.on_event("startup")
+async def set_windows_connection_reset_handler():
+    """En Windows, ignorar ConnectionResetError al cerrar el cliente (polling, navegación)."""
+    if sys.platform == "win32":
+        loop = asyncio.get_running_loop()
+
+        def _handler(loop, context):
+            exc = context.get("exception")
+            if isinstance(exc, ConnectionResetError):
+                return
+            loop.default_exception_handler(context)
+
+        loop.set_exception_handler(_handler)
 
 
 @app.on_event("startup")
@@ -1035,8 +1052,16 @@ def _scan_rma_especiales_folder_impl(
                         "error": str(imp_e),
                     })
             else:
-                # Formato no reconocido: no se añade a la lista (todo es importación automática)
-                pass
+                headers = [str(c).strip() if c is not None else "" for c in (grid[0] if grid else [])]
+                mapped = _especial_columns_from_headers(headers, aliases)
+                missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
+                out.append({
+                    "path": str(f),
+                    "rma_number": rma_number,
+                    "headers": headers,
+                    "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
+                    "missing": missing,
+                })
         except Exception as e:
             out.append({
                 "path": str(f),
@@ -2007,14 +2032,11 @@ def _get_vapid_public_key() -> str:
 @app.get("/api/push/vapid-public")
 def obtener_vapid_public(username: str = Depends(get_current_username)):
     """Devuelve la clave pública VAPID para que el frontend registre la suscripción push.
-    Configura VAPID_PUBLIC_KEY o VAPID_PRIVATE_KEY en .env (con VAPID_PRIVATE_KEY se deriva la pública si py_vapid está instalado)."""
+    Si no está configurado, devuelve 200 con enabled: false para evitar 503 y reintentos del cliente."""
     public_key = _get_vapid_public_key()
     if not public_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Web Push no configurado. Añade VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY al .env (ejecuta python generate_vapid_keys.py en backend).",
-        )
-    return {"publicKey": public_key}
+        return {"enabled": False, "publicKey": None}
+    return {"enabled": True, "publicKey": public_key}
 
 
 class PushSubscribeBody(BaseModel):

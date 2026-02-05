@@ -418,6 +418,7 @@ function RMAEspeciales({ setVista }) {
   }
 
   const autoImportados = scanResult?.items?.filter((i) => i.imported === true) || []
+  const conFaltantes = scanResult?.items?.filter((i) => i.missing && i.missing.length > 0) || []
 
   const byYearMonth = groupByYearMonth(list)
   const years = Object.keys(byYearMonth).filter((y) => y !== '_').sort((a, b) => Number(b) - Number(a))
@@ -721,12 +722,15 @@ function RMAEspeciales({ setVista }) {
         <div className="rma-especiales-scan-result card">
           <h3>Resultado del escaneo</h3>
           <p>
-            Solo se listan RMA que no estaban en la base de datos. Los que tienen formato reconocido se importan automáticamente.
+            Solo se listan RMA que no estaban en la base de datos. Los de formato reconocido se importan automáticamente.
             {autoImportados.length > 0 && (
               <span> {autoImportados.length} importados correctamente.</span>
             )}
+            {conFaltantes.length > 0 && (
+              <span> {conFaltantes.length} con formato no reconocido: asigna columnas para guardar el formato e importar.</span>
+            )}
             {(scanResult.items?.filter((i) => i.imported === false && i.error).length || 0) > 0 && (
-              <span> {(scanResult.items?.filter((i) => i.imported === false && i.error).length || 0)} con error.</span>
+              <span> {(scanResult.items?.filter((i) => i.imported === false && i.error).length || 0)} con error al importar.</span>
             )}
           </p>
           {scanResult.items && scanResult.items.length > 0 && (
@@ -737,9 +741,22 @@ function RMAEspeciales({ setVista }) {
                   <span className="rma-especiales-scan-path">{item.path}</span>
                   {item.imported === true ? (
                     <span className="rma-especiales-scan-imported">Importado</span>
+                  ) : item.missing && item.missing.length > 0 ? (
+                    <button type="button" className="btn btn-sm btn-primary" onClick={() => handleImportar(item)}>
+                      Asignar columnas
+                    </button>
                   ) : item.error ? (
                     <span className="rma-especiales-scan-error" title={item.error}>Error al importar</span>
-                  ) : null}
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => handleImportar(item)}
+                      disabled={importando}
+                    >
+                      Importar
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
