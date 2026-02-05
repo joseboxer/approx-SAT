@@ -1120,6 +1120,49 @@ def update_rma_especial_linea_estado(conn: sqlite3.Connection, linea_id: int, es
     return cur.rowcount > 0
 
 
+def update_rma_especial_linea(
+    conn: sqlite3.Connection,
+    linea_id: int,
+    ref_proveedor: str | None = None,
+    serial: str | None = None,
+    fallo: str | None = None,
+    resolucion: str | None = None,
+    estado: str | None = None,
+) -> bool:
+    """Actualiza los campos de una línea. Solo se actualizan los campos no None. Devuelve True si existía."""
+    cur = conn.execute("SELECT id FROM rma_especial_lineas WHERE id = ?", (linea_id,))
+    if cur.fetchone() is None:
+        return False
+    updates = []
+    params = []
+    if ref_proveedor is not None:
+        updates.append("ref_proveedor = ?")
+        params.append((ref_proveedor or "").strip() or None)
+    if serial is not None:
+        updates.append("serial = ?")
+        params.append((serial or "").strip() or None)
+    if fallo is not None:
+        updates.append("fallo = ?")
+        params.append((fallo or "").strip() or None)
+    if resolucion is not None:
+        updates.append("resolucion = ?")
+        params.append((resolucion or "").strip() or None)
+    if estado is not None:
+        updates.append("estado = ?")
+        params.append((estado or "").strip() or None)
+    if not updates:
+        return True
+    params.append(linea_id)
+    conn.execute(f"UPDATE rma_especial_lineas SET {', '.join(updates)} WHERE id = ?", params)
+    return True
+
+
+def delete_rma_especial_linea(conn: sqlite3.Connection, linea_id: int) -> bool:
+    """Elimina una línea de un RMA especial. Devuelve True si existía y se eliminó."""
+    cur = conn.execute("DELETE FROM rma_especial_lineas WHERE id = ?", (linea_id,))
+    return cur.rowcount > 0
+
+
 def update_rma_especial_dates(
     conn: sqlite3.Connection,
     rma_especial_id: int,

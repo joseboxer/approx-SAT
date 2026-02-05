@@ -2549,6 +2549,19 @@
 .rma-especiales-detalle-header .btn-back {
   flex-shrink: 0;
 }
+.rma-especiales-detalle-desc {
+  margin: 0 0 0.75rem;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+.rma-especiales-linea-input {
+  width: 100%;
+  min-width: 80px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
 
 /* Vista por carpetas (año → mes → lista RMA) */
 .rma-especiales-toolbar {

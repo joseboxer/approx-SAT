@@ -11,16 +11,43 @@ function getAuthHeaders() {
   return {}
 }
 
-/** Extrae año y mes del source_path (ej. ".../2024/05/archivo.xlsx" -> { year: "2024", month: "05" }). */
+/** Nombres de mes (completos y abreviados) a número "01"-"12" para directorios tipo "Enero", "Febrero". */
+const MES_NOMBRE_A_NUM = {
+  enero: '01', ene: '01',
+  febrero: '02', feb: '02',
+  marzo: '03', mar: '03',
+  abril: '04', abr: '04',
+  mayo: '05', may: '05',
+  junio: '06', jun: '06',
+  julio: '07', jul: '07',
+  agosto: '08', ago: '08',
+  septiembre: '09', sep: '09', sept: '09', setiembre: '09',
+  octubre: '10', oct: '10',
+  noviembre: '11', nov: '11',
+  diciembre: '12', dic: '12',
+}
+
+/**
+ * Extrae año y mes del source_path leyendo los nombres de los directorios.
+ * Estructura .../AÑO/MES/archivo.xlsx. Año: 4 dígitos. Mes: número (01-12) o nombre completo (Enero, Febrero, ...).
+ */
 function parseYearMonthFromPath(sourcePath) {
   if (!sourcePath || typeof sourcePath !== 'string') return null
   const normalized = sourcePath.replace(/\\/g, '/').trim()
   const parts = normalized.split('/').filter(Boolean)
   if (parts.length < 3) return null
-  const month = parts[parts.length - 2]
   const year = parts[parts.length - 3]
-  if (/^\d{4}$/.test(year) && /^\d{1,2}$/.test(month)) return { year, month }
-  return null
+  const monthRaw = (parts[parts.length - 2] || '').trim()
+  if (!/^\d{4}$/.test(year)) return null
+  let month
+  if (/^\d{1,2}$/.test(monthRaw)) {
+    month = monthRaw.length === 1 ? `0${monthRaw}` : monthRaw
+  } else {
+    const key = monthRaw.toLowerCase().replace(/\s+/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    month = MES_NOMBRE_A_NUM[key] || null
+    if (month == null) return null
+  }
+  return { year, month }
 }
 
 /** Agrupa RMAs por año y mes según source_path. Devuelve { year: { month: [rma, ...] } }. */
@@ -70,6 +97,10 @@ function RMAEspeciales({ setVista }) {
   const scanPollRef = useRef(null)
   const [detalleId, setDetalleId] = useState(null)
   const [updatingLineaEstadoId, setUpdatingLineaEstadoId] = useState(null)
+  const [editingLineaId, setEditingLineaId] = useState(null)
+  const [editingLineaData, setEditingLineaData] = useState(null)
+  const [savingLineaId, setSavingLineaId] = useState(null)
+  const [deletingLineaId, setDeletingLineaId] = useState(null)
   const [notificarOpen, setNotificarOpen] = useState(false)
   const [notificarRef, setNotificarRef] = useState(null)
   const [asignarOpen, setAsignarOpen] = useState(false)
@@ -295,6 +326,70 @@ function RMAEspeciales({ setVista }) {
       .finally(() => setUpdatingLineaEstadoId(null))
   }
 
+  const handleEditarLinea = (lin) => {
+    setEditingLineaId(lin.id)
+    setEditingLineaData({
+      ref_proveedor: lin.ref_proveedor || '',
+      serial: lin.serial || '',
+      fallo: lin.fallo || '',
+      resolucion: lin.resolucion || '',
+      estado: lin.estado || '',
+    })
+  }
+
+  const handleGuardarLinea = () => {
+    if (editingLineaId == null || !editingLineaData) return
+    setSavingLineaId(editingLineaId)
+    fetch(`${API_URL}/api/rma-especiales/lineas/${editingLineaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({
+        ref_proveedor: editingLineaData.ref_proveedor || null,
+        serial: editingLineaData.serial || null,
+        fallo: editingLineaData.fallo || null,
+        resolucion: editingLineaData.resolucion || null,
+        estado: editingLineaData.estado || null,
+      }),
+    })
+      .then((r) => {
+        if (r.ok && detalle && detalle.lineas) {
+          setDetalle({
+            ...detalle,
+            lineas: detalle.lineas.map((lin) =>
+              lin.id === editingLineaId ? { ...lin, ...editingLineaData } : lin
+            ),
+          })
+          setEditingLineaId(null)
+          setEditingLineaData(null)
+        }
+      })
+      .finally(() => setSavingLineaId(null))
+  }
+
+  const handleCancelarEditarLinea = () => {
+    setEditingLineaId(null)
+    setEditingLineaData(null)
+  }
+
+  const handleEliminarLinea = (lineaId) => {
+    if (!window.confirm('¿Eliminar esta fila? No se modifica el Excel original.')) return
+    setDeletingLineaId(lineaId)
+    fetch(`${API_URL}/api/rma-especiales/lineas/${lineaId}`, { method: 'DELETE', headers: getAuthHeaders() })
+      .then((r) => {
+        if (r.ok && detalle && detalle.lineas) {
+          setDetalle({
+            ...detalle,
+            lineas: detalle.lineas.filter((lin) => lin.id !== lineaId),
+          })
+          if (editingLineaId === lineaId) {
+            setEditingLineaId(null)
+            setEditingLineaData(null)
+          }
+        }
+      })
+      .finally(() => setDeletingLineaId(null))
+  }
+
   const conFaltantes = scanResult?.items?.filter((i) => i.missing && i.missing.length > 0) || []
 
   const byYearMonth = groupByYearMonth(list)
@@ -331,7 +426,7 @@ function RMAEspeciales({ setVista }) {
       )
     }
 
-    const monthsInYear = byYearMonth[folderNav.year] ? Object.keys(byYearMonth[folderNav.year]).sort((a, b) => (folderNav.year === '_' ? 0 : Number(b) - Number(a))) : []
+    const monthsInYear = byYearMonth[folderNav.year] ? Object.keys(byYearMonth[folderNav.year]).sort((a, b) => (folderNav.year === '_' ? 0 : Number(a) - Number(b))) : []
 
     if (!hasMonth) {
       return (
@@ -437,6 +532,7 @@ function RMAEspeciales({ setVista }) {
           </button>
           <h1 className="page-title">RMA {detalle.rma_number}</h1>
         </div>
+        <p className="rma-especiales-detalle-desc">Puedes editar o eliminar filas vacías o erróneas. Los Excel originales no se modifican.</p>
         <div className="table-wrapper">
           <table>
             <thead>
@@ -446,29 +542,97 @@ function RMAEspeciales({ setVista }) {
                 <th>Fallo</th>
                 <th>Resolución</th>
                 <th>Estado</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {(detalle.lineas || []).map((lin) => (
                 <tr key={lin.id}>
-                  <td>{lin.ref_proveedor || '—'}</td>
-                  <td>{lin.serial || '—'}</td>
-                  <td>{lin.fallo || '—'}</td>
-                  <td>{lin.resolucion || '—'}</td>
-                  <td>
-                    <select
-                      className="rma-estado-inline-select"
-                      value={lin.estado || ''}
-                      onChange={(e) => handleLineaEstadoChange(lin.id, e.target.value)}
-                      disabled={updatingLineaEstadoId === lin.id}
-                    >
-                      {OPCIONES_ESTADO.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
+                  {editingLineaId === lin.id && editingLineaData ? (
+                    <>
+                      <td>
+                        <input
+                          type="text"
+                          className="rma-especiales-linea-input"
+                          value={editingLineaData.ref_proveedor}
+                          onChange={(e) => setEditingLineaData({ ...editingLineaData, ref_proveedor: e.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className="rma-especiales-linea-input"
+                          value={editingLineaData.serial}
+                          onChange={(e) => setEditingLineaData({ ...editingLineaData, serial: e.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className="rma-especiales-linea-input"
+                          value={editingLineaData.fallo}
+                          onChange={(e) => setEditingLineaData({ ...editingLineaData, fallo: e.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className="rma-especiales-linea-input"
+                          value={editingLineaData.resolucion}
+                          onChange={(e) => setEditingLineaData({ ...editingLineaData, resolucion: e.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <select
+                          className="rma-estado-inline-select"
+                          value={editingLineaData.estado}
+                          onChange={(e) => setEditingLineaData({ ...editingLineaData, estado: e.target.value })}
+                        >
+                          {OPCIONES_ESTADO.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <button type="button" className="btn btn-sm btn-primary" onClick={handleGuardarLinea} disabled={savingLineaId === lin.id}>
+                          {savingLineaId === lin.id ? 'Guardando…' : 'Guardar'}
+                        </button>
+                        <button type="button" className="btn btn-sm btn-secondary" onClick={handleCancelarEditarLinea} disabled={savingLineaId === lin.id}>
+                          Cancelar
+                        </button>
+                        <button type="button" className="btn btn-sm btn-danger" onClick={() => handleEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
+                          {deletingLineaId === lin.id ? '…' : 'Eliminar'}
+                        </button>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>{lin.ref_proveedor || '—'}</td>
+                      <td>{lin.serial || '—'}</td>
+                      <td>{lin.fallo || '—'}</td>
+                      <td>{lin.resolucion || '—'}</td>
+                      <td>
+                        <select
+                          className="rma-estado-inline-select"
+                          value={lin.estado || ''}
+                          onChange={(e) => handleLineaEstadoChange(lin.id, e.target.value)}
+                          disabled={updatingLineaEstadoId === lin.id}
+                        >
+                          {OPCIONES_ESTADO.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleEditarLinea(lin)}>
+                          Editar
+                        </button>
+                        <button type="button" className="btn btn-sm btn-danger" onClick={() => handleEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
+                          {deletingLineaId === lin.id ? '…' : 'Eliminar'}
+                        </button>
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>

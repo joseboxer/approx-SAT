@@ -86,8 +86,10 @@ from database import (
     insert_rma_especial,
     update_rma_especial_estado,
     update_rma_especial_linea_estado,
+    update_rma_especial_linea,
     update_rma_especial_dates,
     delete_rma_especial,
+    delete_rma_especial_linea,
 )
 
 # CORS: en desarrollo solo localhost; en red local poner CORS_ORIGINS=* en .env
@@ -924,7 +926,8 @@ def _scan_rma_especiales_folder_impl(
     base = Path(base_path) if base_path else None
     if not base or not base.is_dir():
         return []
-    # Recoger todos los archivos para poder mostrar progreso
+    # Estructura: base / AÑO / MES / *.xlsx. Solo directorios cuyo nombre es año numérico (ej. 2024).
+    # El nombre de cada directorio (year_dir.name, month_dir.name) queda en la ruta del archivo (source_path al importar).
     files_to_scan: list[tuple[Path, str, str]] = []  # (path, year_name, month_name)
     for year_dir in sorted(base.iterdir()):
         if not year_dir.is_dir():
@@ -1147,6 +1150,49 @@ def actualizar_rma_especial_linea_estado(
     if not ok:
         raise HTTPException(status_code=404, detail="Línea no encontrada")
     return {"mensaje": "Estado actualizado"}
+
+
+class RmaEspecialLineaUpdateBody(BaseModel):
+    ref_proveedor: str | None = None
+    serial: str | None = None
+    fallo: str | None = None
+    resolucion: str | None = None
+    estado: str | None = None
+
+
+@app.patch("/api/rma-especiales/lineas/{linea_id:int}")
+def actualizar_rma_especial_linea(
+    linea_id: int,
+    body: RmaEspecialLineaUpdateBody,
+    username: str = Depends(get_current_username),
+):
+    """Actualiza los campos de una línea (ref_proveedor, serial, fallo, resolucion, estado). Solo se envían los que se quieren cambiar."""
+    with get_connection() as conn:
+        ok = update_rma_especial_linea(
+            conn,
+            linea_id,
+            ref_proveedor=body.ref_proveedor,
+            serial=body.serial,
+            fallo=body.fallo,
+            resolucion=body.resolucion,
+            estado=body.estado,
+        )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Línea no encontrada")
+    return {"mensaje": "Línea actualizada"}
+
+
+@app.delete("/api/rma-especiales/lineas/{linea_id:int}")
+def eliminar_rma_especial_linea(
+    linea_id: int,
+    username: str = Depends(get_current_username),
+):
+    """Elimina una línea (fila) de un RMA especial. Los Excel no se actualizan; solo se modifica la copia en la app."""
+    with get_connection() as conn:
+        ok = delete_rma_especial_linea(conn, linea_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Línea no encontrada")
+    return {"mensaje": "Línea eliminada"}
 
 
 def _path_under_rma_especiales_folder(conn, path_str: str) -> bool:
