@@ -120,6 +120,11 @@ function RMAEspeciales({ setVista }) {
   const [importando, setImportando] = useState(false)
   const [viewMode, setViewMode] = useState('lista') // 'lista' | 'carpetas'
   const [folderNav, setFolderNav] = useState(null)   // null | { year } | { year, month }
+  // Filtros y ordenación para la vista de detalle (líneas de un RMA especial concreto)
+  const [detalleFiltroTexto, setDetalleFiltroTexto] = useState('')
+  const [detalleFiltroEstado, setDetalleFiltroEstado] = useState('')
+  const [detalleOrdenColumna, setDetalleOrdenColumna] = useState('serial')
+  const [detalleOrdenAsc, setDetalleOrdenAsc] = useState(true)
 
   const refetch = useCallback(() => {
     setCargando(true)
@@ -420,6 +425,38 @@ function RMAEspeciales({ setVista }) {
   const autoImportados = scanResult?.items?.filter((i) => i.imported === true) || []
   const conFaltantes = scanResult?.items?.filter((i) => i.missing && i.missing.length > 0) || []
 
+  const lineasDetalleFiltradasOrdenadas = React.useMemo(() => {
+    const lineas = Array.isArray(detalle?.lineas) ? detalle.lineas : []
+    let result = lineas
+    const t = (detalleFiltroTexto || '').trim().toLowerCase()
+    if (t) {
+      result = result.filter((lin) => {
+        const ref = (lin.ref_proveedor || '').toString().toLowerCase()
+        const serial = (lin.serial || '').toString().toLowerCase()
+        const fallo = (lin.fallo || '').toString().toLowerCase()
+        const resolucion = (lin.resolucion || '').toString().toLowerCase()
+        return ref.includes(t) || serial.includes(t) || fallo.includes(t) || resolucion.includes(t)
+      })
+    }
+    if (detalleFiltroEstado) {
+      result = result.filter((lin) => (lin.estado || '') === detalleFiltroEstado)
+    }
+    const key = detalleOrdenColumna
+    const asc = detalleOrdenAsc
+    const getVal = (lin) => {
+      const v = lin[key] ?? ''
+      return v.toString().toLowerCase()
+    }
+    const sorted = [...result].sort((a, b) => {
+      const va = getVal(a)
+      const vb = getVal(b)
+      if (va < vb) return asc ? -1 : 1
+      if (va > vb) return asc ? 1 : -1
+      return 0
+    })
+    return sorted
+  }, [detalle, detalleFiltroTexto, detalleFiltroEstado, detalleOrdenColumna, detalleOrdenAsc])
+
   const byYearMonth = groupByYearMonth(list)
   const years = Object.keys(byYearMonth).filter((y) => y !== '_').sort((a, b) => Number(b) - Number(a))
   if (byYearMonth._) years.push('_')
@@ -561,20 +598,104 @@ function RMAEspeciales({ setVista }) {
           <h1 className="page-title">RMA {detalle.rma_number}</h1>
         </div>
         <p className="rma-especiales-detalle-desc">Puedes editar o eliminar filas vacías o erróneas. Los Excel originales no se modifican.</p>
+        <div className="rma-especiales-detalle-filtros">
+          <div className="rma-especiales-detalle-filtro">
+            <label>
+              Buscar
+              <input
+                type="text"
+                className="rma-especiales-linea-input"
+                placeholder="Ref. proveedor, serie, fallo, resolución..."
+                value={detalleFiltroTexto}
+                onChange={(e) => setDetalleFiltroTexto(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="rma-especiales-detalle-filtro">
+            <label>
+              Estado
+              <select
+                className="rma-estado-inline-select"
+                value={detalleFiltroEstado}
+                onChange={(e) => setDetalleFiltroEstado(e.target.value)}
+              >
+                <option value="">Todos</option>
+                {OPCIONES_ESTADO.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
         <div className="table-wrapper">
           <table>
             <thead>
               <tr>
-                <th>Ref. proveedor</th>
-                <th>Nº serie</th>
-                <th>Fallo</th>
-                <th>Resolución</th>
-                <th>Estado</th>
+                <th>
+                  <button
+                    type="button"
+                    className="rma-especiales-th-sort"
+                    onClick={() => {
+                      setDetalleOrdenAsc(detalleOrdenColumna === 'ref_proveedor' ? !detalleOrdenAsc : true)
+                      setDetalleOrdenColumna('ref_proveedor')
+                    }}
+                  >
+                    Ref. proveedor
+                  </button>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="rma-especiales-th-sort"
+                    onClick={() => {
+                      setDetalleOrdenAsc(detalleOrdenColumna === 'serial' ? !detalleOrdenAsc : true)
+                      setDetalleOrdenColumna('serial')
+                    }}
+                  >
+                    Nº serie
+                  </button>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="rma-especiales-th-sort"
+                    onClick={() => {
+                      setDetalleOrdenAsc(detalleOrdenColumna === 'fallo' ? !detalleOrdenAsc : true)
+                      setDetalleOrdenColumna('fallo')
+                    }}
+                  >
+                    Fallo
+                  </button>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="rma-especiales-th-sort"
+                    onClick={() => {
+                      setDetalleOrdenAsc(detalleOrdenColumna === 'resolucion' ? !detalleOrdenAsc : true)
+                      setDetalleOrdenColumna('resolucion')
+                    }}
+                  >
+                    Resolución
+                  </button>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="rma-especiales-th-sort"
+                    onClick={() => {
+                      setDetalleOrdenAsc(detalleOrdenColumna === 'estado' ? !detalleOrdenAsc : true)
+                      setDetalleOrdenColumna('estado')
+                    }}
+                  >
+                    Estado
+                  </button>
+                </th>
                 <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {(detalle.lineas || []).map((lin) => (
+              {lineasDetalleFiltradasOrdenadas.map((lin) => (
                 <tr key={lin.id}>
                   {editingLineaId === lin.id && editingLineaData ? (
                     <>

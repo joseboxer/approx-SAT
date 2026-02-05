@@ -226,6 +226,33 @@ def _get_excel_sync_path(conn) -> str:
     return _normalize_unc_path(raw)
 
 
+def _read_excel_with_engine(path_or_buffer, *args, **kwargs):
+    """
+    Wrapper sobre pd.read_excel que añade soporte explícito para .xls con xlrd.
+    Si falta xlrd, devuelve un error claro en español.
+    """
+    # Solo podemos decidir por extensión cuando es una ruta de archivo (str, Path)
+    ext = ""
+    if isinstance(path_or_buffer, (str, os.PathLike)):
+        ext = os.path.splitext(str(path_or_buffer))[1].lower()
+    try:
+        if ext == ".xls" and "engine" not in kwargs:
+            # Para ficheros .xls antiguos se necesita xlrd
+            return pd.read_excel(path_or_buffer, *args, engine="xlrd", **kwargs)
+        return pd.read_excel(path_or_buffer, *args, **kwargs)
+    except ImportError as e:
+        msg = str(e).lower()
+        if "xlrd" in msg and ext == ".xls":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No se pudo leer el Excel .xls porque falta el paquete xlrd en el servidor. "
+                    "Instala xlrd>=2.0.1 (por ejemplo: pip install xlrd) o convierte el archivo a .xlsx."
+                ),
+            )
+        raise
+
+
 def _get_productos_catalog_path(conn) -> str:
     raw = (get_setting(conn, "PRODUCTOS_CATALOG_PATH") or _DEFAULT_PRODUCTOS_CATALOG_PATH).strip()
     return _normalize_unc_path(raw)
@@ -267,7 +294,7 @@ def _run_sync_reset_task(task_id: str, excel_path: str) -> None:
     try:
         path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path and excel_path.startswith("\\\\")) else (excel_path or "")
         _update_task(task_id, percent=0, message="Leyendo Excel...")
-        df = pd.read_excel(path_str, sheet_name=0)
+        df = _read_excel_with_engine(path_str, sheet_name=0)
         df = df.replace({np.nan: None})
         col_map = _excel_row_to_columns(df)
         if "rma_number" not in col_map:
@@ -384,7 +411,7 @@ def _run_sync_task(task_id: str, excel_path: str | None, file_content: bytes | N
         else:
             _update_task(task_id, percent=0, message="Leyendo Excel...")
             path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path and excel_path.startswith("\\\\")) else (excel_path or "")
-            df = pd.read_excel(path_str, sheet_name=0)
+            df = _read_excel_with_engine(path_str, sheet_name=0)
         df = df.replace({np.nan: None})
         col_map = _excel_row_to_columns(df)
         if "rma_number" not in col_map:
@@ -897,7 +924,7 @@ def _get_excel_sheet_names(path: str) -> list[str]:
 
 def _read_excel_grid(path: str, max_rows: int = 20, max_cols: int = 30, sheet: int | str = 0) -> list[list[str]]:
     """Lee solo las primeras filas y columnas del Excel (más rápido). sheet: índice 0-based o nombre de hoja."""
-    df = pd.read_excel(path, sheet_name=sheet, header=None, nrows=max_rows)
+    df = _read_excel_with_engine(path, sheet_name=sheet, header=None, nrows=max_rows)
     df = df.replace({np.nan: None})
     rows = []
     for ri in range(min(max_rows, len(df))):
@@ -1116,7 +1143,7 @@ def _import_rma_especial_excel(
     sheet: int | str = 0,
 ) -> int:
     """Lee el Excel en path (hoja sheet) y crea/actualiza el RMA especial. col_* son los nombres de columna. Devuelve id."""
-    df = pd.read_excel(path, sheet_name=sheet, header=0)
+    df = _read_excel_with_engine(path, sheet_name=sheet, header=0)
     df = df.replace({np.nan: None})
     lineas = []
     for _, row in df.iterrows():
@@ -1157,7 +1184,7 @@ def _import_rma_especial_excel_by_indices(
     sheet: int | str = 0,
 ) -> int:
     """Importa un RMA especial usando la fila header_row como cabecera y los índices de columna (0-based). sheet: hoja del Excel."""
-    df = pd.read_excel(path, sheet_name=sheet, header=None)
+    df = _read_excel_with_engine(path, sheet_name=sheet, header=None)
     df = df.replace({np.nan: None})
     lineas = []
     for ri in range(header_row + 1, len(df)):
@@ -1429,7 +1456,7 @@ def importar_rma_especial(
                 sc, fc, rc = fmt["serial_col"], fmt["fallo_col"], fmt["resolucion_col"]
                 nid = _import_rma_especial_excel_by_indices(path_str, rma_number, header_row_idx, sc, fc, rc, conn)
                 return {"id": nid, "rma_number": rma_number, "mensaje": "RMA especial importado"}
-            df = pd.read_excel(path_str, sheet_name=0, header=0)
+            df = _read_excel_with_engine(path_str, sheet_name=0, header=0)
             aliases = _get_rma_especiales_aliases(conn)
             mapped = _especial_columns_from_df(df, aliases)
             missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
@@ -1505,7 +1532,7 @@ def recheck_rma_especiales_columnas(
                     "missing": [],
                 })
             else:
-                df = pd.read_excel(path_str, sheet_name=0, header=0)
+                df = _read_excel_with_engine(path_str, sheet_name=0, header=0)
                 df = df.replace({np.nan: None})
                 headers = [str(c).strip() for c in df.columns]
                 mapped = _especial_columns_from_df(df, aliases)

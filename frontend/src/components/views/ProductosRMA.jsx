@@ -30,7 +30,19 @@ function parseDateInput(s) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, onNotificar, setRmaDestacado) {
+function renderFilaProductoRma(
+  row,
+  serialExpandido,
+  setSerialExpandido,
+  handleGarantiaChange,
+  formatDate,
+  setVista,
+  setSerialDestacado,
+  setProductoDestacado,
+  onNotificar,
+  setRmaDestacado,
+  onVerDetalleProducto,
+) {
   const items = Array.isArray(row.items) ? row.items : []
   const n = items.length
   const abierto = serialExpandido === row.serial
@@ -128,16 +140,27 @@ function renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleG
           </label>
         </td>
         <td>
-          {onNotificar && row.serial && (
-            <button
-              type="button"
-              className="btn btn-notificar btn-sm"
-              onClick={() => onNotificar({ serial: row.serial })}
-              title="Notificar a un usuario (compartir este producto RMA)"
-            >
-              Notificar
-            </button>
-          )}
+          <div className="productos-rma-acciones">
+            {onVerDetalleProducto && (
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={() => onVerDetalleProducto(row)}
+              >
+                Ver detalle
+              </button>
+            )}
+            {onNotificar && row.serial && (
+              <button
+                type="button"
+                className="btn btn-notificar btn-sm"
+                onClick={() => onNotificar({ serial: row.serial })}
+                title="Notificar a un usuario (compartir este producto RMA)"
+              >
+                Notificar
+              </button>
+            )}
+          </div>
         </td>
       </tr>
       {abierto && n > 0 && (
@@ -233,6 +256,7 @@ function ProductosRMA(props) {
   const [paginaSinFecha, setPaginaSinFecha] = useState(1)
   const [notificarOpen, setNotificarOpen] = useState(false)
   const [notificarRef, setNotificarRef] = useState(null)
+  const [detalleProducto, setDetalleProducto] = useState(null)
   const openNotificar = useCallback((ref) => {
     setNotificarRef(ref)
     setNotificarOpen(true)
@@ -447,6 +471,81 @@ function ProductosRMA(props) {
   )
   if (error) return <div className="error-msg">Error: {error}</div>
 
+  if (detalleProducto) {
+    const items = Array.isArray(detalleProducto.items) ? detalleProducto.items : []
+    return (
+      <div className="productos-rma-detalle">
+        <button
+          type="button"
+          className="btn btn-secondary btn-back"
+          onClick={() => setDetalleProducto(null)}
+        >
+          ← Volver a productos RMA
+        </button>
+        <h1 className="page-title">Producto RMA {detalleProducto.serial}</h1>
+        <p className="productos-rma-detalle-desc">
+          Vista detallada del historial de RMA para este número de serie.
+        </p>
+        <div className="productos-rma-detalle-resumen">
+          <div className="detalle-card">
+            <h2>{detalleProducto.product_name || 'Producto sin nombre'}</h2>
+            <p><strong>Nº de serie:</strong> {detalleProducto.serial}</p>
+            <p><strong>Nº de RMAs:</strong> {detalleProducto.count}</p>
+            <p><strong>Primera fecha:</strong> {formatDate(detalleProducto.first_date)}</p>
+            <p><strong>Última fecha:</strong> {formatDate(detalleProducto.last_date)}</p>
+            <p><strong>Garantía vigente:</strong> {detalleProducto.garantia_vigente ? 'Sí' : 'No'}</p>
+            <p>
+              <strong>Clientes (muestra):</strong>{' '}
+              {Array.isArray(detalleProducto.clients_sample) && detalleProducto.clients_sample.length > 0
+                ? detalleProducto.clients_sample.join(', ')
+                : '-'}
+            </p>
+          </div>
+        </div>
+        <section className="productos-rma-seccion productos-rma-detalle-lineas">
+          <h2 className="productos-rma-seccion-titulo">Líneas de RMA</h2>
+          <div className="table-wrapper table-wrapper-productos-rma tabla-productos-rma">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nº RMA</th>
+                  <th>Producto</th>
+                  <th>Nº serie</th>
+                  <th>Cliente</th>
+                  <th>Fecha recibido</th>
+                  <th>Avería</th>
+                  <th>Observaciones</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, j) => {
+                  const rmaNum = item['NÂº DE RMA'] ?? item['Nº DE RMA']
+                  return (
+                    <tr key={item.id ?? j}>
+                      <td>{rmaNum ?? '-'}</td>
+                      <td>{item.PRODUCTO ?? '-'}</td>
+                      <td>{item['Nº DE SERIE'] ?? '-'}</td>
+                      <td>{item['RAZON SOCIAL O NOMBRE'] ?? '-'}</td>
+                      <td>{item['FECHA RECIBIDO'] ? formatDate(item['FECHA RECIBIDO']) : '-'}</td>
+                      <td className="productos-rma-detalle-texto-largo">
+                        {(item.AVERIA ?? '').toString().trim() || '—'}
+                      </td>
+                      <td className="productos-rma-detalle-texto-largo">
+                        {(item.OBSERVACIONES ?? '').toString().trim() || '—'}
+                      </td>
+                      <td>{item.estado ?? '-'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div data-tour="productos-rma">
       <h1 className="page-title">Productos RMA</h1>
@@ -646,7 +745,19 @@ function ProductosRMA(props) {
               </tr>
             </thead>
             <tbody>
-              {enPagina.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, openNotificar, setRmaDestacado))}
+              {enPagina.map((row) => renderFilaProductoRma(
+                row,
+                serialExpandido,
+                setSerialExpandido,
+                handleGarantiaChange,
+                formatDate,
+                setVista,
+                setSerialDestacado,
+                setProductoDestacado,
+                openNotificar,
+                setRmaDestacado,
+                setDetalleProducto,
+              ))}
             </tbody>
           </table>
         </div>
@@ -687,7 +798,19 @@ function ProductosRMA(props) {
                 </tr>
               </thead>
               <tbody>
-                {enPaginaSinFecha.map((row) => renderFilaProductoRma(row, serialExpandido, setSerialExpandido, handleGarantiaChange, formatDate, setVista, setSerialDestacado, setProductoDestacado, openNotificar, setRmaDestacado))}
+                {enPaginaSinFecha.map((row) => renderFilaProductoRma(
+                  row,
+                  serialExpandido,
+                  setSerialExpandido,
+                  handleGarantiaChange,
+                  formatDate,
+                  setVista,
+                  setSerialDestacado,
+                  setProductoDestacado,
+                  openNotificar,
+                  setRmaDestacado,
+                  setDetalleProducto,
+                ))}
               </tbody>
             </table>
           </div>
