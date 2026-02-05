@@ -1669,15 +1669,35 @@ def contar_notificaciones_no_leidas(username: str = Depends(get_current_username
 
 # --- Web Push (notificaciones aunque el navegador esté cerrado) ---
 
-_VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+def _get_vapid_public_key() -> str:
+    """Clave pública VAPID: de VAPID_PUBLIC_KEY o derivada de VAPID_PRIVATE_KEY si está disponible."""
+    pub = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+    if pub:
+        return pub
+    priv = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+    if not priv:
+        return ""
+    try:
+        from py_vapid import Vapid01
+        v = Vapid01.from_string(priv) if hasattr(Vapid01, "from_string") else None
+        if v and getattr(v, "public_key", None):
+            return v.public_key.decode("utf-8") if isinstance(v.public_key, bytes) else v.public_key
+    except Exception:
+        pass
+    return ""
 
 
 @app.get("/api/push/vapid-public")
 def obtener_vapid_public(username: str = Depends(get_current_username)):
-    """Devuelve la clave pública VAPID para que el frontend registre la suscripción push."""
-    if not _VAPID_PUBLIC_KEY:
-        raise HTTPException(status_code=503, detail="Web Push no configurado (falta VAPID_PUBLIC_KEY)")
-    return {"publicKey": _VAPID_PUBLIC_KEY}
+    """Devuelve la clave pública VAPID para que el frontend registre la suscripción push.
+    Configura VAPID_PUBLIC_KEY o VAPID_PRIVATE_KEY en .env (con VAPID_PRIVATE_KEY se deriva la pública si py_vapid está instalado)."""
+    public_key = _get_vapid_public_key()
+    if not public_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Web Push no configurado. Añade VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY al .env (ejecuta python generate_vapid_keys.py en backend).",
+        )
+    return {"publicKey": public_key}
 
 
 class PushSubscribeBody(BaseModel):
