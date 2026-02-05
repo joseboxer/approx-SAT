@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useGarantia } from '../context/GarantiaContext'
 import { useAuth } from '../context/AuthContext'
 import { useTour } from '../context/TourContext'
-import { VISTAS, API_URL, AUTH_STORAGE_KEY } from '../constants'
+import { VISTAS, ATAJO_POR_VISTA, API_URL, AUTH_STORAGE_KEY } from '../constants'
 function getAuthHeaders() {
   try {
     const token = localStorage.getItem(AUTH_STORAGE_KEY)
@@ -89,11 +89,19 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
     <>
     <nav className="navbar">
       <div className="nav-brand-wrap">
-        <img
-          src="/logo-aqprox.png"
-          alt="aqprox"
-          className="nav-logo"
-        />
+        <button
+          type="button"
+          className="nav-logo-btn"
+          onClick={() => go(VISTAS.INICIO)}
+          title={`Inicio (Atajo: ${ATAJO_POR_VISTA[VISTAS.INICIO] ?? '—'})`}
+          aria-label="Ir a Inicio"
+        >
+          <img
+            src="/logo-aqprox.png"
+            alt="aqprox"
+            className="nav-logo"
+          />
+        </button>
         <span className="nav-brand-subtitle">SAT · Servicio de Asistencia Técnica</span>
       </div>
 
@@ -102,6 +110,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
           type="button"
           className={`nav-link ${vista === VISTAS.INICIO ? 'active' : ''}`}
           onClick={() => go(VISTAS.INICIO)}
+          title={ATAJO_POR_VISTA[VISTAS.INICIO] ? `Inicio (Atajo: ${ATAJO_POR_VISTA[VISTAS.INICIO]})` : 'Inicio'}
         >
           Inicio
         </button>
@@ -110,6 +119,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
           type="button"
           className={`nav-link ${vista === VISTAS.CLIENTES ? 'active' : ''}`}
           onClick={() => go(VISTAS.CLIENTES, true, false)}
+          title={ATAJO_POR_VISTA[VISTAS.CLIENTES] ? `Clientes (Atajo: ${ATAJO_POR_VISTA[VISTAS.CLIENTES]})` : 'Clientes'}
         >
           Clientes
         </button>
@@ -119,7 +129,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
           className={`nav-link nav-link-notif ${vista === VISTAS.NOTIFICACIONES ? 'active' : ''}`}
           onClick={() => go(VISTAS.NOTIFICACIONES)}
           aria-label={unreadCount > 0 ? `Mensajes (${unreadCount} sin leer)` : 'Mensajes'}
-          title="Mensajes y avisos"
+          title={ATAJO_POR_VISTA[VISTAS.NOTIFICACIONES] ? `Mensajes y avisos (Atajo: ${ATAJO_POR_VISTA[VISTAS.NOTIFICACIONES]})` : 'Mensajes y avisos'}
         >
           Mensajes
           {unreadCount > 0 && (
@@ -165,6 +175,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
             aria-expanded={showRmaMenu}
             aria-haspopup="true"
             aria-label="Reparaciones (listado, productos, ocultas)"
+            title={ATAJO_POR_VISTA[VISTAS.RMA] ? `Reparaciones (Atajo: ${ATAJO_POR_VISTA[VISTAS.RMA]})` : 'Reparaciones'}
           >
             Reparaciones <span className="nav-dropdown-arrow" aria-hidden>{showRmaMenu ? '▲' : '▼'}</span>
           </button>
@@ -177,6 +188,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
                   role="menuitem"
                   className={`nav-link nav-dropdown-inline-item ${vista === key ? 'active' : ''}`}
                   onClick={() => go(key)}
+                  title={ATAJO_POR_VISTA[key] ? `${label} (Atajo: ${ATAJO_POR_VISTA[key]})` : label}
                 >
                   {label}
                 </button>
@@ -193,6 +205,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
             aria-expanded={showProductosMenu}
             aria-haspopup="true"
             aria-label="Productos (catálogo y repuestos)"
+            title={ATAJO_POR_VISTA[VISTAS.PRODUCTOS] || ATAJO_POR_VISTA[VISTAS.PRODUCTOS_RMA] ? `Productos (Atajo: ${ATAJO_POR_VISTA[VISTAS.PRODUCTOS] ?? ATAJO_POR_VISTA[VISTAS.PRODUCTOS_RMA]})` : 'Productos'}
           >
             Productos <span className="nav-dropdown-arrow" aria-hidden>{showProductosMenu ? '▲' : '▼'}</span>
           </button>
@@ -205,6 +218,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
                   role="menuitem"
                   className={`nav-link nav-dropdown-inline-item ${vista === key ? 'active' : ''}`}
                   onClick={() => go(key, clearCliente !== false, key !== VISTAS.PRODUCTOS)}
+                  title={ATAJO_POR_VISTA[key] ? `${label} (Atajo: ${ATAJO_POR_VISTA[key]})` : label}
                 >
                   {label}
                 </button>
@@ -251,6 +265,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
               role="menuitem"
               className={`nav-hamburger-item ${vista === VISTAS.CONFIGURACION ? 'active' : ''}`}
               onClick={() => go(VISTAS.CONFIGURACION)}
+              title={ATAJO_POR_VISTA[VISTAS.CONFIGURACION] ? `Ajustes (Atajo: ${ATAJO_POR_VISTA[VISTAS.CONFIGURACION]})` : 'Ajustes y configuración'}
             >
               Ajustes y configuración
             </button>
@@ -260,6 +275,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
                 role="menuitem"
                 className={`nav-hamburger-item ${vista === VISTAS.ADMIN ? 'active' : ''}`}
                 onClick={() => go(VISTAS.ADMIN)}
+                title={ATAJO_POR_VISTA[VISTAS.ADMIN] ? `Administración (Atajo: ${ATAJO_POR_VISTA[VISTAS.ADMIN]})` : 'Gestionar usuarios'}
               >
                 Gestionar usuarios
               </button>
@@ -269,6 +285,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
               role="menuitem"
               className={`nav-hamburger-item ${vista === VISTAS.INFORMES ? 'active' : ''}`}
               onClick={() => go(VISTAS.INFORMES)}
+              title={ATAJO_POR_VISTA[VISTAS.INFORMES] ? `Informes (Atajo: ${ATAJO_POR_VISTA[VISTAS.INFORMES]})` : 'Informes y reportes'}
             >
               Informes y reportes
             </button>

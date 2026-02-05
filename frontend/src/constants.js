@@ -69,6 +69,39 @@ export const VISTAS = {
   ADMIN: 'admin',
 }
 
+/** Etiquetas para breadcrumbs y títulos. */
+export const VISTAS_LABELS = {
+  [VISTAS.INICIO]: 'Inicio',
+  [VISTAS.RMA]: 'Listado de reparaciones',
+  [VISTAS.RMA_ESPECIALES]: 'RMA especiales',
+  [VISTAS.CLIENTES]: 'Clientes',
+  [VISTAS.PRODUCTOS]: 'Catálogo de productos',
+  [VISTAS.PRODUCTOS_RMA]: 'Productos en reparación',
+  [VISTAS.REPUESTOS]: 'Repuestos',
+  [VISTAS.OCULTA]: 'Reparaciones ocultas',
+  [VISTAS.INFORMES]: 'Informes',
+  [VISTAS.CONFIGURACION]: 'Ajustes',
+  [VISTAS.NOTIFICACIONES]: 'Mensajes',
+  [VISTAS.ADMIN]: 'Administración',
+}
+
+/** Atajos de teclado: Alt + número -> vista. */
+export const VISTAS_ATAJOS = {
+  1: VISTAS.INICIO,
+  2: VISTAS.CLIENTES,
+  3: VISTAS.RMA,
+  4: VISTAS.PRODUCTOS_RMA,
+  5: VISTAS.PRODUCTOS,
+  6: VISTAS.NOTIFICACIONES,
+  7: VISTAS.CONFIGURACION,
+  8: VISTAS.INFORMES,
+}
+
+/** Vista -> atajo (ej. 'Alt+1') para tooltips. */
+export const ATAJO_POR_VISTA = Object.fromEntries(
+  Object.entries(VISTAS_ATAJOS).map(([num, v]) => [v, `Alt+${num}`])
+)
+
 export const NOTIFICATION_TYPES = {
   rma: 'Lista RMA',
   rma_especial: 'RMA especial',

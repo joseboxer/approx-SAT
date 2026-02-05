@@ -20,7 +20,7 @@ import Notificaciones from './components/views/Notificaciones'
 import ModalEditarRma from './components/ModalEditarRma'
 import NotificationPermissionModal, { shouldShowNotificationPermissionPrompt } from './components/NotificationPermissionModal'
 import TourRecorrido from './components/TourRecorrido'
-import { VISTAS, API_URL, AUTH_STORAGE_KEY } from './constants'
+import { VISTAS, VISTAS_ATAJOS, API_URL, AUTH_STORAGE_KEY } from './constants'
 import { ensurePushSubscription } from './utils/pushSubscription'
 import './App.css'
 
@@ -70,6 +70,26 @@ function AppContent() {
     fetchCount()
     const id = setInterval(fetchCount, 60000)
     return () => clearInterval(id)
+  }, [])
+
+  // Atajos de teclado globales: Alt+1..8 para ir a secciones (no en inputs)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return
+      const key = e.key
+      if (key >= '1' && key <= '8') {
+        const target = document.activeElement
+        const tag = target?.tagName?.toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) return
+        const vistaKey = VISTAS_ATAJOS[parseInt(key, 10)]
+        if (vistaKey) {
+          e.preventDefault()
+          setVista(vistaKey)
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
   const renderVista = () => {

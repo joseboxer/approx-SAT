@@ -1,5 +1,6 @@
 import React from 'react'
 import Navbar from './Navbar'
+import { VISTAS_LABELS } from '../constants'
 
 function Layout({
   vista,
@@ -13,6 +14,8 @@ function Layout({
   refreshNotifCount,
   children,
 }) {
+  const labelActual = VISTAS_LABELS[vista] ?? vista
+
   return (
     <div className="app">
       <Navbar
@@ -24,6 +27,15 @@ function Layout({
         notifCountKey={notifCountKey}
         refreshNotifCount={refreshNotifCount}
       />
+      <nav className="breadcrumbs" aria-label="Navegación">
+        <span className="breadcrumb-item breadcrumb-inicio">Inicio</span>
+        {vista !== 'inicio' && (
+          <>
+            <span className="breadcrumb-sep" aria-hidden>›</span>
+            <span className="breadcrumb-item breadcrumb-current">{labelActual}</span>
+          </>
+        )}
+      </nav>
       <main className="main">{children}</main>
     </div>
   )
