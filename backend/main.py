@@ -856,6 +856,19 @@ def _especial_columns_from_df(df: pd.DataFrame, aliases: dict) -> dict:
     return result
 
 
+def _especial_columns_from_headers(headers: list[str], aliases: dict) -> dict:
+    """Igual que _especial_columns_from_df pero con una lista de cadenas (p. ej. primera fila del grid). Evita releer el Excel."""
+    result = {"serial": None, "fallo": None, "resolucion": None}
+    for col_str in (str(h).strip() for h in headers):
+        for key in ("serial", "fallo", "resolucion"):
+            if result[key] is not None:
+                continue
+            if _match_especial_column(col_str, aliases[key]):
+                result[key] = col_str
+                break
+    return result
+
+
 def _get_excel_sheet_names(path: str) -> list[str]:
     """Devuelve la lista de nombres de hojas del Excel."""
     try:
@@ -866,8 +879,8 @@ def _get_excel_sheet_names(path: str) -> list[str]:
 
 
 def _read_excel_grid(path: str, max_rows: int = 20, max_cols: int = 30, sheet: int | str = 0) -> list[list[str]]:
-    """Lee el Excel sin cabecera y devuelve una matriz de celdas (strings). sheet: índice 0-based o nombre de hoja."""
-    df = pd.read_excel(path, sheet_name=sheet, header=None)
+    """Lee solo las primeras filas y columnas del Excel (más rápido). sheet: índice 0-based o nombre de hoja."""
+    df = pd.read_excel(path, sheet_name=sheet, header=None, nrows=max_rows)
     df = df.replace({np.nan: None})
     rows = []
     for ri in range(min(max_rows, len(df))):
@@ -927,7 +940,7 @@ def _scan_rma_especiales_folder_impl(
     base_path: str,
     update_progress: None | tuple[str, callable],
 ) -> list[dict]:
-    """Implementación del escaneo; si update_progress es (task_id, _update_task) actualiza progreso en tiempo real."""
+    """Implementación del escaneo; una sola lectura por archivo (grid con nrows) y progreso detallado."""
     task_id, update_fn = update_progress if update_progress else (None, None)
     with get_connection() as conn:
         aliases = _get_rma_especiales_aliases(conn)
@@ -935,19 +948,23 @@ def _scan_rma_especiales_folder_impl(
     base = Path(base_path) if base_path else None
     if not base or not base.is_dir():
         return []
-    # Estructura: base / AÑO / MES / *.xlsx. Solo directorios cuyo nombre es año numérico (ej. 2024).
-    # El nombre de cada directorio (year_dir.name, month_dir.name) queda en la ruta del archivo (source_path al importar).
+    # Fase 1: listar archivos con progreso por año/mes
+    if update_fn and task_id:
+        update_fn(task_id, percent=0, message="Listando carpetas año / mes...")
     files_to_scan: list[tuple[Path, str, str]] = []  # (path, year_name, month_name)
-    for year_dir in sorted(base.iterdir()):
-        if not year_dir.is_dir():
-            continue
+    year_dirs = sorted([d for d in base.iterdir() if d.is_dir()], key=lambda d: d.name)
+    for year_dir in year_dirs:
         try:
             int(year_dir.name)
         except ValueError:
             continue
-        for month_dir in sorted(year_dir.iterdir()):
+        if update_fn and task_id:
+            update_fn(task_id, percent=0, message=f"Recorriendo carpeta {year_dir.name}...")
+        for month_dir in sorted(year_dir.iterdir(), key=lambda d: d.name):
             if not month_dir.is_dir():
                 continue
+            if update_fn and task_id:
+                update_fn(task_id, percent=0, message=f"Recorriendo {year_dir.name} / {month_dir.name}...")
             for f in month_dir.iterdir():
                 if f.suffix.lower() not in (".xlsx", ".xls"):
                     continue
@@ -955,16 +972,27 @@ def _scan_rma_especiales_folder_impl(
                 if rma_number:
                     files_to_scan.append((f, year_dir.name, month_dir.name))
     total = len(files_to_scan)
-    if update_fn and task_id and total > 0:
-        update_fn(task_id, percent=0, message=f"Encontrados {total} archivos. Leyendo Excel...")
+    if update_fn and task_id:
+        update_fn(
+            task_id,
+            percent=1,
+            message=f"Encontrados {total} archivos. Leyendo cada Excel (solo primeras filas)...",
+        )
+    if total == 0:
+        return []
+    # Fase 2: leer cada Excel una sola vez (grid con nrows=20) y progreso por archivo
     out = []
     for idx, (f, year_name, month_name) in enumerate(files_to_scan):
         if update_fn and task_id:
-            pct = int(90 * (idx + 1) / total) if total else 0
-            update_fn(task_id, percent=pct, message=f"Escaneando {year_name} / {month_name} — Leyendo {f.name}...")
+            pct = 1 + int(97 * (idx + 1) / total)
+            update_fn(
+                task_id,
+                percent=min(pct, 98),
+                message=f"Leyendo Excel ({idx + 1}/{total}): {year_name} / {month_name} / {f.name}",
+            )
         rma_number = _extract_rma_from_filename(f)
         try:
-            grid = _read_excel_grid(str(f))
+            grid = _read_excel_grid(str(f), max_rows=20, max_cols=30)
             matched = _find_matching_format(grid, formats)
             if matched is not None:
                 header_row_idx, fmt = matched
@@ -983,10 +1011,8 @@ def _scan_rma_especiales_folder_impl(
                     "missing": [],
                 })
             else:
-                df = pd.read_excel(str(f), sheet_name=0, header=0)
-                df = df.replace({np.nan: None})
-                headers = [str(c).strip() for c in df.columns]
-                mapped = _especial_columns_from_df(df, aliases)
+                headers = [str(c).strip() if c is not None else "" for c in (grid[0] if grid else [])]
+                mapped = _especial_columns_from_headers(headers, aliases)
                 missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
                 out.append({
                     "path": str(f),
