@@ -47,6 +47,27 @@ function ListadoRMA({
   } = useGarantia()
 
   const [updatingEstadoRmaId, setUpdatingEstadoRmaId] = useState(null)
+  const [updatingEstadoItemId, setUpdatingEstadoItemId] = useState(null)
+
+  const guardarEstadoItem = useCallback(
+    async (itemId, estado) => {
+      setUpdatingEstadoItemId(itemId)
+      try {
+        const res = await fetch(
+          `${API_URL}/api/rmas/items/${itemId}/estado`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ estado: estado ? String(estado).trim() : '' }),
+          }
+        )
+        if (res.ok) refetchProductos()
+      } finally {
+        setUpdatingEstadoItemId(null)
+      }
+    },
+    [refetchProductos]
+  )
 
   const [pagina, setPagina] = useState(1)
   const [columnaFiltro, setColumnaFiltro] = useState('PRODUCTO')
@@ -386,10 +407,15 @@ function ListadoRMA({
                 />
               </th>
               <th>Nº RMA</th>
-              <th>Líneas</th>
+              <th>Producto</th>
+              <th>Nº serie</th>
+              <th>Cliente</th>
               <th>Fecha recibido</th>
               <th>Fecha enviado</th>
               <th>Fecha recogida</th>
+              <th>Avería</th>
+              <th>Observaciones</th>
+              <th>Estado</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -402,6 +428,7 @@ function ListadoRMA({
               const isSelected = selectedRmaIds.has(grupo.rmaId)
               const fechaEnviado = p['FECHA ENVIADO']
               const fechaRecogida = p['FECHA RECOGIDA']
+              const unaSolaLinea = n === 1
               return (
                 <React.Fragment key={key}>
                   <tr className={isSelected ? 'row-selected' : ''}>
@@ -414,40 +441,131 @@ function ListadoRMA({
                       />
                     </td>
                     <td>{p['NÂº DE RMA'] ?? p['Nº DE RMA'] ?? '-'}</td>
-                    <td>
-                      <div className="celda-desplegable">
-                        <button
-                          type="button"
-                          className="link-celda btn-desplegable"
-                          onClick={() =>
-                            setProductosDesplegableAbierto(
-                              abierto ? null : grupo.rmaId
-                            )
-                          }
-                          aria-expanded={abierto}
-                          title="Abrir para ver producto, nº serie, cliente, avería, observaciones y estado de cada línea"
-                        >
-                          {n} {n === 1 ? 'línea' : 'líneas'} {abierto ? '▼' : '▶'}
-                        </button>
-                      </div>
-                    </td>
-                    <td>
-                      {p['FECHA RECIBIDO']
-                        ? new Date(
-                            p['FECHA RECIBIDO']
-                          ).toLocaleDateString('es-ES')
-                        : '-'}
-                    </td>
-                    <td>
-                      {fechaEnviado
-                        ? new Date(fechaEnviado).toLocaleDateString('es-ES')
-                        : '-'}
-                    </td>
-                    <td>
-                      {fechaRecogida
-                        ? new Date(fechaRecogida).toLocaleDateString('es-ES')
-                        : '-'}
-                    </td>
+                    {unaSolaLinea ? (
+                      <>
+                        <td>
+                          {p.PRODUCTO && setProductoDestacado && setVista ? (
+                            <button
+                              type="button"
+                              className="link-celda"
+                              onClick={() => {
+                                setProductoDestacado(p.PRODUCTO ?? '')
+                                setVista('productos')
+                              }}
+                            >
+                              {p.PRODUCTO}
+                            </button>
+                          ) : (
+                            p.PRODUCTO ?? '-'
+                          )}
+                        </td>
+                        <td>
+                          {getSerie(p) !== '-' && setSerialDestacado && setVista ? (
+                            <button
+                              type="button"
+                              className="link-celda"
+                              onClick={() => {
+                                setSerialDestacado(getSerie(p))
+                                setVista(VISTAS.PRODUCTOS_RMA)
+                              }}
+                              title={`Ir a Productos RMA: ${getSerie(p)}`}
+                            >
+                              {getSerie(p)}
+                            </button>
+                          ) : (
+                            getSerie(p)
+                          )}
+                        </td>
+                        <td>
+                          {setClienteDestacado && setVista ? (
+                            <button
+                              type="button"
+                              className="link-celda"
+                              onClick={() => {
+                                setClienteDestacado(p['RAZON SOCIAL O NOMBRE'] ?? '')
+                                setVista('clientes')
+                              }}
+                            >
+                              {p['RAZON SOCIAL O NOMBRE'] ?? '-'}
+                            </button>
+                          ) : (
+                            p['RAZON SOCIAL O NOMBRE'] ?? '-'
+                          )}
+                        </td>
+                        <td>
+                          {p['FECHA RECIBIDO']
+                            ? new Date(p['FECHA RECIBIDO']).toLocaleDateString('es-ES')
+                            : '-'}
+                        </td>
+                        <td>
+                          {fechaEnviado
+                            ? new Date(fechaEnviado).toLocaleDateString('es-ES')
+                            : '-'}
+                        </td>
+                        <td>
+                          {fechaRecogida
+                            ? new Date(fechaRecogida).toLocaleDateString('es-ES')
+                            : '-'}
+                        </td>
+                        <td className="celda-averia" title={(p.AVERIA ?? '').toString().trim() || undefined}>
+                          {(p.AVERIA ?? '').toString().slice(0, 40)}
+                          {p.AVERIA?.length > 40 ? '…' : ''}
+                        </td>
+                        <td className="celda-observaciones" title={(p.OBSERVACIONES ?? '').toString().trim() || undefined}>
+                          {(p.OBSERVACIONES ?? '').toString().slice(0, 40)}
+                          {p.OBSERVACIONES?.length > 40 ? '…' : ''}
+                        </td>
+                        <td>
+                          <select
+                            className="rma-estado-inline-select"
+                            value={p.estado ?? ''}
+                            onChange={(e) => p.id != null && guardarEstadoItem(p.id, e.target.value)}
+                            disabled={updatingEstadoItemId === p.id}
+                            aria-label="Estado de esta línea"
+                          >
+                            {OPCIONES_ESTADO.map((o) => (
+                              <option key={o.value === '' ? '__' : o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td colSpan={3}>
+                          <button
+                            type="button"
+                            className="link-celda btn-desplegable"
+                            onClick={() =>
+                              setProductosDesplegableAbierto(abierto ? null : grupo.rmaId)
+                            }
+                            aria-expanded={abierto}
+                            title="Ver producto, nº serie, cliente, avería, observaciones y estado de cada línea"
+                          >
+                            {n} líneas {abierto ? '▼' : '▶'}
+                          </button>
+                        </td>
+                        <td>
+                          {p['FECHA RECIBIDO']
+                            ? new Date(p['FECHA RECIBIDO']).toLocaleDateString('es-ES')
+                            : '-'}
+                        </td>
+                        <td>
+                          {fechaEnviado
+                            ? new Date(fechaEnviado).toLocaleDateString('es-ES')
+                            : '-'}
+                        </td>
+                        <td>
+                          {fechaRecogida
+                            ? new Date(fechaRecogida).toLocaleDateString('es-ES')
+                            : '-'}
+                        </td>
+                        <td className="celda-averia">—</td>
+                        <td className="celda-observaciones">—</td>
+                        <td>—</td>
+                      </>
+                    )}
                     <td>
                       <button
                         type="button"
@@ -481,9 +599,9 @@ function ListadoRMA({
                       </button>
                     </td>
                   </tr>
-                  {abierto && (
+                  {!unaSolaLinea && abierto && (
                     <tr className="fila-desplegable">
-                      <td colSpan={7} className="td-desplegable">
+                      <td colSpan={12} className="td-desplegable">
                         <div className="desplegable-detalle">
                           <p className="tabla-desplegable-leyenda">Campos por número de serie (cada línea es un ítem del RMA).</p>
                           <table className="tabla-desplegable">
@@ -593,7 +711,24 @@ function ListadoRMA({
                                       ? '…'
                                       : ''}
                                   </td>
-                                  <td>{getEstadoLabel(item.estado ?? '')}</td>
+                                  <td>
+                                    <select
+                                      className="rma-estado-inline-select"
+                                      value={item.estado ?? ''}
+                                      onChange={(e) =>
+                                        item.id != null &&
+                                        guardarEstadoItem(item.id, e.target.value)
+                                      }
+                                      disabled={updatingEstadoItemId === item.id}
+                                      aria-label="Estado de esta línea"
+                                    >
+                                      {OPCIONES_ESTADO.map((o) => (
+                                        <option key={o.value === '' ? '__' : o.value} value={o.value}>
+                                          {o.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>

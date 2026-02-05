@@ -52,6 +52,7 @@ from database import (
     delete_all_rma_items,
     update_estado_by_rma_number,
     update_estado_by_rma_numbers,
+    update_estado_by_item_id,
     update_fecha_recogida_by_rma_number,
     set_hidden_by_rma_number,
     set_serial_warranty,
@@ -519,6 +520,20 @@ def actualizar_estado(rma_number: str, body: EstadoBody):
     with get_connection() as conn:
         n = update_estado_by_rma_number(conn, rma_number, (body.estado or "").strip())
     return {"actualizados": n}
+
+
+@app.patch("/api/rmas/items/{item_id:int}/estado")
+def actualizar_estado_item(
+    item_id: int,
+    body: EstadoBody,
+    username: str = Depends(get_current_username),
+):
+    """Actualiza el estado de un único ítem RMA (por id). Permite estado distinto por número de serie."""
+    with get_connection() as conn:
+        ok = update_estado_by_item_id(conn, item_id, (body.estado or "").strip())
+    if not ok:
+        raise HTTPException(status_code=404, detail="Ítem no encontrado")
+    return {"ok": True}
 
 
 class FechaRecogidaBody(BaseModel):

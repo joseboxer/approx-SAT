@@ -700,6 +700,15 @@ def update_estado_by_rma_number(conn: sqlite3.Connection, rma_number: str, estad
     return cur.rowcount
 
 
+def update_estado_by_item_id(conn: sqlite3.Connection, item_id: int, estado: str) -> bool:
+    """Actualiza el estado de un único ítem RMA por su id. Devuelve True si se actualizó alguna fila."""
+    cur = conn.execute(
+        "UPDATE rma_items SET estado = ? WHERE id = ?",
+        (estado or "", int(item_id)),
+    )
+    return cur.rowcount > 0
+
+
 def update_fecha_recogida_by_rma_number(
     conn: sqlite3.Connection, rma_number: str, fecha_recogida: str | None
 ) -> int:
