@@ -220,6 +220,10 @@ def _init_db(conn: sqlite3.Connection):
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_rma_especial_lineas_rma_especial_id ON rma_especial_lineas(rma_especial_id)")
+    # Migración: fecha del archivo Excel (creación/modificación) para mostrar en lista
+    rma_cols = [row[1] for row in conn.execute("PRAGMA table_info(rma_especiales)").fetchall()]
+    if "file_date" not in rma_cols:
+        conn.execute("ALTER TABLE rma_especiales ADD COLUMN file_date TEXT")
     # Formatos RMA especiales: firma de cabecera (celdas de la fila) + índices de columna para serial/fallo/resolución
     conn.execute("""
         CREATE TABLE IF NOT EXISTS rma_especial_formats (
@@ -1005,7 +1009,7 @@ def get_all_rma_especiales(conn: sqlite3.Connection) -> list[dict]:
     """Lista todos los RMA especiales con número de líneas. Orden: más recientes primero."""
     cur = conn.execute(
         """SELECT e.id, e.rma_number, e.source_path, e.estado, e.date_received, e.date_sent, e.date_pickup,
-                  e.created_at, e.updated_at,
+                  e.created_at, e.updated_at, e.file_date,
                   (SELECT COUNT(*) FROM rma_especial_lineas l WHERE l.rma_especial_id = e.id) AS line_count
            FROM rma_especiales e
            ORDER BY e.updated_at DESC, e.id DESC"""
@@ -1022,6 +1026,7 @@ def get_all_rma_especiales(conn: sqlite3.Connection) -> list[dict]:
             "date_pickup": row["date_pickup"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
+            "file_date": row["file_date"],
             "line_count": row["line_count"] or 0,
         })
     return out
@@ -1030,7 +1035,7 @@ def get_all_rma_especiales(conn: sqlite3.Connection) -> list[dict]:
 def get_rma_especial_by_id(conn: sqlite3.Connection, rma_especial_id: int) -> dict | None:
     """Devuelve un RMA especial con sus líneas."""
     cur = conn.execute(
-        "SELECT id, rma_number, source_path, estado, date_received, date_sent, date_pickup, created_at, updated_at FROM rma_especiales WHERE id = ?",
+        "SELECT id, rma_number, source_path, estado, date_received, date_sent, date_pickup, created_at, updated_at, file_date FROM rma_especiales WHERE id = ?",
         (rma_especial_id,),
     )
     row = cur.fetchone()
@@ -1061,6 +1066,7 @@ def get_rma_especial_by_id(conn: sqlite3.Connection, rma_especial_id: int) -> di
         "date_pickup": row["date_pickup"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "file_date": row["file_date"],
         "lineas": lineas,
     }
 
@@ -1077,14 +1083,15 @@ def insert_rma_especial(
     rma_number: str,
     source_path: str | None,
     lineas: list[dict],
+    file_date: str | None = None,
 ) -> int:
-    """Inserta un RMA especial y sus líneas. lineas = [{"ref_proveedor","serial","fallo","resolucion"}, ...]. Devuelve id."""
+    """Inserta un RMA especial y sus líneas. file_date: fecha del archivo Excel (ISO). Devuelve id."""
     rma_number = str(rma_number or "").strip()
     if not rma_number:
         raise ValueError("rma_number vacío")
     cur = conn.execute(
-        """INSERT INTO rma_especiales (rma_number, source_path, estado) VALUES (?, ?, '')""",
-        (rma_number, source_path or None),
+        """INSERT INTO rma_especiales (rma_number, source_path, estado, file_date) VALUES (?, ?, '', ?)""",
+        (rma_number, source_path or None, file_date or None),
     )
     rma_especial_id = cur.lastrowid
     for lin in lineas:

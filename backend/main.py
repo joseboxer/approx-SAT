@@ -895,8 +895,11 @@ def _read_excel_grid(path: str, max_rows: int = 20, max_cols: int = 30, sheet: i
     return rows
 
 
-def _normalize_cell(s: str) -> str:
-    return (s or "").strip().lower()
+def _normalize_cell(s) -> str:
+    """Normaliza una celda para comparación; acepta str, int, float (p. ej. desde Excel)."""
+    if s is None:
+        return ""
+    return str(s).strip().lower()
 
 
 def _header_row_matches(row_cells: list[str], format_header_cells: list[str]) -> bool:
@@ -1003,13 +1006,30 @@ def _scan_rma_especiales_folder_impl(
                 serial_name = header_cells[serial_col] if serial_col < len(header_cells) else None
                 fallo_name = header_cells[fallo_col] if fallo_col < len(header_cells) else None
                 resolucion_name = header_cells[resolucion_col] if resolucion_col < len(header_cells) else None
-                out.append({
-                    "path": str(f),
-                    "rma_number": rma_number,
-                    "headers": header_cells,
-                    "mapped": {"serial": serial_name, "fallo": fallo_name, "resolucion": resolucion_name},
-                    "missing": [],
-                })
+                try:
+                    with get_connection() as conn:
+                        nid = _import_rma_especial_excel_by_indices(
+                            str(f), rma_number, header_row_idx, serial_col, fallo_col, resolucion_col, conn
+                        )
+                    out.append({
+                        "path": str(f),
+                        "rma_number": rma_number,
+                        "headers": header_cells,
+                        "mapped": {"serial": serial_name, "fallo": fallo_name, "resolucion": resolucion_name},
+                        "missing": [],
+                        "imported": True,
+                        "id": nid,
+                    })
+                except Exception as imp_e:
+                    out.append({
+                        "path": str(f),
+                        "rma_number": rma_number,
+                        "headers": header_cells,
+                        "mapped": {"serial": serial_name, "fallo": fallo_name, "resolucion": resolucion_name},
+                        "missing": [],
+                        "imported": False,
+                        "error": str(imp_e),
+                    })
             else:
                 headers = [str(c).strip() if c is not None else "" for c in (grid[0] if grid else [])]
                 mapped = _especial_columns_from_headers(headers, aliases)
@@ -1090,7 +1110,8 @@ def _import_rma_especial_excel(
     existing = get_rma_especial_by_rma_number(conn, rma_number)
     if existing:
         delete_rma_especial(conn, existing["id"])
-    return insert_rma_especial(conn, rma_number=rma_number, source_path=path, lineas=lineas)
+    file_date = datetime.fromtimestamp(os.path.getmtime(path)).isoformat()
+    return insert_rma_especial(conn, rma_number=rma_number, source_path=path, lineas=lineas, file_date=file_date)
 
 
 def _import_rma_especial_excel_by_indices(
@@ -1131,7 +1152,8 @@ def _import_rma_especial_excel_by_indices(
     existing = get_rma_especial_by_rma_number(conn, rma_number)
     if existing:
         delete_rma_especial(conn, existing["id"])
-    return insert_rma_especial(conn, rma_number=rma_number, source_path=path, lineas=lineas)
+    file_date = datetime.fromtimestamp(os.path.getmtime(path)).isoformat()
+    return insert_rma_especial(conn, rma_number=rma_number, source_path=path, lineas=lineas, file_date=file_date)
 
 
 @app.get("/api/rma-especiales")
@@ -1353,7 +1375,8 @@ def importar_rma_especial(
             rc = max(0, int(body.column_resolucion_index))
             nid = _import_rma_especial_excel_by_indices(path_str, rma_number, hr, sc, fc, rc, conn, sheet=sheet_param)
             grid = _read_excel_grid(path_str, sheet=sheet_param)
-            header_cells = grid[hr] if hr < len(grid) else []
+            raw_row = grid[hr] if hr < len(grid) else []
+            header_cells = [str(c).strip() if c is not None else "" for c in (raw_row or [])]
             add_rma_especial_format(conn, header_cells, sc, fc, rc)
             return {"id": nid, "rma_number": rma_number, "mensaje": "RMA especial importado (formato guardado)"}
 

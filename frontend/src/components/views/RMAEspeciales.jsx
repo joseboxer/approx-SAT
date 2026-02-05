@@ -78,11 +78,12 @@ const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep'
 function formatCreatedAt(createdAt) {
   if (!createdAt) return '—'
   const d = new Date(createdAt)
-  if (Number.isNaN(d.getTime())) return createdAt
-  const day = d.getDate()
-  const month = MESES[d.getMonth() + 1] || (d.getMonth() + 1)
-  const year = d.getFullYear()
-  return `${day} ${month} ${year}`
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+/** Fecha a mostrar: preferencia por fecha del archivo Excel (file_date), si no created_at. */
+function formatRmaFecha(r) {
+  return formatCreatedAt(r.file_date || r.created_at)
 }
 
 function RMAEspeciales({ setVista }) {
@@ -186,6 +187,7 @@ function RMAEspeciales({ setVista }) {
               setScanResult({ items: data.result.items, total: data.result.total ?? data.result.items.length })
             }
             setScanTaskId(null)
+            refetch()
           } else if (data.status === 'error') {
             setError(data.message || 'Error en el escaneo')
             setScanTaskId(null)
@@ -198,7 +200,7 @@ function RMAEspeciales({ setVista }) {
     return () => {
       if (scanPollRef.current) clearInterval(scanPollRef.current)
     }
-  }, [scanTaskId])
+  }, [scanTaskId, refetch])
 
   const escaneando = !!scanTaskId
 
@@ -416,6 +418,7 @@ function RMAEspeciales({ setVista }) {
   }
 
   const conFaltantes = scanResult?.items?.filter((i) => i.missing && i.missing.length > 0) || []
+  const autoImportados = scanResult?.items?.filter((i) => i.imported === true) || []
 
   const byYearMonth = groupByYearMonth(list)
   const years = Object.keys(byYearMonth).filter((y) => y !== '_').sort((a, b) => Number(b) - Number(a))
@@ -513,7 +516,7 @@ function RMAEspeciales({ setVista }) {
                 <tr key={r.id}>
                   <td>{r.rma_number}</td>
                   <td>{r.line_count ?? 0}</td>
-                  <td>{formatCreatedAt(r.created_at)}</td>
+                  <td>{formatRmaFecha(r)}</td>
                   <td>
                     <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleVerDetalle(r.id)}>
                       Ver
@@ -720,6 +723,9 @@ function RMAEspeciales({ setVista }) {
           <h3>Resultado del escaneo</h3>
           <p>
             Se encontraron {scanResult.total ?? 0} archivos.
+            {autoImportados.length > 0 && (
+              <span> {autoImportados.length} importados automáticamente (formato reconocido).</span>
+            )}
             {conFaltantes.length > 0 && (
               <span> {conFaltantes.length} con columnas no reconocidas (asigna columnas manualmente).</span>
             )}
@@ -730,7 +736,9 @@ function RMAEspeciales({ setVista }) {
                 <li key={item.path}>
                   <span>{item.rma_number}</span>
                   <span className="rma-especiales-scan-path">{item.path}</span>
-                  {item.missing && item.missing.length > 0 ? (
+                  {item.imported === true ? (
+                    <span className="rma-especiales-scan-imported">Importado</span>
+                  ) : item.missing && item.missing.length > 0 ? (
                     <button type="button" className="btn btn-sm btn-primary" onClick={() => handleImportar(item)}>
                       Asignar columnas
                     </button>
@@ -743,6 +751,9 @@ function RMAEspeciales({ setVista }) {
                     >
                       Importar
                     </button>
+                  )}
+                  {item.imported === false && item.error && (
+                    <span className="rma-especiales-scan-error" title={item.error}>Error al importar</span>
                   )}
                 </li>
               ))}
@@ -771,7 +782,7 @@ function RMAEspeciales({ setVista }) {
                 <tr key={r.id}>
                   <td>{r.rma_number}</td>
                   <td>{r.line_count ?? 0}</td>
-                  <td>{formatCreatedAt(r.created_at)}</td>
+                  <td>{formatRmaFecha(r)}</td>
                   <td>
                     <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleVerDetalle(r.id)}>
                       Ver
