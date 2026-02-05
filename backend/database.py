@@ -130,7 +130,6 @@ def _init_db(conn: sqlite3.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_notifications_to_user ON notifications(to_user_id);
         CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
-        CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category);
 
         CREATE TABLE IF NOT EXISTS push_subscriptions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,7 +189,8 @@ def _init_db(conn: sqlite3.Connection):
     if "category" not in notif_cols:
         conn.execute("ALTER TABLE notifications ADD COLUMN category TEXT DEFAULT 'sin_categoria'")
         conn.execute("UPDATE notifications SET category = 'sin_categoria' WHERE category IS NULL")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category)")
+    # Índice de category (para BDs nuevas la columna ya existe; para antiguas se acaba de añadir)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category)")
     # Tablas RMA especiales (1 Excel = 1 RMA, columnas variables por archivo)
     cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='rma_especiales'")
     if cur.fetchone() is None:
