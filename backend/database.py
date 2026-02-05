@@ -232,14 +232,21 @@ def _init_db(conn: sqlite3.Connection):
             serial_col INTEGER NOT NULL,
             fallo_col INTEGER NOT NULL,
             resolucion_col INTEGER NOT NULL,
+            header_row INTEGER NOT NULL DEFAULT 0,
+            sheet TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
-    # Migración: estado por línea (cada producto) en rma_especial_lineas
+    # Migraciones adicionales
     linea_cols = [row[1] for row in conn.execute("PRAGMA table_info(rma_especial_lineas)").fetchall()]
     if "estado" not in linea_cols:
         conn.execute("ALTER TABLE rma_especial_lineas ADD COLUMN estado TEXT DEFAULT ''")
         conn.execute("UPDATE rma_especial_lineas SET estado = '' WHERE estado IS NULL")
+    fmt_cols = [row[1] for row in conn.execute("PRAGMA table_info(rma_especial_formats)").fetchall()]
+    if "header_row" not in fmt_cols:
+        conn.execute("ALTER TABLE rma_especial_formats ADD COLUMN header_row INTEGER NOT NULL DEFAULT 0")
+    if "sheet" not in fmt_cols:
+        conn.execute("ALTER TABLE rma_especial_formats ADD COLUMN sheet TEXT")
 
 
 @contextmanager
@@ -1201,7 +1208,7 @@ def delete_rma_especial(conn: sqlite3.Connection, rma_especial_id: int) -> bool:
 def get_all_rma_especial_formats(conn: sqlite3.Connection) -> list[dict]:
     """Lista todos los formatos guardados (firma de cabecera + índices de columna)."""
     cur = conn.execute(
-        "SELECT id, header_cells, serial_col, fallo_col, resolucion_col, created_at FROM rma_especial_formats ORDER BY id"
+        "SELECT id, header_cells, serial_col, fallo_col, resolucion_col, header_row, sheet, created_at FROM rma_especial_formats ORDER BY id"
     )
     out = []
     for row in cur.fetchall():
@@ -1215,6 +1222,8 @@ def get_all_rma_especial_formats(conn: sqlite3.Connection) -> list[dict]:
             "serial_col": row["serial_col"],
             "fallo_col": row["fallo_col"],
             "resolucion_col": row["resolucion_col"],
+            "header_row": row["header_row"],
+            "sheet": row["sheet"],
             "created_at": row["created_at"],
         })
     return out
@@ -1226,11 +1235,13 @@ def add_rma_especial_format(
     serial_col: int,
     fallo_col: int,
     resolucion_col: int,
+    header_row: int = 0,
+    sheet: str | None = None,
 ) -> int:
     """Guarda un nuevo formato. header_cells es la lista de textos de la fila de cabecera. Devuelve id."""
     cur = conn.execute(
-        "INSERT INTO rma_especial_formats (header_cells, serial_col, fallo_col, resolucion_col) VALUES (?, ?, ?, ?)",
-        (json.dumps(header_cells, ensure_ascii=False), serial_col, fallo_col, resolucion_col),
+        "INSERT INTO rma_especial_formats (header_cells, serial_col, fallo_col, resolucion_col, header_row, sheet) VALUES (?, ?, ?, ?, ?, ?)",
+        (json.dumps(header_cells, ensure_ascii=False), serial_col, fallo_col, resolucion_col, int(header_row or 0), sheet),
     )
     return cur.lastrowid
 

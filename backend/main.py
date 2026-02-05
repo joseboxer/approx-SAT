@@ -958,7 +958,7 @@ def _header_row_matches(row_cells: list[str], format_header_cells: list[str]) ->
 
 
 def _find_matching_format(grid_rows: list[list[str]], formats: list[dict]) -> tuple[int, dict] | None:
-    """Busca si alguna fila del grid coincide con algún formato guardado. Devuelve (índice_fila, formato) o None."""
+    """Busca si alguna fila del grid coincide con algún formato guardado (compatibilidad hacia atrás)."""
     for fmt in formats:
         header_cells = fmt.get("header_cells") or []
         if not header_cells:
@@ -966,6 +966,63 @@ def _find_matching_format(grid_rows: list[list[str]], formats: list[dict]) -> tu
         for row_idx, row_cells in enumerate(grid_rows):
             if _header_row_matches(row_cells, header_cells):
                 return (row_idx, fmt)
+    return None
+
+
+def _find_matching_format_for_path(path: str, formats: list[dict], max_rows: int = 20, max_cols: int = 30) -> tuple[int, int, dict] | None:
+    """
+    Busca un formato que encaje para el archivo path inspeccionando hasta dos hojas (0 y 1).
+    Devuelve (header_row_idx, sheet_idx, formato) o None.
+    Usa header_row y sheet guardados en el formato como pista si están disponibles.
+    """
+    grids: dict[int, list[list[str]]] = {}
+
+    def get_grid(sheet_idx: int) -> list[list[str]]:
+        if sheet_idx in grids:
+            return grids[sheet_idx]
+        g = _read_excel_with_engine(path, sheet_name=sheet_idx, header=None, nrows=max_rows)
+        g = g.replace({np.nan: None})
+        rows: list[list[str]] = []
+        for ri in range(min(max_rows, len(g))):
+            row: list[str] = []
+            for ci in range(min(max_cols, len(g.columns))):
+                v = g.iloc[ri, ci]
+                if v is None or (isinstance(v, float) and np.isnan(v)):
+                    row.append("")
+                else:
+                    row.append(str(v).strip())
+            rows.append(row)
+        grids[sheet_idx] = rows
+        return rows
+
+    for fmt in formats:
+        header_cells = fmt.get("header_cells") or []
+        if not header_cells:
+            continue
+        sheet_hint = fmt.get("sheet")
+        candidate_sheets: list[int] = []
+        if sheet_hint not in (None, ""):
+            try:
+                si = int(sheet_hint)
+            except (ValueError, TypeError):
+                si = 0
+            candidate_sheets = [si]
+        else:
+            candidate_sheets = [0, 1]
+        for si in candidate_sheets:
+            try:
+                grid_rows = get_grid(si)
+            except Exception:
+                continue
+            if not grid_rows:
+                continue
+            header_row = fmt.get("header_row")
+            if isinstance(header_row, int) and 0 <= header_row < len(grid_rows):
+                if _header_row_matches(grid_rows[header_row], header_cells):
+                    return (header_row, si, fmt)
+            for row_idx, row_cells in enumerate(grid_rows):
+                if _header_row_matches(row_cells, header_cells):
+                    return (row_idx, si, fmt)
     return None
 
 
@@ -1045,10 +1102,10 @@ def _scan_rma_especiales_folder_impl(
         if rma_number in existing_rma_numbers:
             continue
         try:
-            grid = _read_excel_grid(str(f), max_rows=20, max_cols=30)
-            matched = _find_matching_format(grid, formats)
+            matched = _find_matching_format_for_path(str(f), formats, max_rows=20, max_cols=30)
             if matched is not None:
-                header_row_idx, fmt = matched
+                header_row_idx, sheet_idx, fmt = matched
+                grid = _read_excel_grid(str(f), max_rows=20, max_cols=30, sheet=sheet_idx)
                 header_cells = grid[header_row_idx] if header_row_idx < len(grid) else []
                 serial_col = fmt.get("serial_col", 0)
                 fallo_col = fmt.get("fallo_col", 0)
@@ -1443,18 +1500,24 @@ def importar_rma_especial(
             grid = _read_excel_grid(path_str, sheet=sheet_param)
             raw_row = grid[hr] if hr < len(grid) else []
             header_cells = [str(c).strip() if c is not None else "" for c in (raw_row or [])]
-            add_rma_especial_format(conn, header_cells, sc, fc, rc)
+            add_rma_especial_format(
+                conn,
+                header_cells,
+                sc,
+                fc,
+                rc,
+                header_row=hr,
+                sheet=str(sheet_param) if sheet_param is not None else None,
+            )
             return {"id": nid, "rma_number": rma_number, "mensaje": "RMA especial importado (formato guardado)"}
 
         if not body.column_serial and not body.column_fallo and not body.column_resolucion:
-            grid = _read_excel_grid(path_str)
             formats = get_all_rma_especial_formats(conn)
-            matched = _find_matching_format(grid, formats)
+            matched = _find_matching_format_for_path(path_str, formats)
             if matched is not None:
-                header_row_idx, fmt = matched
-                header_cells = grid[header_row_idx] if header_row_idx < len(grid) else []
+                header_row_idx, sheet_idx, fmt = matched
                 sc, fc, rc = fmt["serial_col"], fmt["fallo_col"], fmt["resolucion_col"]
-                nid = _import_rma_especial_excel_by_indices(path_str, rma_number, header_row_idx, sc, fc, rc, conn)
+                nid = _import_rma_especial_excel_by_indices(path_str, rma_number, header_row_idx, sc, fc, rc, conn, sheet=sheet_idx)
                 return {"id": nid, "rma_number": rma_number, "mensaje": "RMA especial importado"}
             df = _read_excel_with_engine(path_str, sheet_name=0, header=0)
             aliases = _get_rma_especiales_aliases(conn)
@@ -1515,10 +1578,10 @@ def recheck_rma_especiales_columnas(
             continue
         rma_number = _extract_rma_from_filename(path_str)
         try:
-            grid = _read_excel_grid(path_str)
-            matched = _find_matching_format(grid, formats)
+            matched = _find_matching_format_for_path(path_str, formats)
             if matched is not None:
-                header_row_idx, fmt = matched
+                header_row_idx, sheet_idx, fmt = matched
+                grid = _read_excel_grid(path_str, sheet=sheet_idx)
                 header_cells = grid[header_row_idx] if header_row_idx < len(grid) else []
                 sc, fc, rc = fmt["serial_col"], fmt["fallo_col"], fmt["resolucion_col"]
                 serial_name = header_cells[sc] if sc < len(header_cells) else None
