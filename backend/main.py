@@ -811,6 +811,26 @@ def _get_rma_especiales_aliases(conn) -> dict:
         return _DEFAULT_RMA_ESPECIALES_ALIASES
 
 
+def _add_rma_especiales_alias(conn, key: str, column_name: str) -> None:
+    """Añade un nombre de columna a la lista de aliases (serial, fallo o resolucion) si no está ya."""
+    if not (key and column_name and key in ("serial", "fallo", "resolucion")):
+        return
+    name = str(column_name).strip()
+    if not name:
+        return
+    aliases = _get_rma_especiales_aliases(conn)
+    lst = aliases.get(key) or []
+    if name not in lst:
+        lst = list(lst) + [name]
+        raw = get_setting(conn, "RMA_ESPECIALES_ALIASES")
+        try:
+            data = json.loads(raw) if raw else {}
+        except (json.JSONDecodeError, TypeError):
+            data = {}
+        data[key] = lst
+        set_setting(conn, "RMA_ESPECIALES_ALIASES", json.dumps(data, ensure_ascii=False))
+
+
 def _match_especial_column(header_str: str, aliases: list[str]) -> bool:
     h = (header_str or "").strip()
     for a in aliases:
@@ -842,15 +862,24 @@ def _extract_rma_from_filename(path: str | Path) -> str:
 def _scan_rma_especiales_folder(base_path: str) -> list[dict]:
     """
     Recorre base_path / año / mes / *.xlsx y devuelve lista de { path, rma_number, headers, mapped, missing }.
-    mapped = { serial, fallo, resolucion } con el nombre de columna encontrado o null.
-    missing = lista de claves no encontradas (serial, fallo, resolucion).
+    Sin callback; para progreso en tiempo real usar _run_rma_especiales_scan_task.
     """
+    return _scan_rma_especiales_folder_impl(base_path, None)
+
+
+def _scan_rma_especiales_folder_impl(
+    base_path: str,
+    update_progress: None | tuple[str, callable],
+) -> list[dict]:
+    """Implementación del escaneo; si update_progress es (task_id, _update_task) actualiza progreso en tiempo real."""
+    task_id, update_fn = update_progress if update_progress else (None, None)
     with get_connection() as conn:
         aliases = _get_rma_especiales_aliases(conn)
     base = Path(base_path) if base_path else None
     if not base or not base.is_dir():
         return []
-    out = []
+    # Recoger todos los archivos para poder mostrar progreso
+    files_to_scan: list[tuple[Path, str, str]] = []  # (path, year_name, month_name)
     for year_dir in sorted(base.iterdir()):
         if not year_dir.is_dir():
             continue
@@ -865,31 +894,61 @@ def _scan_rma_especiales_folder(base_path: str) -> list[dict]:
                 if f.suffix.lower() not in (".xlsx", ".xls"):
                     continue
                 rma_number = _extract_rma_from_filename(f)
-                if not rma_number:
-                    continue
-                try:
-                    df = pd.read_excel(str(f), sheet_name=0, header=0)
-                    df = df.replace({np.nan: None})
-                    headers = [str(c).strip() for c in df.columns]
-                    mapped = _especial_columns_from_df(df, aliases)
-                    missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
-                    out.append({
-                        "path": str(f),
-                        "rma_number": rma_number,
-                        "headers": headers,
-                        "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
-                        "missing": missing,
-                    })
-                except Exception as e:
-                    out.append({
-                        "path": str(f),
-                        "rma_number": rma_number,
-                        "headers": [],
-                        "mapped": {"serial": None, "fallo": None, "resolucion": None},
-                        "missing": ["serial", "fallo", "resolucion"],
-                        "error": str(e),
-                    })
+                if rma_number:
+                    files_to_scan.append((f, year_dir.name, month_dir.name))
+    total = len(files_to_scan)
+    if update_fn and task_id and total > 0:
+        update_fn(task_id, percent=0, message=f"Encontrados {total} archivos. Leyendo Excel...")
+    out = []
+    for idx, (f, year_name, month_name) in enumerate(files_to_scan):
+        if update_fn and task_id:
+            pct = int(90 * (idx + 1) / total) if total else 0
+            update_fn(task_id, percent=pct, message=f"Escaneando {year_name} / {month_name} — Leyendo {f.name}...")
+        rma_number = _extract_rma_from_filename(f)
+        try:
+            df = pd.read_excel(str(f), sheet_name=0, header=0)
+            df = df.replace({np.nan: None})
+            headers = [str(c).strip() for c in df.columns]
+            mapped = _especial_columns_from_df(df, aliases)
+            missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
+            out.append({
+                "path": str(f),
+                "rma_number": rma_number,
+                "headers": headers,
+                "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
+                "missing": missing,
+            })
+        except Exception as e:
+            out.append({
+                "path": str(f),
+                "rma_number": rma_number,
+                "headers": [],
+                "mapped": {"serial": None, "fallo": None, "resolucion": None},
+                "missing": ["serial", "fallo", "resolucion"],
+                "error": str(e),
+            })
     return out
+
+
+def _run_rma_especiales_scan_task(task_id: str, base_path: str) -> None:
+    """Ejecuta el escaneo de la carpeta RMA especiales y actualiza progreso (carpeta y archivo en tiempo real)."""
+    try:
+        _update_task(task_id, percent=0, message="Listando carpetas año / mes...")
+        update_progress = (task_id, lambda tid, **kw: _update_task(tid, **kw))
+        items = _scan_rma_especiales_folder_impl(base_path, update_progress)
+        _update_task(
+            task_id,
+            status="done",
+            percent=100,
+            message="Completado",
+            result={"items": items, "total": len(items)},
+        )
+    except FileNotFoundError as e:
+        _update_task(task_id, status="error", percent=0, message=f"Carpeta no encontrada: {e}", result=None)
+    except PermissionError as e:
+        _update_task(task_id, status="error", percent=0, message=f"Sin permiso de acceso: {e}", result=None)
+    except Exception as e:
+        _update_task(task_id, status="error", percent=0, message=str(e), result=None)
 
 
 def _import_rma_especial_excel(
@@ -968,7 +1027,11 @@ def actualizar_rma_especial_estado(
 
 @app.post("/api/rma-especiales/scan")
 def escanear_rma_especiales(username: str = Depends(get_current_username)):
-    """Escanea la carpeta configurada (RMA_ESPECIALES_FOLDER) y devuelve lista de Excels con columnas mapeadas o faltantes."""
+    """
+    Inicia el escaneo de la carpeta RMA especiales en segundo plano.
+    Devuelve task_id para consultar progreso en GET /api/tasks/{task_id}.
+    El resultado final incluye items y total.
+    """
     with get_connection() as conn:
         folder = (get_setting(conn, "RMA_ESPECIALES_FOLDER") or "").strip()
         folder = _normalize_unc_path(folder)
@@ -977,8 +1040,11 @@ def escanear_rma_especiales(username: str = Depends(get_current_username)):
     path_str = os.path.normpath(folder) if (os.name == "nt" and folder.startswith("\\\\")) else folder
     if not os.path.isdir(path_str):
         raise HTTPException(status_code=400, detail=f"No se encuentra la carpeta: {path_str}")
-    items = _scan_rma_especiales_folder(path_str)
-    return {"items": items, "total": len(items)}
+    task_id = str(uuid.uuid4())
+    with _tasks_lock:
+        _tasks[task_id] = {"status": "running", "percent": 0, "message": "Iniciando escaneo...", "result": None}
+    threading.Thread(target=_run_rma_especiales_scan_task, args=(task_id, path_str), daemon=True).start()
+    return {"task_id": task_id}
 
 
 class RmaEspecialImportBody(BaseModel):
@@ -1026,7 +1092,63 @@ def importar_rma_especial(
         nid = _import_rma_especial_excel(
             path_str, rma_number, col_serial, col_fallo, col_resolucion, conn
         )
+        if body.column_serial or body.column_fallo or body.column_resolucion:
+            if col_serial:
+                _add_rma_especiales_alias(conn, "serial", col_serial)
+            if col_fallo:
+                _add_rma_especiales_alias(conn, "fallo", col_fallo)
+            if col_resolucion:
+                _add_rma_especiales_alias(conn, "resolucion", col_resolucion)
     return {"id": nid, "rma_number": rma_number, "mensaje": "RMA especial importado"}
+
+
+class RmaEspecialRecheckBody(BaseModel):
+    paths: list[str] = []
+
+
+@app.post("/api/rma-especiales/recheck")
+def recheck_rma_especiales_columnas(
+    body: RmaEspecialRecheckBody,
+    username: str = Depends(get_current_username),
+):
+    """
+    Vuelve a intentar reconocer las columnas de los Excel indicados con los aliases actuales
+    (p. ej. tras haber asignado columnas en otro archivo, que se añadieron a la lista).
+    Devuelve para cada path: path, rma_number, headers, mapped, missing.
+    """
+    paths = [p.strip() for p in (body.paths or []) if p and p.strip()]
+    if not paths:
+        return {"items": []}
+    with get_connection() as conn:
+        aliases = _get_rma_especiales_aliases(conn)
+    out = []
+    for path_str in paths:
+        if not path_str or not os.path.isfile(path_str):
+            continue
+        rma_number = _extract_rma_from_filename(path_str)
+        try:
+            df = pd.read_excel(path_str, sheet_name=0, header=0)
+            df = df.replace({np.nan: None})
+            headers = [str(c).strip() for c in df.columns]
+            mapped = _especial_columns_from_df(df, aliases)
+            missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
+            out.append({
+                "path": path_str,
+                "rma_number": rma_number,
+                "headers": headers,
+                "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
+                "missing": missing,
+            })
+        except Exception as e:
+            out.append({
+                "path": path_str,
+                "rma_number": rma_number,
+                "headers": [],
+                "mapped": {"serial": None, "fallo": None, "resolucion": None},
+                "missing": ["serial", "fallo", "resolucion"],
+                "error": str(e),
+            })
+    return {"items": out}
 
 
 @app.delete("/api/rma-especiales/{rma_especial_id:int}")

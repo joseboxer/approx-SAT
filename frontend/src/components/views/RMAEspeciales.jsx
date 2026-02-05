@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { API_URL, AUTH_STORAGE_KEY, OPCIONES_ESTADO } from '../../constants'
+import ProgressBar from '../ProgressBar'
 import ModalNotificar from '../ModalNotificar'
 
 function getAuthHeaders() {
@@ -15,8 +16,11 @@ function RMAEspeciales({ setVista }) {
   const [detalle, setDetalle] = useState(null)
   const [scanResult, setScanResult] = useState(null)
   const [cargando, setCargando] = useState(true)
-  const [escaneando, setEscaneando] = useState(false)
+  const [scanTaskId, setScanTaskId] = useState(null)
+  const [scanProgress, setScanProgress] = useState(0)
+  const [scanMessage, setScanMessage] = useState('')
   const [error, setError] = useState(null)
+  const scanPollRef = useRef(null)
   const [updatingEstadoId, setUpdatingEstadoId] = useState(null)
   const [notificarOpen, setNotificarOpen] = useState(false)
   const [notificarRef, setNotificarRef] = useState(null)
@@ -43,15 +47,47 @@ function RMAEspeciales({ setVista }) {
   }, [refetch])
 
   const handleEscanear = () => {
-    setEscaneando(true)
     setError(null)
     setScanResult(null)
+    setScanProgress(0)
+    setScanMessage('Iniciando...')
     fetch(`${API_URL}/api/rma-especiales/scan`, { method: 'POST', headers: getAuthHeaders() })
       .then((r) => (r.ok ? r.json() : r.json().then((d) => Promise.reject(new Error(d.detail || 'Error al escanear')))))
-      .then((data) => setScanResult(data))
+      .then((data) => {
+        if (data.task_id) setScanTaskId(data.task_id)
+        else setError('No se recibió task_id')
+      })
       .catch((err) => setError(err.message))
-      .finally(() => setEscaneando(false))
   }
+
+  useEffect(() => {
+    if (!scanTaskId) return
+    const poll = () => {
+      fetch(`${API_URL}/api/tasks/${scanTaskId}`, { headers: getAuthHeaders() })
+        .then((r) => (r.ok ? r.json() : {}))
+        .then((data) => {
+          setScanProgress(data.percent ?? 0)
+          setScanMessage(data.message ?? '')
+          if (data.status === 'done') {
+            if (data.result?.items != null) {
+              setScanResult({ items: data.result.items, total: data.result.total ?? data.result.items.length })
+            }
+            setScanTaskId(null)
+          } else if (data.status === 'error') {
+            setError(data.message || 'Error en el escaneo')
+            setScanTaskId(null)
+          }
+        })
+        .catch(() => {})
+    }
+    poll()
+    scanPollRef.current = setInterval(poll, 500)
+    return () => {
+      if (scanPollRef.current) clearInterval(scanPollRef.current)
+    }
+  }, [scanTaskId])
+
+  const escaneando = !!scanTaskId
 
   const handleImportar = async (item) => {
     if (item.missing && item.missing.length > 0) {
@@ -99,6 +135,7 @@ function RMAEspeciales({ setVista }) {
 
   const handleAsignarSubmit = () => {
     if (!asignarFile) return
+    const pathJustImported = asignarFile.path
     setImportando(true)
     setError(null)
     fetch(`${API_URL}/api/rma-especiales/import`, {
@@ -119,7 +156,26 @@ function RMAEspeciales({ setVista }) {
           setAsignarFile(null)
           refetch()
           if (scanResult && scanResult.items) {
-            setScanResult({ ...scanResult, items: scanResult.items.filter((i) => i.path !== asignarFile.path) })
+            const itemsWithoutImported = scanResult.items.filter((i) => i.path !== pathJustImported)
+            const recheckPaths = itemsWithoutImported
+              .filter((i) => i.missing && i.missing.length > 0)
+              .map((i) => i.path)
+            if (recheckPaths.length > 0) {
+              fetch(`${API_URL}/api/rma-especiales/recheck`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                body: JSON.stringify({ paths: recheckPaths }),
+              })
+                .then((res) => (res.ok ? res.json() : { items: [] }))
+                .then((recheckData) => {
+                  const recheckMap = new Map((recheckData.items || []).map((r) => [r.path, r]))
+                  const updatedItems = itemsWithoutImported.map((item) => recheckMap.get(item.path) ?? item)
+                  setScanResult({ ...scanResult, items: updatedItems, total: updatedItems.length })
+                })
+                .catch(() => setScanResult({ ...scanResult, items: itemsWithoutImported, total: itemsWithoutImported.length }))
+            } else {
+              setScanResult({ ...scanResult, items: itemsWithoutImported, total: itemsWithoutImported.length })
+            }
           }
         }
       })
@@ -168,6 +224,14 @@ function RMAEspeciales({ setVista }) {
           {escaneando ? 'Escaneando…' : 'Escanear carpeta'}
         </button>
       </div>
+
+      {escaneando && (
+        <ProgressBar
+          percent={scanProgress}
+          message={scanMessage}
+          className="rma-especiales-scan-progress"
+        />
+      )}
 
       {error && (
         <div className="error-msg" role="alert">
