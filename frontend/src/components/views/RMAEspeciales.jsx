@@ -844,6 +844,9 @@ function RMAEspeciales({ setVista }) {
           <h3>Resultado del escaneo</h3>
           <p>
             Solo se listan RMA que no estaban en la base de datos. Los de formato reconocido se importan automáticamente.
+            {scanResult.total === 0 && (
+              <span> No hay nuevos Excel pendientes: todos los RMAs de la carpeta ya están importados.</span>
+            )}
             {autoImportados.length > 0 && (
               <span> {autoImportados.length} importados correctamente.</span>
             )}

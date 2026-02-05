@@ -7,6 +7,7 @@ Base de datos SQLite para la aplicación.
 import json
 import math
 import sqlite3
+import unicodedata
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
@@ -641,10 +642,34 @@ def insert_rma_item(
         s = str(v).strip()
         return s if s else None
 
+    def _infer_estado_from_observaciones(text: str | None) -> str:
+        """
+        Inferir estado a partir de OBSERVACIONES:
+        - Contiene "abon" (abono, abonado, abonar, ...) -> 'abonado'
+        - Si está vacío o solo espacios -> ''
+        - Contiene "anomalia"/"anomalía"/variantes -> 'sin anomalias'
+        - Cualquier otro texto no vacío -> 'reparado'
+        """
+        if not text:
+            return ""
+        # Normalizar: quitar acentos y pasar a minúsculas
+        norm = unicodedata.normalize("NFD", str(text))
+        norm = "".join(ch for ch in norm if unicodedata.category(ch) != "Mn").lower()
+        if not norm.strip():
+            return ""
+        if "abon" in norm:
+            return "abonado"
+        if "anomalia" in norm:
+            return "sin anomalias"
+        return "reparado"
+
+    obs = _s(observaciones)
+    estado = _infer_estado_from_observaciones(obs)
+
     conn.execute(
         """INSERT INTO rma_items (rma_number, product, serial, client_name, client_email, client_phone,
-                                  date_received, averia, observaciones, date_pickup, date_sent, excel_row)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  date_received, averia, observaciones, estado, date_pickup, date_sent, excel_row)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             _s(rma_number),
             _s(product),
@@ -654,7 +679,8 @@ def insert_rma_item(
             _s(client_phone),
             _s(date_received) if date_received is not None else None,
             _s(averia),
-            _s(observaciones),
+            obs,
+            estado,
             _s(date_pickup) if date_pickup is not None else None,
             _s(date_sent) if date_sent is not None else None,
             excel_row if isinstance(excel_row, int) else None,
