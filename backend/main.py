@@ -989,6 +989,8 @@ def _scan_rma_especiales_folder_impl(
             for f in month_dir.iterdir():
                 if f.suffix.lower() not in (".xlsx", ".xls"):
                     continue
+                if f.name.startswith("~$"):
+                    continue
                 rma_number = _extract_rma_from_filename(f)
                 if rma_number:
                     files_to_scan.append((f, year_dir.name, month_dir.name))
@@ -1001,8 +1003,9 @@ def _scan_rma_especiales_folder_impl(
         )
     if total == 0:
         return []
-    # Fase 2: leer cada Excel una sola vez (grid con nrows=20) y progreso por archivo
+    # Fase 2: leer cada Excel una sola vez (grid con nrows=20) y progreso por archivo. Solo una entrada por rma_number.
     out = []
+    shown_rma_numbers = set()
     for idx, (f, year_name, month_name) in enumerate(files_to_scan):
         if update_fn and task_id:
             pct = 1 + int(97 * (idx + 1) / total)
@@ -1032,45 +1035,53 @@ def _scan_rma_especiales_folder_impl(
                             str(f), rma_number, header_row_idx, serial_col, fallo_col, resolucion_col, conn
                         )
                     existing_rma_numbers.add(rma_number)
-                    out.append({
-                        "path": str(f),
-                        "rma_number": rma_number,
-                        "headers": header_cells,
-                        "mapped": {"serial": serial_name, "fallo": fallo_name, "resolucion": resolucion_name},
-                        "missing": [],
-                        "imported": True,
-                        "id": nid,
-                    })
+                    if rma_number not in shown_rma_numbers:
+                        shown_rma_numbers.add(rma_number)
+                        out.append({
+                            "path": str(f),
+                            "rma_number": rma_number,
+                            "headers": header_cells,
+                            "mapped": {"serial": serial_name, "fallo": fallo_name, "resolucion": resolucion_name},
+                            "missing": [],
+                            "imported": True,
+                            "id": nid,
+                        })
                 except Exception as imp_e:
+                    if rma_number not in shown_rma_numbers:
+                        shown_rma_numbers.add(rma_number)
+                        out.append({
+                            "path": str(f),
+                            "rma_number": rma_number,
+                            "headers": header_cells,
+                            "mapped": {"serial": serial_name, "fallo": fallo_name, "resolucion": resolucion_name},
+                            "missing": [],
+                            "imported": False,
+                            "error": str(imp_e),
+                        })
+            else:
+                if rma_number not in shown_rma_numbers:
+                    shown_rma_numbers.add(rma_number)
+                    headers = [str(c).strip() if c is not None else "" for c in (grid[0] if grid else [])]
+                    mapped = _especial_columns_from_headers(headers, aliases)
+                    missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
                     out.append({
                         "path": str(f),
                         "rma_number": rma_number,
-                        "headers": header_cells,
-                        "mapped": {"serial": serial_name, "fallo": fallo_name, "resolucion": resolucion_name},
-                        "missing": [],
-                        "imported": False,
-                        "error": str(imp_e),
+                        "headers": headers,
+                        "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
+                        "missing": missing,
                     })
-            else:
-                headers = [str(c).strip() if c is not None else "" for c in (grid[0] if grid else [])]
-                mapped = _especial_columns_from_headers(headers, aliases)
-                missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
+        except Exception as e:
+            if rma_number not in shown_rma_numbers:
+                shown_rma_numbers.add(rma_number)
                 out.append({
                     "path": str(f),
                     "rma_number": rma_number,
-                    "headers": headers,
-                    "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
-                    "missing": missing,
+                    "headers": [],
+                    "mapped": {"serial": None, "fallo": None, "resolucion": None},
+                    "missing": ["serial", "fallo", "resolucion"],
+                    "error": str(e),
                 })
-        except Exception as e:
-            out.append({
-                "path": str(f),
-                "rma_number": rma_number,
-                "headers": [],
-                "mapped": {"serial": None, "fallo": None, "resolucion": None},
-                "missing": ["serial", "fallo", "resolucion"],
-                "error": str(e),
-            })
     return out
 
 
@@ -1281,7 +1292,7 @@ def _path_under_rma_especiales_folder(conn, path_str: str) -> bool:
     folder = _normalize_unc_path(folder)
     if not folder:
         return False
-    path_str = path_str.replace("/", os.sep)
+    path_str = _normalize_unc_path(path_str.replace("/", os.sep))
     folder_abs = os.path.abspath(folder)
     path_abs = os.path.abspath(path_str)
     if os.name == "nt":
@@ -1300,8 +1311,15 @@ def excel_preview_rma_especial(
     sheet: índice 0-based o nombre de hoja; por defecto 0 (primera hoja).
     """
     path_str = (unquote(path) if path else "").strip().replace("/", os.sep)
+    path_str = _normalize_unc_path(path_str)
     if not path_str:
         raise HTTPException(status_code=400, detail="Ruta de archivo no indicada.")
+    basename = os.path.basename(path_str)
+    if basename.startswith("~$"):
+        raise HTTPException(
+            status_code=400,
+            detail="Es un archivo temporal de Excel (~$). Abre el archivo real (sin ~$) o cierra el Excel si está en uso.",
+        )
     if not os.path.isfile(path_str):
         raise HTTPException(status_code=400, detail=f"Archivo no encontrado: {path_str[:80]}{'…' if len(path_str) > 80 else ''}")
     with get_connection() as conn:
