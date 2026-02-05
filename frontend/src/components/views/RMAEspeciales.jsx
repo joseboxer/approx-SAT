@@ -21,7 +21,8 @@ function RMAEspeciales({ setVista }) {
   const [scanMessage, setScanMessage] = useState('')
   const [error, setError] = useState(null)
   const scanPollRef = useRef(null)
-  const [updatingEstadoId, setUpdatingEstadoId] = useState(null)
+  const [detalleId, setDetalleId] = useState(null)
+  const [updatingLineaEstadoId, setUpdatingLineaEstadoId] = useState(null)
   const [notificarOpen, setNotificarOpen] = useState(false)
   const [notificarRef, setNotificarRef] = useState(null)
   const [asignarOpen, setAsignarOpen] = useState(false)
@@ -184,28 +185,104 @@ function RMAEspeciales({ setVista }) {
   }
 
   const handleVerDetalle = (id) => {
+    setDetalle(null)
+    setDetalleId(id)
     fetch(`${API_URL}/api/rma-especiales/${id}`, { headers: getAuthHeaders() })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setDetalle)
       .catch(() => setDetalle(null))
   }
 
-  const handleEstadoChange = (id, estado) => {
-    setUpdatingEstadoId(id)
-    fetch(`${API_URL}/api/rma-especiales/${id}/estado`, {
+  const handleVolverListado = () => {
+    setDetalleId(null)
+    setDetalle(null)
+    refetch()
+  }
+
+  const handleLineaEstadoChange = (lineaId, estado) => {
+    setUpdatingLineaEstadoId(lineaId)
+    fetch(`${API_URL}/api/rma-especiales/lineas/${lineaId}/estado`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({ estado }),
     })
       .then((r) => {
-        if (r.ok) refetch()
+        if (r.ok && detalle && detalle.lineas) {
+          setDetalle({
+            ...detalle,
+            lineas: detalle.lineas.map((lin) =>
+              lin.id === lineaId ? { ...lin, estado } : lin
+            ),
+          })
+        }
       })
-      .finally(() => setUpdatingEstadoId(null))
+      .finally(() => setUpdatingLineaEstadoId(null))
   }
 
   const conFaltantes = scanResult?.items?.filter((i) => i.missing && i.missing.length > 0) || []
 
   if (cargando && list.length === 0) return <p className="loading">Cargando RMA especiales...</p>
+
+  // Vista detalle: tabla de líneas del RMA especial (estilo lista RMA), con estado por producto
+  if (detalleId != null) {
+    if (!detalle || !detalle.rma_number) {
+      return (
+        <>
+          <button type="button" className="btn btn-secondary btn-back" onClick={handleVolverListado}>
+            ← Volver al listado
+          </button>
+          <p className="loading">Cargando RMA...</p>
+        </>
+      )
+    }
+    return (
+      <>
+        <div className="rma-especiales-detalle-header">
+          <button type="button" className="btn btn-secondary btn-back" onClick={handleVolverListado}>
+            ← Volver al listado
+          </button>
+          <h1 className="page-title">RMA {detalle.rma_number}</h1>
+        </div>
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Ref. proveedor</th>
+                <th>Nº serie</th>
+                <th>Fallo</th>
+                <th>Resolución</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(detalle.lineas || []).map((lin) => (
+                <tr key={lin.id}>
+                  <td>{lin.ref_proveedor || '—'}</td>
+                  <td>{lin.serial || '—'}</td>
+                  <td>{lin.fallo || '—'}</td>
+                  <td>{lin.resolucion || '—'}</td>
+                  <td>
+                    <select
+                      className="rma-estado-inline-select"
+                      value={lin.estado || ''}
+                      onChange={(e) => handleLineaEstadoChange(lin.id, e.target.value)}
+                      disabled={updatingLineaEstadoId === lin.id}
+                    >
+                      {OPCIONES_ESTADO.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
@@ -284,7 +361,6 @@ function RMAEspeciales({ setVista }) {
               <tr>
                 <th>Nº RMA</th>
                 <th>Líneas</th>
-                <th>Estado</th>
                 <th>Fecha recibido</th>
                 <th>Fecha enviado</th>
                 <th>Fecha recogida</th>
@@ -296,20 +372,6 @@ function RMAEspeciales({ setVista }) {
                 <tr key={r.id}>
                   <td>{r.rma_number}</td>
                   <td>{r.line_count ?? 0}</td>
-                  <td>
-                    <select
-                      className="rma-estado-inline-select"
-                      value={r.estado || ''}
-                      onChange={(e) => handleEstadoChange(r.id, e.target.value)}
-                      disabled={updatingEstadoId === r.id}
-                    >
-                      {OPCIONES_ESTADO.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
                   <td>{r.date_received || '—'}</td>
                   <td>{r.date_sent || '—'}</td>
                   <td>{r.date_pickup || '—'}</td>
@@ -332,41 +394,6 @@ function RMAEspeciales({ setVista }) {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {detalle && (
-        <div className="modal-overlay" onClick={() => setDetalle(null)} role="dialog" aria-modal="true">
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-titulo">RMA {detalle.rma_number}</h2>
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Ref. proveedor</th>
-                    <th>Nº serie</th>
-                    <th>Fallo</th>
-                    <th>Resolución</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(detalle.lineas || []).map((lin) => (
-                    <tr key={lin.id}>
-                      <td>{lin.ref_proveedor || '—'}</td>
-                      <td>{lin.serial || '—'}</td>
-                      <td>{lin.fallo || '—'}</td>
-                      <td>{lin.resolucion || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="modal-pie">
-              <button type="button" className="btn btn-secondary" onClick={() => setDetalle(null)}>
-                Cerrar
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

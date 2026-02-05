@@ -2542,6 +2542,17 @@
   text-overflow: ellipsis;
 }
 
+.rma-especiales-detalle-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.rma-especiales-detalle-header .btn-back {
+  flex-shrink: 0;
+}
+
 .notificaciones-list {
   list-style: none;
   margin: 0;

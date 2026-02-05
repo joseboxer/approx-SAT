@@ -83,6 +83,7 @@ from database import (
     get_rma_especial_by_rma_number,
     insert_rma_especial,
     update_rma_especial_estado,
+    update_rma_especial_linea_estado,
     update_rma_especial_dates,
     delete_rma_especial,
 )
@@ -1016,12 +1017,31 @@ def actualizar_rma_especial_estado(
     body: RmaEspecialEstadoBody,
     username: str = Depends(get_current_username),
 ):
-    """Actualiza el estado de un RMA especial (abonado, reparado, no_anomalias, etc.)."""
+    """Actualiza el estado de un RMA especial (legacy; el estado real es por línea)."""
     estado = (body.estado or "").strip()
     with get_connection() as conn:
         ok = update_rma_especial_estado(conn, rma_especial_id, estado)
     if not ok:
         raise HTTPException(status_code=404, detail="RMA especial no encontrado")
+    return {"mensaje": "Estado actualizado"}
+
+
+class RmaEspecialLineaEstadoBody(BaseModel):
+    estado: str = ""
+
+
+@app.patch("/api/rma-especiales/lineas/{linea_id:int}/estado")
+def actualizar_rma_especial_linea_estado(
+    linea_id: int,
+    body: RmaEspecialLineaEstadoBody,
+    username: str = Depends(get_current_username),
+):
+    """Actualiza el estado de una línea (producto) de un RMA especial."""
+    estado = (body.estado or "").strip()
+    with get_connection() as conn:
+        ok = update_rma_especial_linea_estado(conn, linea_id, estado)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Línea no encontrada")
     return {"mensaje": "Estado actualizado"}
 
 

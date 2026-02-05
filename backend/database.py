@@ -215,10 +215,16 @@ def _init_db(conn: sqlite3.Connection):
                 ref_proveedor TEXT,
                 serial TEXT,
                 fallo TEXT,
-                resolucion TEXT
+                resolucion TEXT,
+                estado TEXT DEFAULT ''
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_rma_especial_lineas_rma_especial_id ON rma_especial_lineas(rma_especial_id)")
+    # Migración: estado por línea (cada producto) en rma_especial_lineas
+    linea_cols = [row[1] for row in conn.execute("PRAGMA table_info(rma_especial_lineas)").fetchall()]
+    if "estado" not in linea_cols:
+        conn.execute("ALTER TABLE rma_especial_lineas ADD COLUMN estado TEXT DEFAULT ''")
+        conn.execute("UPDATE rma_especial_lineas SET estado = '' WHERE estado IS NULL")
 
 
 @contextmanager
@@ -1020,7 +1026,7 @@ def get_rma_especial_by_id(conn: sqlite3.Connection, rma_especial_id: int) -> di
     if not row:
         return None
     cur2 = conn.execute(
-        "SELECT id, ref_proveedor, serial, fallo, resolucion FROM rma_especial_lineas WHERE rma_especial_id = ? ORDER BY id",
+        "SELECT id, ref_proveedor, serial, fallo, resolucion, estado FROM rma_especial_lineas WHERE rma_especial_id = ? ORDER BY id",
         (rma_especial_id,),
     )
     lineas = [
@@ -1030,6 +1036,7 @@ def get_rma_especial_by_id(conn: sqlite3.Connection, rma_especial_id: int) -> di
             "serial": r["serial"] or "",
             "fallo": r["fallo"] or "",
             "resolucion": r["resolucion"] or "",
+            "estado": r["estado"] if r["estado"] is not None else "",
         }
         for r in cur2.fetchall()
     ]
@@ -1071,14 +1078,15 @@ def insert_rma_especial(
     rma_especial_id = cur.lastrowid
     for lin in lineas:
         conn.execute(
-            """INSERT INTO rma_especial_lineas (rma_especial_id, ref_proveedor, serial, fallo, resolucion)
-               VALUES (?, ?, ?, ?, ?)""",
+            """INSERT INTO rma_especial_lineas (rma_especial_id, ref_proveedor, serial, fallo, resolucion, estado)
+               VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 rma_especial_id,
                 (lin.get("ref_proveedor") or "").strip() or None,
                 (lin.get("serial") or "").strip() or None,
                 (lin.get("fallo") or "").strip() or None,
                 (lin.get("resolucion") or "").strip() or None,
+                (lin.get("estado") or "").strip() or "",
             ),
         )
     return rma_especial_id
@@ -1088,6 +1096,15 @@ def update_rma_especial_estado(conn: sqlite3.Connection, rma_especial_id: int, e
     cur = conn.execute(
         "UPDATE rma_especiales SET estado = ?, updated_at = datetime('now') WHERE id = ?",
         (estado or "", rma_especial_id),
+    )
+    return cur.rowcount > 0
+
+
+def update_rma_especial_linea_estado(conn: sqlite3.Connection, linea_id: int, estado: str) -> bool:
+    """Actualiza el estado de una línea (producto) de un RMA especial. Devuelve True si se actualizó."""
+    cur = conn.execute(
+        "UPDATE rma_especial_lineas SET estado = ? WHERE id = ?",
+        (estado or "", linea_id),
     )
     return cur.rowcount > 0
 
