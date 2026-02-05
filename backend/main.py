@@ -856,9 +856,18 @@ def _especial_columns_from_df(df: pd.DataFrame, aliases: dict) -> dict:
     return result
 
 
-def _read_excel_grid(path: str, max_rows: int = 20, max_cols: int = 30) -> list[list[str]]:
-    """Lee el Excel sin cabecera y devuelve una matriz de celdas (strings). Primera hoja."""
-    df = pd.read_excel(path, sheet_name=0, header=None)
+def _get_excel_sheet_names(path: str) -> list[str]:
+    """Devuelve la lista de nombres de hojas del Excel."""
+    try:
+        xl = pd.ExcelFile(path)
+        return list(xl.sheet_names)
+    except Exception:
+        return []
+
+
+def _read_excel_grid(path: str, max_rows: int = 20, max_cols: int = 30, sheet: int | str = 0) -> list[list[str]]:
+    """Lee el Excel sin cabecera y devuelve una matriz de celdas (strings). sheet: índice 0-based o nombre de hoja."""
+    df = pd.read_excel(path, sheet_name=sheet, header=None)
     df = df.replace({np.nan: None})
     rows = []
     for ri in range(min(max_rows, len(df))):
@@ -1026,9 +1035,10 @@ def _import_rma_especial_excel(
     col_fallo: str | None,
     col_resolucion: str | None,
     conn,
+    sheet: int | str = 0,
 ) -> int:
-    """Lee el Excel en path y crea/actualiza el RMA especial. col_* son los nombres de columna en el Excel. Devuelve id."""
-    df = pd.read_excel(path, sheet_name=0, header=0)
+    """Lee el Excel en path (hoja sheet) y crea/actualiza el RMA especial. col_* son los nombres de columna. Devuelve id."""
+    df = pd.read_excel(path, sheet_name=sheet, header=0)
     df = df.replace({np.nan: None})
     lineas = []
     for _, row in df.iterrows():
@@ -1065,9 +1075,10 @@ def _import_rma_especial_excel_by_indices(
     fallo_col: int,
     resolucion_col: int,
     conn,
+    sheet: int | str = 0,
 ) -> int:
-    """Importa un RMA especial usando la fila header_row como cabecera y los índices de columna (0-based)."""
-    df = pd.read_excel(path, sheet_name=0, header=None)
+    """Importa un RMA especial usando la fila header_row como cabecera y los índices de columna (0-based). sheet: hoja del Excel."""
+    df = pd.read_excel(path, sheet_name=sheet, header=None)
     df = df.replace({np.nan: None})
     lineas = []
     for ri in range(header_row + 1, len(df)):
@@ -1207,10 +1218,14 @@ def _path_under_rma_especiales_folder(conn, path_str: str) -> bool:
 
 
 @app.get("/api/rma-especiales/excel-preview")
-def excel_preview_rma_especial(path: str, username: str = Depends(get_current_username)):
+def excel_preview_rma_especial(
+    path: str,
+    sheet: int | str | None = None,
+    username: str = Depends(get_current_username),
+):
     """
-    Devuelve una vista en grid del Excel (primeras filas y columnas) para que el usuario
-    seleccione la fila de cabecera y las celdas correspondientes a serial, fallo, resolución.
+    Devuelve los nombres de hojas y una vista en grid del Excel para la hoja indicada.
+    sheet: índice 0-based o nombre de hoja; por defecto 0 (primera hoja).
     """
     path_str = (path or "").strip()
     if not path_str or not os.path.isfile(path_str):
@@ -1219,10 +1234,14 @@ def excel_preview_rma_especial(path: str, username: str = Depends(get_current_us
         if not _path_under_rma_especiales_folder(conn, path_str):
             raise HTTPException(status_code=403, detail="El archivo no está en la carpeta de RMA especiales.")
     try:
-        rows = _read_excel_grid(path_str)
+        sheet_names = _get_excel_sheet_names(path_str)
+        sheet_idx = 0 if sheet is None else sheet
+        if isinstance(sheet_idx, int) and (sheet_idx < 0 or (sheet_names and sheet_idx >= len(sheet_names))):
+            sheet_idx = 0
+        rows = _read_excel_grid(path_str, sheet=sheet_idx)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"No se pudo leer el Excel: {e}")
-    return {"rows": rows, "path": path_str}
+    return {"sheet_names": sheet_names or ["Hoja1"], "rows": rows, "path": path_str, "sheet": sheet_idx}
 
 
 @app.post("/api/rma-especiales/scan")
@@ -1257,6 +1276,7 @@ class RmaEspecialImportBody(BaseModel):
     column_serial_index: int | None = None
     column_fallo_index: int | None = None
     column_resolucion_index: int | None = None
+    sheet: int | str | None = None
 
 
 @app.post("/api/rma-especiales/import")
@@ -1284,14 +1304,16 @@ def importar_rma_especial(
         and body.column_resolucion_index is not None
     )
 
+    sheet_param = body.sheet if body.sheet is not None else 0
+
     with get_connection() as conn:
         if use_indices:
             hr = max(0, int(body.header_row))
             sc = max(0, int(body.column_serial_index))
             fc = max(0, int(body.column_fallo_index))
             rc = max(0, int(body.column_resolucion_index))
-            nid = _import_rma_especial_excel_by_indices(path_str, rma_number, hr, sc, fc, rc, conn)
-            grid = _read_excel_grid(path_str)
+            nid = _import_rma_especial_excel_by_indices(path_str, rma_number, hr, sc, fc, rc, conn, sheet=sheet_param)
+            grid = _read_excel_grid(path_str, sheet=sheet_param)
             header_cells = grid[hr] if hr < len(grid) else []
             add_rma_especial_format(conn, header_cells, sc, fc, rc)
             return {"id": nid, "rma_number": rma_number, "mensaje": "RMA especial importado (formato guardado)"}
@@ -1327,7 +1349,7 @@ def importar_rma_especial(
             col_fallo = (body.column_fallo or "").strip() or None
             col_resolucion = (body.column_resolucion or "").strip() or None
         nid = _import_rma_especial_excel(
-            path_str, rma_number, col_serial, col_fallo, col_resolucion, conn
+            path_str, rma_number, col_serial, col_fallo, col_resolucion, conn, sheet=sheet_param
         )
         if body.column_serial or body.column_fallo or body.column_resolucion:
             if col_serial:

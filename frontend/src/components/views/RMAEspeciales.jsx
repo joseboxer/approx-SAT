@@ -109,6 +109,8 @@ function RMAEspeciales({ setVista }) {
   const [asignarColFallo, setAsignarColFallo] = useState('')
   const [asignarColResolucion, setAsignarColResolucion] = useState('')
   const [asignarGrid, setAsignarGrid] = useState(null)
+  const [asignarSheetNames, setAsignarSheetNames] = useState([])
+  const [asignarSheet, setAsignarSheet] = useState(0)
   const [asignarHeaderRow, setAsignarHeaderRow] = useState(0)
   const [asignarColSerialIdx, setAsignarColSerialIdx] = useState(0)
   const [asignarColFalloIdx, setAsignarColFalloIdx] = useState(0)
@@ -134,11 +136,15 @@ function RMAEspeciales({ setVista }) {
   useEffect(() => {
     if (!asignarOpen || !asignarFile?.path) return
     const path = encodeURIComponent(asignarFile.path)
-    fetch(`${API_URL}/api/rma-especiales/excel-preview?path=${path}`, { headers: getAuthHeaders() })
+    const sheetParam = asignarSheet !== undefined && asignarSheet !== null ? `&sheet=${encodeURIComponent(asignarSheet)}` : ''
+    fetch(`${API_URL}/api/rma-especiales/excel-preview?path=${path}${sheetParam}`, { headers: getAuthHeaders() })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Error al cargar vista previa'))))
-      .then((data) => setAsignarGrid(data.rows || []))
+      .then((data) => {
+        setAsignarGrid(data.rows || [])
+        if (data.sheet_names && data.sheet_names.length) setAsignarSheetNames(data.sheet_names)
+      })
       .catch(() => setAsignarGrid([]))
-  }, [asignarOpen, asignarFile?.path])
+  }, [asignarOpen, asignarFile?.path, asignarSheet])
 
   const handleEscanear = () => {
     setError(null)
@@ -187,6 +193,8 @@ function RMAEspeciales({ setVista }) {
     if (item.missing && item.missing.length > 0) {
       setAsignarFile(item)
       setAsignarGrid(null)
+      setAsignarSheetNames([])
+      setAsignarSheet(0)
       setAsignarHeaderRow(0)
       setAsignarColSerialIdx(0)
       setAsignarColFalloIdx(0)
@@ -209,6 +217,8 @@ function RMAEspeciales({ setVista }) {
         if (parsed && parsed.code === 'columns_missing') {
           setAsignarFile({ path: item.path, rma_number: item.rma_number, headers: parsed.headers || [], missing: parsed.missing })
           setAsignarGrid(null)
+          setAsignarSheetNames([])
+          setAsignarSheet(0)
           setAsignarHeaderRow(0)
           setAsignarColSerialIdx(0)
           setAsignarColFalloIdx(0)
@@ -243,6 +253,7 @@ function RMAEspeciales({ setVista }) {
           column_serial_index: asignarColSerialIdx,
           column_fallo_index: asignarColFalloIdx,
           column_resolucion_index: asignarColResolucionIdx,
+          sheet: asignarSheet,
         }
       : {
           path: asignarFile.path,
@@ -783,6 +794,19 @@ function RMAEspeciales({ setVista }) {
                 const maxCols = Math.max(...asignarGrid.map((row) => (row || []).length), 1)
                 return (
               <>
+                {asignarSheetNames.length > 1 && (
+                  <div className="modal-notificar-field rma-especiales-sheet-field">
+                    <label>Hoja del Excel</label>
+                    <select
+                      value={asignarSheet}
+                      onChange={(e) => { setAsignarSheet(Number(e.target.value)); setAsignarHeaderRow(0) }}
+                    >
+                      {asignarSheetNames.map((name, i) => (
+                        <option key={i} value={i}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="rma-especiales-excel-grid-wrap">
                   <table className="rma-especiales-excel-grid">
                     <thead>
