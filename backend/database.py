@@ -6,6 +6,7 @@ Base de datos SQLite para la aplicación.
 """
 import json
 import math
+import re
 import sqlite3
 import unicodedata
 from contextlib import contextmanager
@@ -644,22 +645,25 @@ def insert_rma_item(
 
     def _infer_estado_from_observaciones(text: str | None) -> str:
         """
-        Inferir estado a partir de OBSERVACIONES:
-        - Contiene "abon" (abono, abonado, abonar, ...) -> 'abonado'
-        - Si está vacío o solo espacios -> ''
-        - Contiene "anomalia"/"anomalía"/variantes -> 'sin anomalias'
-        - Cualquier otro texto no vacío -> 'reparado'
+        Inferir estado a partir de OBSERVACIONES (Lista RMA):
+        - Campo vacío o solo espacios -> estado en blanco.
+        - Si aparece el verbo abonar en cualquier conjugación y persona (como palabra) -> 'abonado'.
+        - Si aparece la palabra anomalía/anomalías (singular/plural, sin acentos, may/min) -> 'sin anomalias'.
+        - En el resto de casos (cualquier otro texto no vacío) -> 'reparado'.
         """
-        if not text:
+        if text is None:
             return ""
-        # Normalizar: quitar acentos y pasar a minúsculas
-        norm = unicodedata.normalize("NFD", str(text))
+        s = str(text).strip()
+        if not s:
+            return ""
+        # Normalizar: quitar acentos y minúsculas para buscar por palabra
+        norm = unicodedata.normalize("NFD", s)
         norm = "".join(ch for ch in norm if unicodedata.category(ch) != "Mn").lower()
-        if not norm.strip():
-            return ""
-        if "abon" in norm:
+        # Verbo abonar: palabra que empiece por "abon" (abonar, abono, abona, abonado, abonando, etc.)
+        if re.search(r"\babon\w*", norm):
             return "abonado"
-        if "anomalia" in norm:
+        # Anomalía/anomalías como palabra(s)
+        if re.search(r"\banomalias?\b", norm):
             return "sin anomalias"
         return "reparado"
 

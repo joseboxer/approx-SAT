@@ -386,15 +386,10 @@ function ListadoRMA({
                 />
               </th>
               <th>Nº RMA</th>
-              <th>Producto</th>
-              <th>Nº serie</th>
-              <th>Cliente</th>
+              <th>Líneas</th>
               <th>Fecha recibido</th>
               <th>Fecha enviado</th>
               <th>Fecha recogida</th>
-              <th>Avería</th>
-              <th>Observaciones</th>
-              <th>Estado</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -420,66 +415,21 @@ function ListadoRMA({
                     </td>
                     <td>{p['NÂº DE RMA'] ?? p['Nº DE RMA'] ?? '-'}</td>
                     <td>
-                      {n === 1 ? (
+                      <div className="celda-desplegable">
                         <button
                           type="button"
-                          className="link-celda"
-                          onClick={() => {
-                            setProductoDestacado(p.PRODUCTO ?? '')
-                            setVista('productos')
-                          }}
+                          className="link-celda btn-desplegable"
+                          onClick={() =>
+                            setProductosDesplegableAbierto(
+                              abierto ? null : grupo.rmaId
+                            )
+                          }
+                          aria-expanded={abierto}
+                          title="Abrir para ver producto, nº serie, cliente, avería, observaciones y estado de cada línea"
                         >
-                          {p.PRODUCTO ?? '-'}
+                          {n} {n === 1 ? 'línea' : 'líneas'} {abierto ? '▼' : '▶'}
                         </button>
-                      ) : (
-                        <div className="celda-desplegable">
-                          <button
-                            type="button"
-                            className="link-celda btn-desplegable"
-                            onClick={() =>
-                              setProductosDesplegableAbierto(
-                                abierto ? null : grupo.rmaId
-                              )
-                            }
-                            aria-expanded={abierto}
-                          >
-                            {n} productos {abierto ? '▼' : '▶'}
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      {n === 1 && getSerie(p) !== '-' && setSerialDestacado && setVista ? (
-                        <button
-                          type="button"
-                          className="link-celda"
-                          onClick={() => {
-                            setSerialDestacado(getSerie(p))
-                            setVista(VISTAS.PRODUCTOS_RMA)
-                          }}
-                          title={`Ir a Productos RMA: ${getSerie(p)}`}
-                        >
-                          {getSerie(p)}
-                        </button>
-                      ) : n === 1 ? (
-                        getSerie(p)
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="link-celda"
-                        onClick={() => {
-                          setClienteDestacado(
-                            p['RAZON SOCIAL O NOMBRE'] ?? ''
-                          )
-                          setVista('clientes')
-                        }}
-                      >
-                        {p['RAZON SOCIAL O NOMBRE'] ?? '-'}
-                      </button>
+                      </div>
                     </td>
                     <td>
                       {p['FECHA RECIBIDO']
@@ -497,34 +447,6 @@ function ListadoRMA({
                       {fechaRecogida
                         ? new Date(fechaRecogida).toLocaleDateString('es-ES')
                         : '-'}
-                    </td>
-                    <td title={(p.AVERIA ?? '').toString().trim() || undefined}>
-                      {(p.AVERIA ?? '').toString().slice(0, 50)}
-                      {p.AVERIA?.length > 50 ? '…' : ''}
-                    </td>
-                    <td title={(p.OBSERVACIONES ?? '').toString().trim() || undefined}>
-                      {(p.OBSERVACIONES ?? '').toString().slice(0, 50)}
-                      {p.OBSERVACIONES?.length > 50 ? '…' : ''}
-                    </td>
-                    <td>
-                      <select
-                        className="rma-estado-inline-select"
-                        value={estadoRma[grupo.rmaId] ?? ''}
-                        onChange={(e) => {
-                          const nuevo = e.target.value
-                          setUpdatingEstadoRmaId(grupo.rmaId)
-                          guardarEstadoRma(grupo.rmaId, nuevo).finally(() => setUpdatingEstadoRmaId(null))
-                        }}
-                        disabled={updatingEstadoRmaId === grupo.rmaId}
-                        aria-label={`Estado del RMA ${p['NÂº DE RMA'] ?? p['Nº DE RMA'] ?? ''}`}
-                        title="Cambiar estado"
-                      >
-                        {OPCIONES_ESTADO.map((o) => (
-                          <option key={o.value === '' ? '__' : o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
                     </td>
                     <td>
                       <button
@@ -559,10 +481,11 @@ function ListadoRMA({
                       </button>
                     </td>
                   </tr>
-                  {abierto && n > 1 && (
+                  {abierto && (
                     <tr className="fila-desplegable">
-                      <td colSpan={12} className="td-desplegable">
+                      <td colSpan={7} className="td-desplegable">
                         <div className="desplegable-detalle">
+                          <p className="tabla-desplegable-leyenda">Campos por número de serie (cada línea es un ítem del RMA).</p>
                           <table className="tabla-desplegable">
                             <thead>
                               <tr>
@@ -575,6 +498,7 @@ function ListadoRMA({
                                 <th>Fecha recogida</th>
                                 <th>Avería</th>
                                 <th>Observaciones</th>
+                                <th>Estado</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -585,7 +509,22 @@ function ListadoRMA({
                                       item['Nº DE RMA'] ??
                                       '-'}
                                   </td>
-                                  <td>{item.PRODUCTO ?? '-'}</td>
+                                  <td>
+                                    {item.PRODUCTO && setProductoDestacado && setVista ? (
+                                      <button
+                                        type="button"
+                                        className="link-celda"
+                                        onClick={() => {
+                                          setProductoDestacado(item.PRODUCTO ?? '')
+                                          setVista('productos')
+                                        }}
+                                      >
+                                        {item.PRODUCTO}
+                                      </button>
+                                    ) : (
+                                      item.PRODUCTO ?? '-'
+                                    )}
+                                  </td>
                                   <td>
                                     {getSerie(item) !== '-' && setSerialDestacado && setVista ? (
                                       <button
@@ -604,7 +543,20 @@ function ListadoRMA({
                                     )}
                                   </td>
                                   <td>
-                                    {item['RAZON SOCIAL O NOMBRE'] ?? '-'}
+                                    {item['RAZON SOCIAL O NOMBRE'] && setClienteDestacado && setVista ? (
+                                      <button
+                                        type="button"
+                                        className="link-celda"
+                                        onClick={() => {
+                                          setClienteDestacado(item['RAZON SOCIAL O NOMBRE'] ?? '')
+                                          setVista('clientes')
+                                        }}
+                                      >
+                                        {item['RAZON SOCIAL O NOMBRE']}
+                                      </button>
+                                    ) : (
+                                      item['RAZON SOCIAL O NOMBRE'] ?? '-'
+                                    )}
                                   </td>
                                   <td>
                                     {item['FECHA RECIBIDO']
@@ -641,6 +593,7 @@ function ListadoRMA({
                                       ? '…'
                                       : ''}
                                   </td>
+                                  <td>{getEstadoLabel(item.estado ?? '')}</td>
                                 </tr>
                               ))}
                             </tbody>
