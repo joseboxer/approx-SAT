@@ -2502,6 +2502,46 @@
   color: var(--text-muted);
 }
 
+/* RMA especiales */
+.rma-especiales-toolbar {
+  margin-bottom: 1rem;
+}
+.rma-especiales-scan-result {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-subtle);
+}
+.rma-especiales-scan-result h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+}
+.rma-especiales-scan-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+.rma-especiales-scan-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.rma-especiales-scan-list li:last-child {
+  border-bottom: none;
+}
+.rma-especiales-scan-path {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .notificaciones-list {
   list-style: none;
   margin: 0;

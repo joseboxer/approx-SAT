@@ -164,6 +164,8 @@ function downloadCertPem(onError) {
 function Configuracion({ setVista }) {
   const [productosCatalogPath, setProductosCatalogPath] = useState('')
   const [excelSyncPath, setExcelSyncPath] = useState('')
+  const [rmaEspecialesFolder, setRmaEspecialesFolder] = useState('')
+  const [rmaEspecialesAliases, setRmaEspecialesAliases] = useState({ serial: [], fallo: [], resolucion: [] })
   const [atractorUrl, setAtractorUrl] = useState('')
   const [atractorUser, setAtractorUser] = useState('')
   const [atractorPassword, setAtractorPassword] = useState('')
@@ -204,6 +206,15 @@ function Configuracion({ setVista }) {
       .then((data) => {
         setProductosCatalogPath(data.PRODUCTOS_CATALOG_PATH ?? '')
         setExcelSyncPath(data.EXCEL_SYNC_PATH ?? '')
+        setRmaEspecialesFolder(data.RMA_ESPECIALES_FOLDER ?? '')
+        const aliases = data.RMA_ESPECIALES_ALIASES
+        if (aliases && typeof aliases === 'object') {
+          setRmaEspecialesAliases({
+            serial: Array.isArray(aliases.serial) ? aliases.serial : [],
+            fallo: Array.isArray(aliases.fallo) ? aliases.fallo : [],
+            resolucion: Array.isArray(aliases.resolucion) ? aliases.resolucion : [],
+          })
+        }
       })
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
@@ -412,6 +423,8 @@ function Configuracion({ setVista }) {
       body: JSON.stringify({
         PRODUCTOS_CATALOG_PATH: productosCatalogPath.trim(),
         EXCEL_SYNC_PATH: excelSyncPath.trim(),
+        RMA_ESPECIALES_FOLDER: rmaEspecialesFolder.trim(),
+        RMA_ESPECIALES_ALIASES: rmaEspecialesAliases,
         ATRACTOR_URL: atractorUrl.trim(),
         ATRACTOR_USER: atractorUser.trim(),
         ATRACTOR_PASSWORD: atractorPassword.trim(),
@@ -528,6 +541,57 @@ function Configuracion({ setVista }) {
           <span className="configuracion-hint">
             Ruta completa al archivo Excel (incluyendo nombre del archivo). Se usa al pulsar &quot;Sincronizar&quot; en Inicio (mismo origen que Lista RMA). El archivo puede llamarse como quieras; las rutas con espacios (ej. DEPT. TEC\archivo nombre.xlsx) se leen correctamente.
           </span>
+        </div>
+
+        <h2 className="configuracion-subtitle">RMA especiales</h2>
+        <p className="configuracion-desc">
+          Carpeta donde están los Excel de RMA especiales (estructura: carpeta / año / mes / archivos .xlsx). Un archivo = un RMA; el número RMA se toma del nombre del archivo. Listas de posibles nombres de columnas para detectar automáticamente: Nº de serie, Fallo y Resolución (una por línea).
+        </p>
+        <div className="configuracion-field">
+          <label htmlFor="config-rma-especiales-folder">Carpeta RMA especiales</label>
+          <input
+            id="config-rma-especiales-folder"
+            type="text"
+            value={rmaEspecialesFolder}
+            onChange={(e) => user?.isAdmin && setRmaEspecialesFolder(e.target.value)}
+            placeholder="Ej. \\\\Qnap-approx2\\z\\RMA\\RMA Mayoristas, especiales, cargadores, etc"
+            className="configuracion-input"
+            readOnly={!user?.isAdmin}
+            disabled={!user?.isAdmin}
+          />
+        </div>
+        <div className="configuracion-field">
+          <label htmlFor="config-aliases-serial">Nombres posibles para columna &quot;Nº de serie&quot;</label>
+          <textarea
+            id="config-aliases-serial"
+            value={(rmaEspecialesAliases.serial || []).join('\n')}
+            onChange={(e) => setRmaEspecialesAliases((a) => ({ ...a, serial: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) }))}
+            placeholder="Nº de Serie&#10;Ref. Proveedor&#10;Referencia"
+            rows={3}
+            className="configuracion-input"
+          />
+        </div>
+        <div className="configuracion-field">
+          <label htmlFor="config-aliases-fallo">Nombres posibles para columna &quot;Fallo&quot;</label>
+          <textarea
+            id="config-aliases-fallo"
+            value={(rmaEspecialesAliases.fallo || []).join('\n')}
+            onChange={(e) => setRmaEspecialesAliases((a) => ({ ...a, fallo: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) }))}
+            placeholder="Fallo&#10;Falla&#10;Avería"
+            rows={3}
+            className="configuracion-input"
+          />
+        </div>
+        <div className="configuracion-field">
+          <label htmlFor="config-aliases-resolucion">Nombres posibles para columna &quot;Resolución&quot;</label>
+          <textarea
+            id="config-aliases-resolucion"
+            value={(rmaEspecialesAliases.resolucion || []).join('\n')}
+            onChange={(e) => setRmaEspecialesAliases((a) => ({ ...a, resolucion: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) }))}
+            placeholder="Resolución&#10;Solución&#10;Reparación"
+            rows={3}
+            className="configuracion-input"
+          />
         </div>
 
         <h2 className="configuracion-subtitle">Atractor</h2>

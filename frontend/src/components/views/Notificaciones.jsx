@@ -136,6 +136,8 @@ function Notificaciones({
     if (type === 'rma' && ref.rma_number) {
       setRmaDestacado?.(ref.rma_number)
       setVista?.(VISTAS.RMA)
+    } else if (type === 'rma_especial' && ref.rma_number) {
+      setVista?.(VISTAS.RMA_ESPECIALES)
     } else if (type === 'producto_rma' && ref.serial) {
       setSerialDestacado?.(ref.serial)
       setVista?.(VISTAS.PRODUCTOS_RMA)

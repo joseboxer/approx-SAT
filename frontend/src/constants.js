@@ -57,6 +57,7 @@ export const COLUMNAS_PRODUCTOS_RMA = [
 export const VISTAS = {
   INICIO: 'inicio',
   RMA: 'rma',
+  RMA_ESPECIALES: 'rma-especiales',
   CLIENTES: 'clientes',
   PRODUCTOS: 'productos',
   PRODUCTOS_RMA: 'productos-rma',
@@ -70,6 +71,7 @@ export const VISTAS = {
 
 export const NOTIFICATION_TYPES = {
   rma: 'Lista RMA',
+  rma_especial: 'RMA especial',
   catalogo: 'Catálogo',
   producto_rma: 'Productos RMA',
   cliente: 'Clientes',

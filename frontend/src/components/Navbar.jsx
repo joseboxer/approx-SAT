@@ -36,6 +36,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
 
   const rmaVistas = [
     { key: VISTAS.RMA, label: 'Listado de reparaciones' },
+    { key: VISTAS.RMA_ESPECIALES, label: 'RMA especiales' },
     { key: VISTAS.PRODUCTOS_RMA, label: 'Productos en reparación' },
     { key: VISTAS.OCULTA, label: `Reparaciones ocultas${hiddenRmas.length > 0 ? ` (${hiddenRmas.length})` : ''}` },
   ]

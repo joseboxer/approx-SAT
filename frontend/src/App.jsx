@@ -12,6 +12,7 @@ import Productos from './components/views/Productos'
 import ProductosRMA from './components/views/ProductosRMA'
 import Repuestos from './components/views/Repuestos'
 import ListaOculta from './components/views/ListaOculta'
+import RMAEspeciales from './components/views/RMAEspeciales'
 import Informes from './components/views/Informes'
 import Configuracion from './components/views/Configuracion'
 import AdminPanel from './components/views/AdminPanel'
@@ -115,6 +116,8 @@ function AppContent() {
         return <Repuestos />
       case VISTAS.OCULTA:
         return <ListaOculta />
+      case VISTAS.RMA_ESPECIALES:
+        return <RMAEspeciales setVista={setVista} />
       case VISTAS.INFORMES:
         return <Informes />
       case VISTAS.CONFIGURACION:

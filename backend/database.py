@@ -191,6 +191,34 @@ def _init_db(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE notifications ADD COLUMN category TEXT DEFAULT 'sin_categoria'")
         conn.execute("UPDATE notifications SET category = 'sin_categoria' WHERE category IS NULL")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category)")
+    # Tablas RMA especiales (1 Excel = 1 RMA, columnas variables por archivo)
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='rma_especiales'")
+    if cur.fetchone() is None:
+        conn.execute("""
+            CREATE TABLE rma_especiales (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rma_number TEXT NOT NULL UNIQUE,
+                source_path TEXT,
+                estado TEXT DEFAULT '',
+                date_received TEXT,
+                date_sent TEXT,
+                date_pickup TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_rma_especiales_rma_number ON rma_especiales(rma_number)")
+        conn.execute("""
+            CREATE TABLE rma_especial_lineas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rma_especial_id INTEGER NOT NULL REFERENCES rma_especiales(id) ON DELETE CASCADE,
+                ref_proveedor TEXT,
+                serial TEXT,
+                fallo TEXT,
+                resolucion TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_rma_especial_lineas_rma_especial_id ON rma_especial_lineas(rma_especial_id)")
 
 
 @contextmanager
@@ -951,6 +979,145 @@ def set_serial_warranty(
            VALUES (?, ?) ON CONFLICT(serial) DO UPDATE SET warranty_valid = ?""",
         (s, 1 if vigente else 0, 1 if vigente else 0),
     )
+
+
+# --- RMA especiales (1 Excel = 1 RMA, en carpeta año/mes) ---
+
+
+def get_all_rma_especiales(conn: sqlite3.Connection) -> list[dict]:
+    """Lista todos los RMA especiales con número de líneas. Orden: más recientes primero."""
+    cur = conn.execute(
+        """SELECT e.id, e.rma_number, e.source_path, e.estado, e.date_received, e.date_sent, e.date_pickup,
+                  e.created_at, e.updated_at,
+                  (SELECT COUNT(*) FROM rma_especial_lineas l WHERE l.rma_especial_id = e.id) AS line_count
+           FROM rma_especiales e
+           ORDER BY e.updated_at DESC, e.id DESC"""
+    )
+    out = []
+    for row in cur.fetchall():
+        out.append({
+            "id": row["id"],
+            "rma_number": row["rma_number"],
+            "source_path": row["source_path"],
+            "estado": row["estado"] or "",
+            "date_received": row["date_received"],
+            "date_sent": row["date_sent"],
+            "date_pickup": row["date_pickup"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "line_count": row["line_count"] or 0,
+        })
+    return out
+
+
+def get_rma_especial_by_id(conn: sqlite3.Connection, rma_especial_id: int) -> dict | None:
+    """Devuelve un RMA especial con sus líneas."""
+    cur = conn.execute(
+        "SELECT id, rma_number, source_path, estado, date_received, date_sent, date_pickup, created_at, updated_at FROM rma_especiales WHERE id = ?",
+        (rma_especial_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    cur2 = conn.execute(
+        "SELECT id, ref_proveedor, serial, fallo, resolucion FROM rma_especial_lineas WHERE rma_especial_id = ? ORDER BY id",
+        (rma_especial_id,),
+    )
+    lineas = [
+        {
+            "id": r["id"],
+            "ref_proveedor": r["ref_proveedor"] or "",
+            "serial": r["serial"] or "",
+            "fallo": r["fallo"] or "",
+            "resolucion": r["resolucion"] or "",
+        }
+        for r in cur2.fetchall()
+    ]
+    return {
+        "id": row["id"],
+        "rma_number": row["rma_number"],
+        "source_path": row["source_path"],
+        "estado": row["estado"] or "",
+        "date_received": row["date_received"],
+        "date_sent": row["date_sent"],
+        "date_pickup": row["date_pickup"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "lineas": lineas,
+    }
+
+
+def get_rma_especial_by_rma_number(conn: sqlite3.Connection, rma_number: str) -> dict | None:
+    """Devuelve el id del RMA especial por número (para evitar duplicados)."""
+    cur = conn.execute("SELECT id FROM rma_especiales WHERE rma_number = ?", (str(rma_number or "").strip(),))
+    row = cur.fetchone()
+    return {"id": row["id"]} if row else None
+
+
+def insert_rma_especial(
+    conn: sqlite3.Connection,
+    rma_number: str,
+    source_path: str | None,
+    lineas: list[dict],
+) -> int:
+    """Inserta un RMA especial y sus líneas. lineas = [{"ref_proveedor","serial","fallo","resolucion"}, ...]. Devuelve id."""
+    rma_number = str(rma_number or "").strip()
+    if not rma_number:
+        raise ValueError("rma_number vacío")
+    cur = conn.execute(
+        """INSERT INTO rma_especiales (rma_number, source_path, estado) VALUES (?, ?, '')""",
+        (rma_number, source_path or None),
+    )
+    rma_especial_id = cur.lastrowid
+    for lin in lineas:
+        conn.execute(
+            """INSERT INTO rma_especial_lineas (rma_especial_id, ref_proveedor, serial, fallo, resolucion)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                rma_especial_id,
+                (lin.get("ref_proveedor") or "").strip() or None,
+                (lin.get("serial") or "").strip() or None,
+                (lin.get("fallo") or "").strip() or None,
+                (lin.get("resolucion") or "").strip() or None,
+            ),
+        )
+    return rma_especial_id
+
+
+def update_rma_especial_estado(conn: sqlite3.Connection, rma_especial_id: int, estado: str) -> bool:
+    cur = conn.execute(
+        "UPDATE rma_especiales SET estado = ?, updated_at = datetime('now') WHERE id = ?",
+        (estado or "", rma_especial_id),
+    )
+    return cur.rowcount > 0
+
+
+def update_rma_especial_dates(
+    conn: sqlite3.Connection,
+    rma_especial_id: int,
+    date_received: str | None = None,
+    date_sent: str | None = None,
+    date_pickup: str | None = None,
+) -> None:
+    updates = ["updated_at = datetime('now')"]
+    params = []
+    if date_received is not None:
+        updates.append("date_received = ?")
+        params.append(date_received.strip() or None)
+    if date_sent is not None:
+        updates.append("date_sent = ?")
+        params.append(date_sent.strip() or None)
+    if date_pickup is not None:
+        updates.append("date_pickup = ?")
+        params.append(date_pickup.strip() or None)
+    if len(params) > 0:
+        params.append(rma_especial_id)
+        conn.execute(f"UPDATE rma_especiales SET {', '.join(updates)} WHERE id = ?", params)
+
+
+def delete_rma_especial(conn: sqlite3.Connection, rma_especial_id: int) -> bool:
+    cur = conn.execute("DELETE FROM rma_especiales WHERE id = ?", (rma_especial_id,))
+    return cur.rowcount > 0
 
 
 # --- Settings (paths QNAP, Excel) ---

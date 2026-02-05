@@ -78,6 +78,13 @@ from database import (
     get_push_subscriptions_for_user,
     create_notification,
     mark_notification_read,
+    get_all_rma_especiales,
+    get_rma_especial_by_id,
+    get_rma_especial_by_rma_number,
+    insert_rma_especial,
+    update_rma_especial_estado,
+    update_rma_especial_dates,
+    delete_rma_especial,
 )
 
 # CORS: en desarrollo solo localhost; en red local poner CORS_ORIGINS=* en .env
@@ -595,11 +602,18 @@ def actualizar_garantia_serial(serial: str, body: GarantiaVigenteBody):
 
 @app.get("/api/settings")
 def obtener_settings(username: str = Depends(get_current_username)):
-    """Devuelve las claves de configuración editables (paths y Atractor). La contraseña de Atractor no se devuelve."""
+    """Devuelve las claves de configuración editables (paths, Atractor, RMA especiales). La contraseña de Atractor no se devuelve."""
     with get_connection() as conn:
+        aliases_raw = get_setting(conn, "RMA_ESPECIALES_ALIASES")
+        try:
+            aliases = json.loads(aliases_raw) if aliases_raw else None
+        except json.JSONDecodeError:
+            aliases = None
         return {
             "PRODUCTOS_CATALOG_PATH": get_setting(conn, "PRODUCTOS_CATALOG_PATH") or "",
             "EXCEL_SYNC_PATH": get_setting(conn, "EXCEL_SYNC_PATH") or "",
+            "RMA_ESPECIALES_FOLDER": get_setting(conn, "RMA_ESPECIALES_FOLDER") or "",
+            "RMA_ESPECIALES_ALIASES": aliases,
             "ATRACTOR_URL": get_setting(conn, "ATRACTOR_URL") or "",
             "ATRACTOR_USER": get_setting(conn, "ATRACTOR_USER") or "",
             "ATRACTOR_PASSWORD": "",  # Nunca devolver la contraseña
@@ -609,6 +623,8 @@ def obtener_settings(username: str = Depends(get_current_username)):
 class SettingsBody(BaseModel):
     PRODUCTOS_CATALOG_PATH: str = ""
     EXCEL_SYNC_PATH: str = ""
+    RMA_ESPECIALES_FOLDER: str = ""
+    RMA_ESPECIALES_ALIASES: dict | None = None  # {"serial": ["Nº de Serie", ...], "fallo": [...], "resolucion": [...]}
     ATRACTOR_URL: str = ""
     ATRACTOR_USER: str = ""
     ATRACTOR_PASSWORD: str = ""  # Si está vacío no se actualiza la guardada
@@ -619,14 +635,16 @@ def actualizar_settings(
     body: SettingsBody,
     username: str = Depends(get_current_username),
 ):
-    """Guarda las rutas de catálogo, Excel y configuración de Atractor. Solo administradores pueden cambiar las rutas."""
+    """Guarda las rutas de catálogo, Excel, RMA especiales y configuración de Atractor. Solo administradores pueden cambiar las rutas."""
     with get_connection() as conn:
         if user_is_admin(conn, username):
             set_setting(conn, "PRODUCTOS_CATALOG_PATH", _normalize_unc_path(body.PRODUCTOS_CATALOG_PATH or ""))
             set_setting(conn, "EXCEL_SYNC_PATH", _normalize_unc_path(body.EXCEL_SYNC_PATH or ""))
+            set_setting(conn, "RMA_ESPECIALES_FOLDER", _normalize_unc_path(body.RMA_ESPECIALES_FOLDER or ""))
         else:
-            # No administrador: no modificar rutas (mantener las actuales)
             pass
+        if body.RMA_ESPECIALES_ALIASES is not None:
+            set_setting(conn, "RMA_ESPECIALES_ALIASES", json.dumps(body.RMA_ESPECIALES_ALIASES, ensure_ascii=False))
         set_setting(conn, "ATRACTOR_URL", (body.ATRACTOR_URL or "").strip())
         set_setting(conn, "ATRACTOR_USER", (body.ATRACTOR_USER or "").strip())
         if (body.ATRACTOR_PASSWORD or "").strip():
@@ -756,6 +774,269 @@ def listar_audit_log(
     with get_connection() as conn:
         items = list_audit_log(conn, limit=limit, offset=offset)
     return {"items": items}
+
+
+# --- RMA especiales (carpeta año/mes, 1 Excel = 1 RMA, columnas variables) ---
+
+# Aliases por defecto para detectar columnas en Excels de RMA especiales (serial, fallo, resolución)
+_DEFAULT_RMA_ESPECIALES_ALIASES = {
+    "serial": [
+        "Nº de Serie", "Nº DE SERIE", "NÂº de Serie", "N° de Serie", "Numero de serie", "Número de serie",
+        "Referencia", "REFERENCIA", "Ref. Proveedor", "Ref proveedor", "Ref. interna", "Ref interna",
+        "Serie", "SERIE", "Nº serie", "Nº SERIE", "Serial", "SERIAL",
+    ],
+    "fallo": [
+        "Fallo", "FALLO", "Falla", "FALLA", "Avería", "AVERIA", "AVERÍA", "Defecto", "DEFECTO",
+        "Problema", "PROBLEMA", "Descripción fallo", "Descripcion fallo",
+    ],
+    "resolucion": [
+        "Resolución", "RESOLUCION", "RESOLUCIÓN", "Resolucion", "Solución", "SOLUCION", "SOLUCIÓN",
+        "Reparación", "REPARACION", "REPARACIÓN", "Estado", "ESTADO",
+    ],
+}
+
+
+def _get_rma_especiales_aliases(conn) -> dict:
+    raw = get_setting(conn, "RMA_ESPECIALES_ALIASES")
+    if not raw:
+        return _DEFAULT_RMA_ESPECIALES_ALIASES
+    try:
+        data = json.loads(raw)
+        return {
+            "serial": list(data.get("serial") or _DEFAULT_RMA_ESPECIALES_ALIASES["serial"]),
+            "fallo": list(data.get("fallo") or _DEFAULT_RMA_ESPECIALES_ALIASES["fallo"]),
+            "resolucion": list(data.get("resolucion") or _DEFAULT_RMA_ESPECIALES_ALIASES["resolucion"]),
+        }
+    except (json.JSONDecodeError, TypeError):
+        return _DEFAULT_RMA_ESPECIALES_ALIASES
+
+
+def _match_especial_column(header_str: str, aliases: list[str]) -> bool:
+    h = (header_str or "").strip()
+    for a in aliases:
+        if (a or "").strip() == h:
+            return True
+    return False
+
+
+def _especial_columns_from_df(df: pd.DataFrame, aliases: dict) -> dict:
+    """Devuelve { serial: nombre_columna o None, fallo: ..., resolucion: ... } según los headers del DataFrame."""
+    result = {"serial": None, "fallo": None, "resolucion": None}
+    for col in df.columns:
+        col_str = str(col).strip()
+        for key in ("serial", "fallo", "resolucion"):
+            if result[key] is not None:
+                continue
+            if _match_especial_column(col_str, aliases[key]):
+                result[key] = col
+                break
+    return result
+
+
+def _extract_rma_from_filename(path: str | Path) -> str:
+    """Extrae el número RMA del nombre del archivo (sin extensión). Ej: RMA2601221058.xlsx -> RMA2601221058."""
+    name = Path(path).stem if hasattr(path, "stem") else os.path.splitext(os.path.basename(str(path)))[0]
+    return (name or "").strip()
+
+
+def _scan_rma_especiales_folder(base_path: str) -> list[dict]:
+    """
+    Recorre base_path / año / mes / *.xlsx y devuelve lista de { path, rma_number, headers, mapped, missing }.
+    mapped = { serial, fallo, resolucion } con el nombre de columna encontrado o null.
+    missing = lista de claves no encontradas (serial, fallo, resolucion).
+    """
+    with get_connection() as conn:
+        aliases = _get_rma_especiales_aliases(conn)
+    base = Path(base_path) if base_path else None
+    if not base or not base.is_dir():
+        return []
+    out = []
+    for year_dir in sorted(base.iterdir()):
+        if not year_dir.is_dir():
+            continue
+        try:
+            int(year_dir.name)
+        except ValueError:
+            continue
+        for month_dir in sorted(year_dir.iterdir()):
+            if not month_dir.is_dir():
+                continue
+            for f in month_dir.iterdir():
+                if f.suffix.lower() not in (".xlsx", ".xls"):
+                    continue
+                rma_number = _extract_rma_from_filename(f)
+                if not rma_number:
+                    continue
+                try:
+                    df = pd.read_excel(str(f), sheet_name=0, header=0)
+                    df = df.replace({np.nan: None})
+                    headers = [str(c).strip() for c in df.columns]
+                    mapped = _especial_columns_from_df(df, aliases)
+                    missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
+                    out.append({
+                        "path": str(f),
+                        "rma_number": rma_number,
+                        "headers": headers,
+                        "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
+                        "missing": missing,
+                    })
+                except Exception as e:
+                    out.append({
+                        "path": str(f),
+                        "rma_number": rma_number,
+                        "headers": [],
+                        "mapped": {"serial": None, "fallo": None, "resolucion": None},
+                        "missing": ["serial", "fallo", "resolucion"],
+                        "error": str(e),
+                    })
+    return out
+
+
+def _import_rma_especial_excel(
+    path: str,
+    rma_number: str,
+    col_serial: str | None,
+    col_fallo: str | None,
+    col_resolucion: str | None,
+    conn,
+) -> int:
+    """Lee el Excel en path y crea/actualiza el RMA especial. col_* son los nombres de columna en el Excel. Devuelve id."""
+    df = pd.read_excel(path, sheet_name=0, header=0)
+    df = df.replace({np.nan: None})
+    lineas = []
+    for _, row in df.iterrows():
+        def v(c):
+            if c is None:
+                return None
+            x = row.get(c)
+            if x is None or (isinstance(x, float) and np.isnan(x)):
+                return None
+            return str(x).strip() or None
+        ref_proveedor = None
+        for col in df.columns:
+            if str(col).strip() and col not in (col_serial, col_fallo, col_resolucion):
+                ref_proveedor = v(col)
+                if ref_proveedor:
+                    break
+        lineas.append({
+            "ref_proveedor": ref_proveedor,
+            "serial": v(col_serial),
+            "fallo": v(col_fallo),
+            "resolucion": v(col_resolucion),
+        })
+    existing = get_rma_especial_by_rma_number(conn, rma_number)
+    if existing:
+        delete_rma_especial(conn, existing["id"])
+    return insert_rma_especial(conn, rma_number=rma_number, source_path=path, lineas=lineas)
+
+
+@app.get("/api/rma-especiales")
+def listar_rma_especiales(username: str = Depends(get_current_username)):
+    """Lista todos los RMA especiales."""
+    with get_connection() as conn:
+        return get_all_rma_especiales(conn)
+
+
+@app.get("/api/rma-especiales/{rma_especial_id:int}")
+def obtener_rma_especial(rma_especial_id: int, username: str = Depends(get_current_username)):
+    """Devuelve un RMA especial con sus líneas."""
+    with get_connection() as conn:
+        item = get_rma_especial_by_id(conn, rma_especial_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="RMA especial no encontrado")
+    return item
+
+
+class RmaEspecialEstadoBody(BaseModel):
+    estado: str = ""
+
+
+@app.patch("/api/rma-especiales/{rma_especial_id:int}/estado")
+def actualizar_rma_especial_estado(
+    rma_especial_id: int,
+    body: RmaEspecialEstadoBody,
+    username: str = Depends(get_current_username),
+):
+    """Actualiza el estado de un RMA especial (abonado, reparado, no_anomalias, etc.)."""
+    estado = (body.estado or "").strip()
+    with get_connection() as conn:
+        ok = update_rma_especial_estado(conn, rma_especial_id, estado)
+    if not ok:
+        raise HTTPException(status_code=404, detail="RMA especial no encontrado")
+    return {"mensaje": "Estado actualizado"}
+
+
+@app.post("/api/rma-especiales/scan")
+def escanear_rma_especiales(username: str = Depends(get_current_username)):
+    """Escanea la carpeta configurada (RMA_ESPECIALES_FOLDER) y devuelve lista de Excels con columnas mapeadas o faltantes."""
+    with get_connection() as conn:
+        folder = (get_setting(conn, "RMA_ESPECIALES_FOLDER") or "").strip()
+        folder = _normalize_unc_path(folder)
+    if not folder:
+        raise HTTPException(status_code=400, detail="No hay carpeta de RMA especiales configurada. Configúrala en Ajustes (solo administrador).")
+    path_str = os.path.normpath(folder) if (os.name == "nt" and folder.startswith("\\\\")) else folder
+    if not os.path.isdir(path_str):
+        raise HTTPException(status_code=400, detail=f"No se encuentra la carpeta: {path_str}")
+    items = _scan_rma_especiales_folder(path_str)
+    return {"items": items, "total": len(items)}
+
+
+class RmaEspecialImportBody(BaseModel):
+    path: str
+    rma_number: str
+    column_serial: str | None = None
+    column_fallo: str | None = None
+    column_resolucion: str | None = None
+
+
+@app.post("/api/rma-especiales/import")
+def importar_rma_especial(
+    body: RmaEspecialImportBody,
+    username: str = Depends(get_current_username),
+):
+    """Importa un RMA especial desde un Excel. Si faltan columnas se indican; el cliente puede enviar el mapeo con column_serial, column_fallo, column_resolucion (nombres exactos de cabecera)."""
+    path_str = (body.path or "").strip()
+    if not path_str or not os.path.isfile(path_str):
+        raise HTTPException(status_code=400, detail="Ruta de archivo no válida o archivo no encontrado.")
+    rma_number = (body.rma_number or "").strip() or _extract_rma_from_filename(path_str)
+    if not rma_number:
+        raise HTTPException(status_code=400, detail="No se pudo obtener el número RMA del nombre del archivo.")
+    with get_connection() as conn:
+        if not body.column_serial and not body.column_fallo and not body.column_resolucion:
+            df = pd.read_excel(path_str, sheet_name=0, header=0)
+            aliases = _get_rma_especiales_aliases(conn)
+            mapped = _especial_columns_from_df(df, aliases)
+            missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
+            if missing:
+                headers = [str(c).strip() for c in df.columns]
+                raise HTTPException(
+                    status_code=400,
+                    detail=json.dumps({
+                        "code": "columns_missing",
+                        "message": "Faltan columnas que no se reconocen. Asigna manualmente las columnas.",
+                        "headers": headers,
+                        "missing": missing,
+                    }, ensure_ascii=False),
+                )
+            col_serial, col_fallo, col_resolucion = mapped["serial"], mapped["fallo"], mapped["resolucion"]
+        else:
+            col_serial = (body.column_serial or "").strip() or None
+            col_fallo = (body.column_fallo or "").strip() or None
+            col_resolucion = (body.column_resolucion or "").strip() or None
+        nid = _import_rma_especial_excel(
+            path_str, rma_number, col_serial, col_fallo, col_resolucion, conn
+        )
+    return {"id": nid, "rma_number": rma_number, "mensaje": "RMA especial importado"}
+
+
+@app.delete("/api/rma-especiales/{rma_especial_id:int}")
+def eliminar_rma_especial(rma_especial_id: int, username: str = Depends(get_current_username)):
+    """Elimina un RMA especial y sus líneas."""
+    with get_connection() as conn:
+        ok = delete_rma_especial(conn, rma_especial_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="RMA especial no encontrado")
+    return {"mensaje": "RMA especial eliminado"}
 
 
 # --- Exportación (datos y trazabilidad) ---
