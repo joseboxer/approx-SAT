@@ -813,23 +813,21 @@ def _get_rma_especiales_aliases(conn) -> dict:
 
 
 def _add_rma_especiales_alias(conn, key: str, column_name: str) -> None:
-    """Añade un nombre de columna a la lista de aliases (serial, fallo o resolucion) si no está ya."""
+    """Añade un nombre de columna a la lista de aliases (serial, fallo o resolucion) si no está ya.
+    Guarda la estructura completa de aliases para no perder las demás claves."""
     if not (key and column_name and key in ("serial", "fallo", "resolucion")):
         return
     name = str(column_name).strip()
     if not name:
         return
     aliases = _get_rma_especiales_aliases(conn)
-    lst = aliases.get(key) or []
+    lst = list(aliases.get(key) or [])
     if name not in lst:
-        lst = list(lst) + [name]
-        raw = get_setting(conn, "RMA_ESPECIALES_ALIASES")
-        try:
-            data = json.loads(raw) if raw else {}
-        except (json.JSONDecodeError, TypeError):
-            data = {}
-        data[key] = lst
-        set_setting(conn, "RMA_ESPECIALES_ALIASES", json.dumps(data, ensure_ascii=False))
+        lst.append(name)
+        # Persistir la estructura completa (serial, fallo, resolucion) para no perder otras claves
+        full = {k: list(aliases.get(k) or []) for k in ("serial", "fallo", "resolucion")}
+        full[key] = lst
+        set_setting(conn, "RMA_ESPECIALES_ALIASES", json.dumps(full, ensure_ascii=False))
 
 
 def _match_especial_column(header_str: str, aliases: list[str]) -> bool:

@@ -156,6 +156,7 @@ function RMAEspeciales({ setVista }) {
           setAsignarOpen(false)
           setAsignarFile(null)
           refetch()
+          // Recomprobar el resto de Excels con los nuevos aliases: los que tengan las mismas columnas pasan a "Importar"
           if (scanResult && scanResult.items) {
             const itemsWithoutImported = scanResult.items.filter((i) => i.path !== pathJustImported)
             const recheckPaths = itemsWithoutImported
