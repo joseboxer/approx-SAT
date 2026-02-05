@@ -81,6 +81,8 @@ from database import (
     get_all_rma_especiales,
     get_rma_especial_by_id,
     get_rma_especial_by_rma_number,
+    get_all_rma_especial_formats,
+    add_rma_especial_format,
     insert_rma_especial,
     update_rma_especial_estado,
     update_rma_especial_linea_estado,
@@ -852,6 +854,50 @@ def _especial_columns_from_df(df: pd.DataFrame, aliases: dict) -> dict:
     return result
 
 
+def _read_excel_grid(path: str, max_rows: int = 20, max_cols: int = 30) -> list[list[str]]:
+    """Lee el Excel sin cabecera y devuelve una matriz de celdas (strings). Primera hoja."""
+    df = pd.read_excel(path, sheet_name=0, header=None)
+    df = df.replace({np.nan: None})
+    rows = []
+    for ri in range(min(max_rows, len(df))):
+        row = []
+        for ci in range(min(max_cols, len(df.columns))):
+            v = df.iloc[ri, ci]
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                row.append("")
+            else:
+                row.append(str(v).strip())
+        rows.append(row)
+    return rows
+
+
+def _normalize_cell(s: str) -> str:
+    return (s or "").strip().lower()
+
+
+def _header_row_matches(row_cells: list[str], format_header_cells: list[str]) -> bool:
+    """True si la fila del Excel coincide con la firma del formato (mismo texto en las mismas posiciones)."""
+    if len(format_header_cells) == 0:
+        return False
+    for i, expected in enumerate(format_header_cells):
+        actual = row_cells[i] if i < len(row_cells) else ""
+        if _normalize_cell(actual) != _normalize_cell(expected):
+            return False
+    return True
+
+
+def _find_matching_format(grid_rows: list[list[str]], formats: list[dict]) -> tuple[int, dict] | None:
+    """Busca si alguna fila del grid coincide con algún formato guardado. Devuelve (índice_fila, formato) o None."""
+    for fmt in formats:
+        header_cells = fmt.get("header_cells") or []
+        if not header_cells:
+            continue
+        for row_idx, row_cells in enumerate(grid_rows):
+            if _header_row_matches(row_cells, header_cells):
+                return (row_idx, fmt)
+    return None
+
+
 def _extract_rma_from_filename(path: str | Path) -> str:
     """Extrae el número RMA del nombre del archivo (sin extensión). Ej: RMA2601221058.xlsx -> RMA2601221058."""
     name = Path(path).stem if hasattr(path, "stem") else os.path.splitext(os.path.basename(str(path)))[0]
@@ -874,6 +920,7 @@ def _scan_rma_especiales_folder_impl(
     task_id, update_fn = update_progress if update_progress else (None, None)
     with get_connection() as conn:
         aliases = _get_rma_especiales_aliases(conn)
+        formats = get_all_rma_especial_formats(conn)
     base = Path(base_path) if base_path else None
     if not base or not base.is_dir():
         return []
@@ -905,18 +952,37 @@ def _scan_rma_especiales_folder_impl(
             update_fn(task_id, percent=pct, message=f"Escaneando {year_name} / {month_name} — Leyendo {f.name}...")
         rma_number = _extract_rma_from_filename(f)
         try:
-            df = pd.read_excel(str(f), sheet_name=0, header=0)
-            df = df.replace({np.nan: None})
-            headers = [str(c).strip() for c in df.columns]
-            mapped = _especial_columns_from_df(df, aliases)
-            missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
-            out.append({
-                "path": str(f),
-                "rma_number": rma_number,
-                "headers": headers,
-                "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
-                "missing": missing,
-            })
+            grid = _read_excel_grid(str(f))
+            matched = _find_matching_format(grid, formats)
+            if matched is not None:
+                header_row_idx, fmt = matched
+                header_cells = grid[header_row_idx] if header_row_idx < len(grid) else []
+                serial_col = fmt.get("serial_col", 0)
+                fallo_col = fmt.get("fallo_col", 0)
+                resolucion_col = fmt.get("resolucion_col", 0)
+                serial_name = header_cells[serial_col] if serial_col < len(header_cells) else None
+                fallo_name = header_cells[fallo_col] if fallo_col < len(header_cells) else None
+                resolucion_name = header_cells[resolucion_col] if resolucion_col < len(header_cells) else None
+                out.append({
+                    "path": str(f),
+                    "rma_number": rma_number,
+                    "headers": header_cells,
+                    "mapped": {"serial": serial_name, "fallo": fallo_name, "resolucion": resolucion_name},
+                    "missing": [],
+                })
+            else:
+                df = pd.read_excel(str(f), sheet_name=0, header=0)
+                df = df.replace({np.nan: None})
+                headers = [str(c).strip() for c in df.columns]
+                mapped = _especial_columns_from_df(df, aliases)
+                missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
+                out.append({
+                    "path": str(f),
+                    "rma_number": rma_number,
+                    "headers": headers,
+                    "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
+                    "missing": missing,
+                })
         except Exception as e:
             out.append({
                 "path": str(f),
@@ -988,6 +1054,46 @@ def _import_rma_especial_excel(
     return insert_rma_especial(conn, rma_number=rma_number, source_path=path, lineas=lineas)
 
 
+def _import_rma_especial_excel_by_indices(
+    path: str,
+    rma_number: str,
+    header_row: int,
+    serial_col: int,
+    fallo_col: int,
+    resolucion_col: int,
+    conn,
+) -> int:
+    """Importa un RMA especial usando la fila header_row como cabecera y los índices de columna (0-based)."""
+    df = pd.read_excel(path, sheet_name=0, header=None)
+    df = df.replace({np.nan: None})
+    lineas = []
+    for ri in range(header_row + 1, len(df)):
+        def cell(col_idx: int):
+            if col_idx < 0 or col_idx >= len(df.columns):
+                return None
+            v = df.iloc[ri, col_idx]
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                return None
+            return str(v).strip() or None
+        ref_proveedor = None
+        for ci in range(len(df.columns)):
+            if ci in (serial_col, fallo_col, resolucion_col):
+                continue
+            ref_proveedor = cell(ci)
+            if ref_proveedor:
+                break
+        lineas.append({
+            "ref_proveedor": ref_proveedor,
+            "serial": cell(serial_col),
+            "fallo": cell(fallo_col),
+            "resolucion": cell(resolucion_col),
+        })
+    existing = get_rma_especial_by_rma_number(conn, rma_number)
+    if existing:
+        delete_rma_especial(conn, existing["id"])
+    return insert_rma_especial(conn, rma_number=rma_number, source_path=path, lineas=lineas)
+
+
 @app.get("/api/rma-especiales")
 def listar_rma_especiales(username: str = Depends(get_current_username)):
     """Lista todos los RMA especiales."""
@@ -1043,6 +1149,36 @@ def actualizar_rma_especial_linea_estado(
     return {"mensaje": "Estado actualizado"}
 
 
+def _path_under_rma_especiales_folder(conn, path_str: str) -> bool:
+    """True si path_str está bajo la carpeta configurada de RMA especiales (seguridad)."""
+    folder = (get_setting(conn, "RMA_ESPECIALES_FOLDER") or "").strip()
+    folder = _normalize_unc_path(folder)
+    if not folder:
+        return False
+    folder_abs = os.path.abspath(folder)
+    path_abs = os.path.abspath(path_str)
+    return path_abs.startswith(folder_abs) or path_str.startswith(folder.rstrip(os.sep))
+
+
+@app.get("/api/rma-especiales/excel-preview")
+def excel_preview_rma_especial(path: str, username: str = Depends(get_current_username)):
+    """
+    Devuelve una vista en grid del Excel (primeras filas y columnas) para que el usuario
+    seleccione la fila de cabecera y las celdas correspondientes a serial, fallo, resolución.
+    """
+    path_str = (path or "").strip()
+    if not path_str or not os.path.isfile(path_str):
+        raise HTTPException(status_code=400, detail="Ruta de archivo no válida o archivo no encontrado.")
+    with get_connection() as conn:
+        if not _path_under_rma_especiales_folder(conn, path_str):
+            raise HTTPException(status_code=403, detail="El archivo no está en la carpeta de RMA especiales.")
+    try:
+        rows = _read_excel_grid(path_str)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el Excel: {e}")
+    return {"rows": rows, "path": path_str}
+
+
 @app.post("/api/rma-especiales/scan")
 def escanear_rma_especiales(username: str = Depends(get_current_username)):
     """
@@ -1071,6 +1207,10 @@ class RmaEspecialImportBody(BaseModel):
     column_serial: str | None = None
     column_fallo: str | None = None
     column_resolucion: str | None = None
+    header_row: int | None = None
+    column_serial_index: int | None = None
+    column_fallo_index: int | None = None
+    column_resolucion_index: int | None = None
 
 
 @app.post("/api/rma-especiales/import")
@@ -1078,15 +1218,48 @@ def importar_rma_especial(
     body: RmaEspecialImportBody,
     username: str = Depends(get_current_username),
 ):
-    """Importa un RMA especial desde un Excel. Si faltan columnas se indican; el cliente puede enviar el mapeo con column_serial, column_fallo, column_resolucion (nombres exactos de cabecera)."""
+    """
+    Importa un RMA especial desde un Excel.
+    Modo 1: Sin mapeo -> intenta auto-detectar (formatos guardados o aliases en fila 0).
+    Modo 2: header_row + column_*_index (0-based) -> importa con esa fila como cabecera y guarda el formato para futuros archivos con las mismas celdas.
+    Modo 3: column_serial/column_fallo/column_resolucion (nombres de columna) -> importa con cabecera en fila 0 y añade aliases.
+    """
     path_str = (body.path or "").strip()
     if not path_str or not os.path.isfile(path_str):
         raise HTTPException(status_code=400, detail="Ruta de archivo no válida o archivo no encontrado.")
     rma_number = (body.rma_number or "").strip() or _extract_rma_from_filename(path_str)
     if not rma_number:
         raise HTTPException(status_code=400, detail="No se pudo obtener el número RMA del nombre del archivo.")
+
+    use_indices = (
+        body.header_row is not None
+        and body.column_serial_index is not None
+        and body.column_fallo_index is not None
+        and body.column_resolucion_index is not None
+    )
+
     with get_connection() as conn:
+        if use_indices:
+            hr = max(0, int(body.header_row))
+            sc = max(0, int(body.column_serial_index))
+            fc = max(0, int(body.column_fallo_index))
+            rc = max(0, int(body.column_resolucion_index))
+            nid = _import_rma_especial_excel_by_indices(path_str, rma_number, hr, sc, fc, rc, conn)
+            grid = _read_excel_grid(path_str)
+            header_cells = grid[hr] if hr < len(grid) else []
+            add_rma_especial_format(conn, header_cells, sc, fc, rc)
+            return {"id": nid, "rma_number": rma_number, "mensaje": "RMA especial importado (formato guardado)"}
+
         if not body.column_serial and not body.column_fallo and not body.column_resolucion:
+            grid = _read_excel_grid(path_str)
+            formats = get_all_rma_especial_formats(conn)
+            matched = _find_matching_format(grid, formats)
+            if matched is not None:
+                header_row_idx, fmt = matched
+                header_cells = grid[header_row_idx] if header_row_idx < len(grid) else []
+                sc, fc, rc = fmt["serial_col"], fmt["fallo_col"], fmt["resolucion_col"]
+                nid = _import_rma_especial_excel_by_indices(path_str, rma_number, header_row_idx, sc, fc, rc, conn)
+                return {"id": nid, "rma_number": rma_number, "mensaje": "RMA especial importado"}
             df = pd.read_excel(path_str, sheet_name=0, header=0)
             aliases = _get_rma_especiales_aliases(conn)
             mapped = _especial_columns_from_df(df, aliases)
@@ -1097,7 +1270,7 @@ def importar_rma_especial(
                     status_code=400,
                     detail=json.dumps({
                         "code": "columns_missing",
-                        "message": "Faltan columnas que no se reconocen. Asigna manualmente las columnas.",
+                        "message": "Faltan columnas que no se reconocen. Asigna la fila de cabecera y las celdas en la vista del Excel.",
                         "headers": headers,
                         "missing": missing,
                     }, ensure_ascii=False),
@@ -1139,24 +1312,42 @@ def recheck_rma_especiales_columnas(
         return {"items": []}
     with get_connection() as conn:
         aliases = _get_rma_especiales_aliases(conn)
+        formats = get_all_rma_especial_formats(conn)
     out = []
     for path_str in paths:
         if not path_str or not os.path.isfile(path_str):
             continue
         rma_number = _extract_rma_from_filename(path_str)
         try:
-            df = pd.read_excel(path_str, sheet_name=0, header=0)
-            df = df.replace({np.nan: None})
-            headers = [str(c).strip() for c in df.columns]
-            mapped = _especial_columns_from_df(df, aliases)
-            missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
-            out.append({
-                "path": path_str,
-                "rma_number": rma_number,
-                "headers": headers,
-                "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
-                "missing": missing,
-            })
+            grid = _read_excel_grid(path_str)
+            matched = _find_matching_format(grid, formats)
+            if matched is not None:
+                header_row_idx, fmt = matched
+                header_cells = grid[header_row_idx] if header_row_idx < len(grid) else []
+                sc, fc, rc = fmt["serial_col"], fmt["fallo_col"], fmt["resolucion_col"]
+                serial_name = header_cells[sc] if sc < len(header_cells) else None
+                fallo_name = header_cells[fc] if fc < len(header_cells) else None
+                resolucion_name = header_cells[rc] if rc < len(header_cells) else None
+                out.append({
+                    "path": path_str,
+                    "rma_number": rma_number,
+                    "headers": header_cells,
+                    "mapped": {"serial": serial_name, "fallo": fallo_name, "resolucion": resolucion_name},
+                    "missing": [],
+                })
+            else:
+                df = pd.read_excel(path_str, sheet_name=0, header=0)
+                df = df.replace({np.nan: None})
+                headers = [str(c).strip() for c in df.columns]
+                mapped = _especial_columns_from_df(df, aliases)
+                missing = [k for k in ("serial", "fallo", "resolucion") if mapped[k] is None]
+                out.append({
+                    "path": path_str,
+                    "rma_number": rma_number,
+                    "headers": headers,
+                    "mapped": {k: (mapped[k] if mapped[k] is not None else None) for k in ("serial", "fallo", "resolucion")},
+                    "missing": missing,
+                })
         except Exception as e:
             out.append({
                 "path": path_str,
