@@ -111,6 +111,7 @@ function RMAEspeciales({ setVista }) {
   const [asignarGrid, setAsignarGrid] = useState(null)
   const [asignarSheetNames, setAsignarSheetNames] = useState([])
   const [asignarSheet, setAsignarSheet] = useState(0)
+  const [asignarPreviewError, setAsignarPreviewError] = useState(null)
   const [asignarHeaderRow, setAsignarHeaderRow] = useState(0)
   const [asignarColSerialIdx, setAsignarColSerialIdx] = useState(0)
   const [asignarColFalloIdx, setAsignarColFalloIdx] = useState(0)
@@ -135,15 +136,27 @@ function RMAEspeciales({ setVista }) {
 
   useEffect(() => {
     if (!asignarOpen || !asignarFile?.path) return
+    setAsignarPreviewError(null)
     const path = encodeURIComponent(asignarFile.path)
     const sheetParam = asignarSheet !== undefined && asignarSheet !== null ? `&sheet=${encodeURIComponent(asignarSheet)}` : ''
     fetch(`${API_URL}/api/rma-especiales/excel-preview?path=${path}${sheetParam}`, { headers: getAuthHeaders() })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Error al cargar vista previa'))))
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}))
+        if (!r.ok) {
+          const msg = typeof data.detail === 'string' ? data.detail : (data.detail?.msg || 'Error al cargar vista previa')
+          return Promise.reject(new Error(msg))
+        }
+        return data
+      })
       .then((data) => {
-        setAsignarGrid(data.rows || [])
+        setAsignarPreviewError(null)
+        setAsignarGrid(Array.isArray(data.rows) ? data.rows : [])
         if (data.sheet_names && data.sheet_names.length) setAsignarSheetNames(data.sheet_names)
       })
-      .catch(() => setAsignarGrid([]))
+      .catch((err) => {
+        setAsignarPreviewError(err.message || 'Error al cargar vista previa')
+        setAsignarGrid([])
+      })
   }, [asignarOpen, asignarFile?.path, asignarSheet])
 
   const handleEscanear = () => {
@@ -195,6 +208,7 @@ function RMAEspeciales({ setVista }) {
       setAsignarGrid(null)
       setAsignarSheetNames([])
       setAsignarSheet(0)
+      setAsignarPreviewError(null)
       setAsignarHeaderRow(0)
       setAsignarColSerialIdx(0)
       setAsignarColFalloIdx(0)
@@ -789,7 +803,45 @@ function RMAEspeciales({ setVista }) {
             </p>
             {asignarGrid === null ? (
               <p className="loading">Cargando vista previa del Excel...</p>
-            ) : Array.isArray(asignarGrid) && asignarGrid.length > 0 ? (
+            ) : asignarPreviewError ? (
+              <>
+                <div className="error-msg" role="alert">
+                  {asignarPreviewError}
+                </div>
+                <p className="modal-notificar-desc">Asigna por nombre de columna:</p>
+                <div className="modal-notificar-field">
+                  <label>Columna Nº de serie</label>
+                  <select value={asignarColSerial} onChange={(e) => setAsignarColSerial(e.target.value)}>
+                    <option value="">— No usar —</option>
+                    {(asignarFile.headers || []).map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="modal-notificar-field">
+                  <label>Columna Fallo</label>
+                  <select value={asignarColFallo} onChange={(e) => setAsignarColFallo(e.target.value)}>
+                    <option value="">— No usar —</option>
+                    {(asignarFile.headers || []).map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="modal-notificar-field">
+                  <label>Columna Resolución</label>
+                  <select value={asignarColResolucion} onChange={(e) => setAsignarColResolucion(e.target.value)}>
+                    <option value="">— No usar —</option>
+                    {(asignarFile.headers || []).map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="modal-pie modal-pie-actions">
+                  <button type="button" className="btn btn-secondary" onClick={() => !importando && setAsignarOpen(false)} disabled={importando}>Cancelar</button>
+                  <button type="button" className="btn btn-primary" onClick={handleAsignarSubmit} disabled={importando}>{importando ? 'Importando…' : 'Importar'}</button>
+                </div>
+              </>
+            ) : Array.isArray(asignarGrid) && (asignarGrid.length > 0 || asignarSheetNames.length > 0) ? (
               (() => {
                 const maxCols = Math.max(...asignarGrid.map((row) => (row || []).length), 1)
                 return (
@@ -808,6 +860,9 @@ function RMAEspeciales({ setVista }) {
                   </div>
                 )}
                 <div className="rma-especiales-excel-grid-wrap">
+                  {asignarGrid.length === 0 ? (
+                    <p className="rma-especiales-sheet-empty">Esta hoja está vacía. Elige otra hoja arriba si el Excel tiene varias.</p>
+                  ) : (
                   <table className="rma-especiales-excel-grid">
                     <thead>
                       <tr>
@@ -829,59 +884,69 @@ function RMAEspeciales({ setVista }) {
                       ))}
                     </tbody>
                   </table>
+                  )}
                 </div>
-                <div className="rma-especiales-asignar-fields">
-                  <div className="modal-notificar-field">
-                    <label>Fila de cabecera (número de fila)</label>
-                    <select
-                      value={asignarHeaderRow}
-                      onChange={(e) => setAsignarHeaderRow(Number(e.target.value))}
-                    >
-                      {asignarGrid.map((_, ri) => (
-                        <option key={ri} value={ri}>Fila {ri}</option>
-                      ))}
-                    </select>
+                {asignarGrid.length > 0 && (
+                  <>
+                    <div className="rma-especiales-asignar-fields">
+                      <div className="modal-notificar-field">
+                        <label>Fila de cabecera (número de fila)</label>
+                        <select
+                          value={asignarHeaderRow}
+                          onChange={(e) => setAsignarHeaderRow(Number(e.target.value))}
+                        >
+                          {asignarGrid.map((_, ri) => (
+                            <option key={ri} value={ri}>Fila {ri}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {(() => {
+                        const headerRow = asignarGrid[asignarHeaderRow] || []
+                        return (
+                          <>
+                            <div className="modal-notificar-field">
+                              <label>Columna Nº serie</label>
+                              <select value={asignarColSerialIdx} onChange={(e) => setAsignarColSerialIdx(Number(e.target.value))}>
+                                {Array.from({ length: maxCols }, (_, i) => (
+                                  <option key={i} value={i}>{colIndexToLetter(i)} ({headerRow[i] || '—'})</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="modal-notificar-field">
+                              <label>Columna Fallo</label>
+                              <select value={asignarColFalloIdx} onChange={(e) => setAsignarColFalloIdx(Number(e.target.value))}>
+                                {Array.from({ length: maxCols }, (_, i) => (
+                                  <option key={i} value={i}>{colIndexToLetter(i)} ({headerRow[i] || '—'})</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="modal-notificar-field">
+                              <label>Columna Resolución</label>
+                              <select value={asignarColResolucionIdx} onChange={(e) => setAsignarColResolucionIdx(Number(e.target.value))}>
+                                {Array.from({ length: maxCols }, (_, i) => (
+                                  <option key={i} value={i}>{colIndexToLetter(i)} ({headerRow[i] || '—'})</option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                    <div className="modal-pie modal-pie-actions">
+                      <button type="button" className="btn btn-secondary" onClick={() => !importando && setAsignarOpen(false)} disabled={importando}>
+                        Cancelar
+                      </button>
+                      <button type="button" className="btn btn-primary" onClick={handleAsignarSubmit} disabled={importando}>
+                        {importando ? 'Importando…' : 'Importar y guardar formato'}
+                      </button>
+                    </div>
+                  </>
+                )}
+                {asignarGrid.length === 0 && (
+                  <div className="modal-pie modal-pie-actions">
+                    <button type="button" className="btn btn-secondary" onClick={() => !importando && setAsignarOpen(false)}>Cancelar</button>
                   </div>
-                  {(() => {
-                    const headerRow = asignarGrid[asignarHeaderRow] || []
-                    return (
-                      <>
-                        <div className="modal-notificar-field">
-                          <label>Columna Nº serie</label>
-                          <select value={asignarColSerialIdx} onChange={(e) => setAsignarColSerialIdx(Number(e.target.value))}>
-                            {Array.from({ length: maxCols }, (_, i) => (
-                              <option key={i} value={i}>{colIndexToLetter(i)} ({headerRow[i] || '—'})</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="modal-notificar-field">
-                          <label>Columna Fallo</label>
-                          <select value={asignarColFalloIdx} onChange={(e) => setAsignarColFalloIdx(Number(e.target.value))}>
-                            {Array.from({ length: maxCols }, (_, i) => (
-                              <option key={i} value={i}>{colIndexToLetter(i)} ({headerRow[i] || '—'})</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="modal-notificar-field">
-                          <label>Columna Resolución</label>
-                          <select value={asignarColResolucionIdx} onChange={(e) => setAsignarColResolucionIdx(Number(e.target.value))}>
-                            {Array.from({ length: maxCols }, (_, i) => (
-                              <option key={i} value={i}>{colIndexToLetter(i)} ({headerRow[i] || '—'})</option>
-                            ))}
-                          </select>
-                        </div>
-                      </>
-                    )
-                  })()}
-                </div>
-                <div className="modal-pie modal-pie-actions">
-                  <button type="button" className="btn btn-secondary" onClick={() => !importando && setAsignarOpen(false)} disabled={importando}>
-                    Cancelar
-                  </button>
-                  <button type="button" className="btn btn-primary" onClick={handleAsignarSubmit} disabled={importando}>
-                    {importando ? 'Importando…' : 'Importar y guardar formato'}
-                  </button>
-                </div>
+                )}
               </>
                 )
               })()

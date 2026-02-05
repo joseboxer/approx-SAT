@@ -18,7 +18,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, unquote
 
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -1233,13 +1233,16 @@ def eliminar_rma_especial_linea(
 
 
 def _path_under_rma_especiales_folder(conn, path_str: str) -> bool:
-    """True si path_str está bajo la carpeta configurada de RMA especiales (seguridad)."""
+    """True si path_str está bajo la carpeta configurada de RMA especiales (seguridad). En Windows, comparación sin distinguir mayúsculas."""
     folder = (get_setting(conn, "RMA_ESPECIALES_FOLDER") or "").strip()
     folder = _normalize_unc_path(folder)
     if not folder:
         return False
+    path_str = path_str.replace("/", os.sep)
     folder_abs = os.path.abspath(folder)
     path_abs = os.path.abspath(path_str)
+    if os.name == "nt":
+        return path_abs.lower().startswith(folder_abs.lower()) or path_str.lower().startswith(folder.rstrip(os.sep).lower())
     return path_abs.startswith(folder_abs) or path_str.startswith(folder.rstrip(os.sep))
 
 
@@ -1253,17 +1256,27 @@ def excel_preview_rma_especial(
     Devuelve los nombres de hojas y una vista en grid del Excel para la hoja indicada.
     sheet: índice 0-based o nombre de hoja; por defecto 0 (primera hoja).
     """
-    path_str = (path or "").strip()
-    if not path_str or not os.path.isfile(path_str):
-        raise HTTPException(status_code=400, detail="Ruta de archivo no válida o archivo no encontrado.")
+    path_str = (unquote(path) if path else "").strip().replace("/", os.sep)
+    if not path_str:
+        raise HTTPException(status_code=400, detail="Ruta de archivo no indicada.")
+    if not os.path.isfile(path_str):
+        raise HTTPException(status_code=400, detail=f"Archivo no encontrado: {path_str[:80]}{'…' if len(path_str) > 80 else ''}")
     with get_connection() as conn:
         if not _path_under_rma_especiales_folder(conn, path_str):
-            raise HTTPException(status_code=403, detail="El archivo no está en la carpeta de RMA especiales.")
+            raise HTTPException(status_code=403, detail="El archivo no está en la carpeta de RMA especiales configurada.")
     try:
         sheet_names = _get_excel_sheet_names(path_str)
-        sheet_idx = 0 if sheet is None else sheet
-        if isinstance(sheet_idx, int) and (sheet_idx < 0 or (sheet_names and sheet_idx >= len(sheet_names))):
+        if sheet is None:
             sheet_idx = 0
+        elif isinstance(sheet, int):
+            sheet_idx = max(0, sheet) if sheet_names and sheet < len(sheet_names) else 0
+        else:
+            try:
+                sheet_idx = int(sheet)
+                if sheet_idx < 0 or (sheet_names and sheet_idx >= len(sheet_names)):
+                    sheet_idx = 0
+            except (ValueError, TypeError):
+                sheet_idx = 0
         rows = _read_excel_grid(path_str, sheet=sheet_idx)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"No se pudo leer el Excel: {e}")

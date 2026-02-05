@@ -2688,6 +2688,12 @@
 .rma-especiales-asignar-fields .modal-notificar-field {
   min-width: 180px;
 }
+.rma-especiales-sheet-empty {
+  padding: 1rem;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
 
 .notificaciones-list {
   list-style: none;
