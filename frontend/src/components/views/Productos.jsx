@@ -512,22 +512,21 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     window.addEventListener('mouseup', onUp)
   }
 
-  // Autoscroll continuo mientras se arrastra, aunque el ratón permanezca quieto:
+  // Autoscroll continuo mientras se arrastra en listas de TIPOS, aunque el ratón permanezca quieto:
   // se basa solo en la última dirección detectada (arriba/abajo), no en que haya movimiento nuevo.
   useEffect(() => {
-    if (!dragging || !dragContext) return
+    if (!dragging || dragContext !== 'tipos') return
 
     const interval = window.setInterval(() => {
       const container =
-        dragContext === 'productos' ? tablaRef.current : dragContext === 'tipos' ? tiposListaRef.current : null
+        dragContext === 'tipos' ? tiposListaRef.current : null
       if (!container) return
 
       const dir = dragScrollDirRef.current
       if (!dir) return
 
       const edgeThreshold = 32
-      const maxStep = dragContext === 'productos' ? 20 : 18
-      const bounds = container.getBoundingClientRect()
+      const maxStep = 18
 
       if (dir === 'down') {
         if (container.scrollTop + container.clientHeight >= container.scrollHeight) {
