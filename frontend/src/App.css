@@ -1194,6 +1194,18 @@
   white-space: nowrap;
   max-width: 0;
 }
+.tabla-desplegable td:nth-child(10) {
+  /* Estado: que el select y los badges se vean sin apelmazarse */
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.tabla-desplegable td:nth-child(10) .rma-estado-inline-select {
+  max-width: 8rem;
+}
+.tabla-desplegable td:nth-child(10) .rma-revision-badge,
+.tabla-desplegable td:nth-child(10) .rma-revisado-badge {
+  margin-left: 0.3rem;
+}
 
 /* ========== Repuestos ========== */
 .table-wrapper.tabla-repuestos {
