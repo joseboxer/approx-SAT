@@ -36,7 +36,7 @@ function Layout({
           </>
         )}
       </nav>
-      <main className="main">{children}</main>
+      <main className="main app-view-transition">{children}</main>
     </div>
   )
 }

@@ -15,6 +15,14 @@ import ModalNotificar from '../ModalNotificar'
 
 const COL_RMA = 'NÂº DE RMA'
 
+function getFirstUrl(text) {
+  if (!text) return null
+  const str = String(text)
+  // Detecta URLs básicas http/https
+  const match = str.match(/https?:\/\/[^\s]+/i)
+  return match ? match[0] : null
+}
+
 function getAuthHeaders() {
   try {
     const token = localStorage.getItem(AUTH_STORAGE_KEY)
@@ -529,8 +537,30 @@ function ListadoRMA({
                             : '-'}
                         </td>
                         <td className="celda-averia" title={(p.AVERIA ?? '').toString().trim() || undefined}>
-                          {(p.AVERIA ?? '').toString().slice(0, 40)}
-                          {p.AVERIA?.length > 40 ? '…' : ''}
+                          {(() => {
+                            const averia = (p.AVERIA ?? '').toString()
+                            const url = getFirstUrl(averia)
+                            const texto = averia.slice(0, 40)
+                            return (
+                              <>
+                                {texto}
+                                {averia.length > 40 ? '…' : ''}
+                                {url && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-link btn-xs celda-averia-link"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      window.open(url, '_blank', 'noopener,noreferrer')
+                                    }}
+                                    title={url}
+                                  >
+                                    Abrir enlace
+                                  </button>
+                                )}
+                              </>
+                            )
+                          })()}
                         </td>
                         <td className="celda-observaciones" title={(p.OBSERVACIONES ?? '').toString().trim() || undefined}>
                           {(p.OBSERVACIONES ?? '').toString().slice(0, 40)}
@@ -743,10 +773,30 @@ function ListadoRMA({
                                       : '-'}
                                   </td>
                                   <td title={(item.AVERIA ?? '').toString().trim() || undefined}>
-                                    {(item.AVERIA ?? '')
-                                      .toString()
-                                      .slice(0, 50)}
-                                    {item.AVERIA?.length > 50 ? '…' : ''}
+                                    {(() => {
+                                      const averia = (item.AVERIA ?? '').toString()
+                                      const url = getFirstUrl(averia)
+                                      const texto = averia.slice(0, 50)
+                                      return (
+                                        <>
+                                          {texto}
+                                          {averia.length > 50 ? '…' : ''}
+                                          {url && (
+                                            <button
+                                              type="button"
+                                              className="btn btn-link btn-xs celda-averia-link"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                window.open(url, '_blank', 'noopener,noreferrer')
+                                              }}
+                                              title={url}
+                                            >
+                                              Abrir enlace
+                                            </button>
+                                          )}
+                                        </>
+                                      )
+                                    })()}
                                   </td>
                                   <td title={(item.OBSERVACIONES ?? '').toString().trim() || undefined}>
                                     {(item.OBSERVACIONES ?? '')

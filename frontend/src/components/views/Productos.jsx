@@ -408,6 +408,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       } else {
         within.forEach((ref) => next.delete(ref))
       }
+      dragBaseSelectionRef.current = next
       setSelectedRefs(next)
     }
 
@@ -494,6 +495,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       } else {
         within.forEach((t) => next.delete(t))
       }
+      dragBaseSelectionRef.current = next
       setTiposSeleccionados(next)
     }
 
@@ -644,11 +646,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                   Guardar tipo
                 </button>
               </div>
-              <div
-                className="productos-catalogo-tipos-gestion"
-                onMouseDown={onMouseDownTipos}
-                ref={tiposListaRef}
-              >
+              <div className="productos-catalogo-tipos-gestion">
                 <p className="productos-catalogo-tipos-gestion-title">
                   <span>Tipos disponibles</span>
                   <span className="productos-catalogo-tipos-gestion-hint">
@@ -665,61 +663,67 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                     </button>
                   )}
                 </p>
-                <div className="productos-catalogo-tipos-list">
-                  {tiposProducto.map((t) => {
-                    const checked = tiposSeleccionados.has(t)
-                    const enEdicion = tipoEnEdicion === t
-                    return (
-                      <div
-                        key={t}
-                        data-tipo={t}
-                        className={`productos-catalogo-tipo-item ${checked ? 'tipo-seleccionado' : ''}`}
-                      >
-                        <label className="productos-catalogo-tipo-check">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => handleToggleTipoSeleccion(t)}
-                          />
-                          <span>{t}</span>
-                        </label>
-                        {!enEdicion && (
-                          <button
-                            type="button"
-                            className="btn btn-link btn-xs"
-                            onClick={() => empezarEditarTipo(t)}
-                          >
-                            Editar
-                          </button>
-                        )}
-                        {enEdicion && (
-                          <div className="productos-catalogo-tipo-edit">
+                <div
+                  className="productos-catalogo-tipos-scroll"
+                  onMouseDown={onMouseDownTipos}
+                  ref={tiposListaRef}
+                >
+                  <div className="productos-catalogo-tipos-list">
+                    {tiposProducto.map((t) => {
+                      const checked = tiposSeleccionados.has(t)
+                      const enEdicion = tipoEnEdicion === t
+                      return (
+                        <div
+                          key={t}
+                          data-tipo={t}
+                          className={`productos-catalogo-tipo-item ${checked ? 'tipo-seleccionado' : ''}`}
+                        >
+                          <label className="productos-catalogo-tipo-check">
                             <input
-                              type="text"
-                              value={nombreTipoEdit}
-                              onChange={(e) => setNombreTipoEdit(e.target.value)}
-                              className="productos-catalogo-filtro-input"
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => handleToggleTipoSeleccion(t)}
                             />
+                            <span>{t}</span>
+                          </label>
+                          {!enEdicion && (
                             <button
                               type="button"
-                              className="btn btn-primary btn-xs"
-                              onClick={guardarEditarTipo}
-                              disabled={!nombreTipoEdit.trim()}
+                              className="btn btn-link btn-xs"
+                              onClick={() => empezarEditarTipo(t)}
                             >
-                              Guardar
+                              Editar
                             </button>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-xs"
-                              onClick={cancelarEditarTipo}
-                            >
-                              Cancelar
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                          )}
+                          {enEdicion && (
+                            <div className="productos-catalogo-tipo-edit">
+                              <input
+                                type="text"
+                                value={nombreTipoEdit}
+                                onChange={(e) => setNombreTipoEdit(e.target.value)}
+                                className="productos-catalogo-filtro-input"
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-xs"
+                                onClick={guardarEditarTipo}
+                                disabled={!nombreTipoEdit.trim()}
+                              >
+                                Guardar
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-xs"
+                                onClick={cancelarEditarTipo}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
