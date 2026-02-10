@@ -376,17 +376,13 @@ function Productos({ productoDestacado, setProductoDestacado }) {
 
       const bounds = container.getBoundingClientRect()
       const edgeThreshold = 32
-      const maxStep = 18
+      const maxStep = 20
       if (current.y > bounds.bottom - edgeThreshold) {
-        dragScrollDirRef.current = 'down'
         const factor = Math.min(1, (current.y - (bounds.bottom - edgeThreshold)) / edgeThreshold)
         container.scrollTop += 4 + maxStep * factor
       } else if (current.y < bounds.top + edgeThreshold) {
-        dragScrollDirRef.current = 'up'
         const factor = Math.min(1, ((bounds.top + edgeThreshold) - current.y) / edgeThreshold)
         container.scrollTop -= 4 + maxStep * factor
-      } else {
-        dragScrollDirRef.current = null
       }
 
       const rows = Array.from(container.querySelectorAll('tr[data-product-ref]'))
@@ -442,7 +438,6 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     setDragContext('tipos')
     setDragStart(start)
     setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
-    dragLastPosRef.current = start
     dragBaseSelectionRef.current = new Set(tiposSeleccionados)
 
     // Determinar modo (añadir o quitar) según si el elemento bajo el cursor está ya seleccionado
