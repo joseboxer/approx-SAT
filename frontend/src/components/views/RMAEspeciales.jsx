@@ -91,19 +91,21 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   const [detalle, setDetalle] = useState(null)
   const [scanResult, setScanResult] = useState(null)
   const [cargando, setCargando] = useState(true)
-
-  useEffect(() => {
-    if (rmaEspecialDestacadoId != null) {
-      setDetalleId(rmaEspecialDestacadoId)
-      setRmaEspecialDestacadoId?.(null)
-    }
-  }, [rmaEspecialDestacadoId, setRmaEspecialDestacadoId])
   const [scanTaskId, setScanTaskId] = useState(null)
   const [scanProgress, setScanProgress] = useState(0)
   const [scanMessage, setScanMessage] = useState('')
   const [error, setError] = useState(null)
   const scanPollRef = useRef(null)
   const [detalleId, setDetalleId] = useState(null)
+
+  // Si venimos desde Notificaciones con un RMA especial concreto, abrir directamente su detalle.
+  useEffect(() => {
+    if (rmaEspecialDestacadoId != null) {
+      setDetalleId(rmaEspecialDestacadoId)
+      setRmaEspecialDestacadoId?.(null)
+    }
+  }, [rmaEspecialDestacadoId, setRmaEspecialDestacadoId])
+
   const [updatingLineaEstadoId, setUpdatingLineaEstadoId] = useState(null)
   const [editingLineaId, setEditingLineaId] = useState(null)
   const [editingLineaData, setEditingLineaData] = useState(null)

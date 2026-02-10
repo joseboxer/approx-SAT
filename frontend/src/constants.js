@@ -75,12 +75,12 @@ export const VISTAS = {
 /** Etiquetas para breadcrumbs y títulos. */
 export const VISTAS_LABELS = {
   [VISTAS.INICIO]: 'Inicio',
-  [VISTAS.RMA]: 'Listado de reparaciones',
+  [VISTAS.RMA]: 'Lista RMA',
   [VISTAS.RMA_ESPECIALES]: 'RMA especiales',
-  [VISTAS.EN_REVISION]: 'Revisar',
+  [VISTAS.EN_REVISION]: 'En revisión',
   [VISTAS.CLIENTES]: 'Clientes',
   [VISTAS.PRODUCTOS]: 'Catálogo de productos',
-  [VISTAS.PRODUCTOS_RMA]: 'Productos en reparación',
+  [VISTAS.PRODUCTOS_RMA]: 'Productos con RMA',
   [VISTAS.REPUESTOS]: 'Repuestos',
   [VISTAS.OCULTA]: 'Reparaciones ocultas',
   [VISTAS.INFORMES]: 'Informes',
