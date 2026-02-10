@@ -101,7 +101,8 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   // Si venimos desde Notificaciones con un RMA especial concreto, abrir directamente su detalle.
   useEffect(() => {
     if (rmaEspecialDestacadoId != null) {
-      setDetalleId(rmaEspecialDestacadoId)
+      // Usar el mismo flujo que el botón "Ver", que también carga los datos del detalle.
+      handleVerDetalle(rmaEspecialDestacadoId)
       setRmaEspecialDestacadoId?.(null)
     }
   }, [rmaEspecialDestacadoId, setRmaEspecialDestacadoId])
