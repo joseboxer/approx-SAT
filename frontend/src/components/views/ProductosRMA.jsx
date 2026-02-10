@@ -214,7 +214,11 @@ function renderFilaProductoRma(
                         {(item.OBSERVACIONES ?? '').toString().slice(0, 50)}
                         {item.OBSERVACIONES?.length > 50 ? '…' : ''}
                       </td>
-                      <td>{{(item.en_revision_at {item.estado ?? '-'}{item.estado ?? '-'} (!item.estado || String(item.estado).trim() === '')) ? 'En revisión' : (item.estado ?? '-') }}</td>
+                      <td>
+                        {item.en_revision_at && (!item.estado || String(item.estado).trim() === '')
+                          ? 'En revisión'
+                          : (item.estado ?? '-')}
+                      </td>
                     </tr>
                     )
                   })}
