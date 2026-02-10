@@ -18,9 +18,16 @@ const COL_RMA = 'NÂº DE RMA'
 function getFirstUrl(text) {
   if (!text) return null
   const str = String(text)
-  // Detecta URLs básicas http/https
-  const match = str.match(/https?:\/\/[^\s]+/i)
-  return match ? match[0] : null
+  // Detecta URLs con http/https o tipo www.dominio...
+  const match = str.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/i)
+  if (!match) return null
+  let url = match[1] || match[0]
+  // Quitar puntuación final típica
+  url = url.replace(/[),.;!?]+$/, '')
+  if (!/^https?:\/\//i.test(url)) {
+    url = `http://${url}`
+  }
+  return url
 }
 
 function getAuthHeaders() {

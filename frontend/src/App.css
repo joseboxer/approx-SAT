@@ -1141,7 +1141,10 @@
 .table-wrapper.tabla-rma thead th:nth-child(10) { width: 11%; } /* Observaciones */
 .table-wrapper.tabla-rma thead th:nth-child(11) { width: 10%; min-width: 9rem; } /* Estado */
 .table-wrapper.tabla-rma thead th:nth-child(12) { width: 11%; min-width: 11rem; } /* Acciones */
-.table-wrapper.tabla-rma tr.row-selected { background: var(--color-bg-subtle); }
+.table-wrapper.tabla-rma tr.row-selected {
+  background: var(--color-bg-subtle);
+  transition: background-color 0.18s ease;
+}
 /* RMA con estado asignado (resuelto): color de fondo para identificar visualmente */
 .table-wrapper.tabla-rma tr.rma-row-resuelto {
   background: color-mix(in srgb, var(--color-primary, #0ea5e9) 8%, var(--color-card-bg, #fff));
@@ -1208,6 +1211,13 @@
 .rma-estado-inline-select:disabled { opacity: 0.7; cursor: wait; }
 .rma-estado-inline-select:focus { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 .table-wrapper.tabla-rma .col-checkbox input { cursor: pointer; }
+/* Animación suave al pasar por filas de la tabla RMA */
+.table-wrapper.tabla-rma tbody tr {
+  transition: background-color 0.15s ease;
+}
+.table-wrapper.tabla-rma tbody tr:hover {
+  background-color: rgba(148, 163, 184, 0.08);
+}
 /* Celdas de texto largo: no solapar, truncar con ellipsis; usar title para ver completo al pasar el ratón */
 .table-wrapper.tabla-rma td:nth-child(4),
 .table-wrapper.tabla-rma td:nth-child(5),
@@ -1475,17 +1485,22 @@
   border: 2px solid var(--color-border-light);
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.12s ease,
+    background-color 0.18s ease;
   text-align: center;
 }
 .productos-catalogo-marca-card:hover {
   border-color: var(--color-primary, #2563eb);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
 }
 .productos-catalogo-marca-card--activa {
   border-color: var(--color-primary, #2563eb);
   background: color-mix(in srgb, var(--color-primary, #2563eb) 10%, transparent);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
 }
 .productos-catalogo-marca-icono {
   display: block;
@@ -3013,6 +3028,11 @@
   background: var(--color-card-bg);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius);
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.12s ease;
 }
 
 .notificaciones-item-unread {
@@ -3062,6 +3082,12 @@
   font-size: 0.9375rem;
   color: var(--text-heading);
   white-space: pre-wrap;
+}
+
+.notificaciones-item:hover {
+  box-shadow: var(--shadow-md);
+  border-color: rgba(148, 163, 184, 0.5);
+  transform: translateY(-1px);
 }
 
 .notificaciones-item-actions {
