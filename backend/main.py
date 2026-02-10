@@ -1807,6 +1807,92 @@ def listar_productos_catalogo():
     return {"productos": productos, "error": None, "cached": True, "scanned_at": scanned_at}
 
 
+class CatalogoTiposBody(BaseModel):
+    nombre: str
+
+
+@app.get("/api/productos-catalogo/tipos")
+def listar_tipos_catalogo(username: str = Depends(get_current_username)):
+    """
+    Devuelve la lista de tipos de producto disponibles para el catálogo.
+    Combina los tipos existentes en la caché con los tipos extra guardados en settings.
+    """
+    with get_connection() as conn:
+        _scanned_at, productos = get_catalog_cache(conn)
+        extras_raw = get_setting(conn, "PRODUCT_TYPES_EXTRA") or "[]"
+    try:
+        extras = json.loads(extras_raw)
+        if not isinstance(extras, list):
+            extras = []
+    except Exception:
+        extras = []
+    base_types = {
+        (p.get("product_type") or "").strip()
+        for p in (productos or [])
+        if (p.get("product_type") or "").strip()
+    }
+    all_types = sorted(base_types.union({(t or "").strip() for t in extras if (t or "").strip()}))
+    return {"tipos": all_types}
+
+
+@app.post("/api/productos-catalogo/tipos")
+def crear_tipo_catalogo(body: CatalogoTiposBody, username: str = Depends(get_current_username)):
+    """
+    Añade un tipo de producto extra a la lista editable.
+    No modifica productos existentes, solo la lista de tipos disponibles.
+    """
+    nombre = (body.nombre or "").strip()
+    if not nombre:
+        raise HTTPException(status_code=400, detail="Indica un nombre de tipo.")
+    with get_connection() as conn:
+        extras_raw = get_setting(conn, "PRODUCT_TYPES_EXTRA") or "[]"
+        try:
+            extras = json.loads(extras_raw)
+            if not isinstance(extras, list):
+                extras = []
+        except Exception:
+            extras = []
+        if nombre not in extras:
+            extras.append(nombre)
+        set_setting(conn, "PRODUCT_TYPES_EXTRA", json.dumps(extras, ensure_ascii=False))
+    return {"ok": True, "tipo": nombre}
+
+
+class CatalogoAsignarTipoBody(BaseModel):
+    tipo: str
+    product_refs: list[str]
+
+
+@app.post("/api/productos-catalogo/tipos/asignar")
+def asignar_tipo_catalogo(body: CatalogoAsignarTipoBody, username: str = Depends(get_current_username)):
+    """
+    Asigna un tipo de producto a varios productos del catálogo a la vez.
+    product_refs se construye como 'Marca|Nº serie base' en el frontend.
+    """
+    tipo = (body.tipo or "").strip()
+    if not tipo:
+        raise HTTPException(status_code=400, detail="Indica un tipo de producto.")
+    refs = {(r or "").strip() for r in (body.product_refs or []) if (r or "").strip()}
+    if not refs:
+        raise HTTPException(status_code=400, detail="Indica al menos un producto.")
+    with get_connection() as conn:
+        scanned_at, productos = get_catalog_cache(conn)
+        if scanned_at is None or not productos:
+            raise HTTPException(status_code=400, detail="No hay catálogo en caché. Actualiza el catálogo primero.")
+        changed = 0
+        for p in productos:
+            brand = (p.get("brand") or "").strip()
+            base_serial = (p.get("base_serial") or "").strip()
+            if not brand and not base_serial:
+                continue
+            key = "|".join([v for v in [brand, base_serial] if v])
+            if key in refs:
+                p["product_type"] = tipo
+                changed += 1
+        set_catalog_cache(conn, productos)
+    return {"ok": True, "actualizados": changed}
+
+
 def _run_catalog_refresh_task(task_id: str, catalog_path: str) -> None:
     """Escanea QNAP, guarda en caché y actualiza progreso (directorio + % en tiempo real)."""
     try:

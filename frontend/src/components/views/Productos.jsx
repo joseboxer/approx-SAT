@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { API_URL, AUTH_STORAGE_KEY, POR_PAGINA } from '../../constants'
 import { compararValores } from '../../utils/garantia'
 import Paginacion from '../Paginacion'
@@ -12,6 +12,13 @@ function getAuthHeaders() {
     if (token) return { Authorization: `Bearer ${token}` }
   } catch {}
   return {}
+}
+
+// Para mostrar la marca sin el prefijo redundante "PRODUCTOS "
+function formatBrand(brand) {
+  const s = (brand || '').trim()
+  if (!s) return s
+  return s.replace(/^PRODUCTOS\\s+/i, '') || s
 }
 
 /**
@@ -35,6 +42,17 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   const [marcaExpandida, setMarcaExpandida] = useState(null) // brand name cuando vista === 'marcas'
   const [notificarOpen, setNotificarOpen] = useState(false)
   const [notificarRef, setNotificarRef] = useState(null)
+  const [tiposProducto, setTiposProducto] = useState([])
+  const [nuevoTipo, setNuevoTipo] = useState('')
+  const [tipoBulk, setTipoBulk] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [selectedRefs, setSelectedRefs] = useState(() => new Set())
+  const tablaRef = useRef(null)
+  const [dragging, setDragging] = useState(false)
+  const [dragStart, setDragStart] = useState(null)
+  const [dragRect, setDragRect] = useState(null)
+  const [dragMode, setDragMode] = useState('add') // 'add' | 'remove'
+  const dragBaseSelectionRef = useRef(new Set())
 
   const {
     taskId: refreshTaskId,
@@ -76,6 +94,16 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  // Cargar lista de tipos de producto (existentes + extra configurables)
+  useEffect(() => {
+    fetch(`${API_URL}/api/productos-catalogo/tipos`, { headers: getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : { tipos: [] }))
+      .then((data) => {
+        setTiposProducto(Array.isArray(data.tipos) ? data.tipos : [])
+      })
+      .catch(() => {})
+  }, [])
 
   // Aplicar resultado de la actualización en segundo plano (aunque hayas cambiado de apartado)
   useEffect(() => {
@@ -154,6 +182,135 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     String(productoDestacado).trim() !== '' &&
     filtrados.length === 0
 
+  const toggleSeleccionProducto = (p) => {
+    const ref = [p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''
+    if (!ref) return
+    setSelectedRefs((prev) => {
+      const next = new Set(prev)
+      if (next.has(ref)) next.delete(ref)
+      else next.add(ref)
+      return next
+    })
+  }
+
+  const seleccionarPaginaActual = (checked) => {
+    const nuevos = new Set(selectedRefs)
+    enPagina.forEach((p) => {
+      const ref = [p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''
+      if (!ref) return
+      if (checked) nuevos.add(ref)
+      else nuevos.delete(ref)
+    })
+    setSelectedRefs(nuevos)
+  }
+
+  const allPageSelected =
+    enPagina.length > 0 &&
+    enPagina.every((p) => {
+      const ref = [p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''
+      return ref && selectedRefs.has(ref)
+    })
+
+  const handleCrearTipo = () => {
+    const nombre = (nuevoTipo || '').trim()
+    if (!nombre) return
+    fetch(`${API_URL}/api/productos-catalogo/tipos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ nombre }),
+    })
+      .then((r) => (r.ok ? r.json() : r.json().then((d) => { throw new Error(d.detail || 'Error al crear tipo') })))
+      .then((data) => {
+        setTiposProducto((prev) => (prev.includes(data.tipo) ? prev : [...prev, data.tipo]))
+        setNuevoTipo('')
+      })
+      .catch((err) => setError(err.message))
+  }
+
+  const handleAsignarTipoBulk = () => {
+    const tipo = (tipoBulk || '').trim()
+    if (!tipo || selectedRefs.size === 0) return
+    setBulkLoading(true)
+    fetch(`${API_URL}/api/productos-catalogo/tipos/asignar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ tipo, product_refs: Array.from(selectedRefs) }),
+    })
+      .then((r) => (r.ok ? r.json() : r.json().then((d) => { throw new Error(d.detail || 'Error al asignar tipo') })))
+      .then(() => {
+        refetch()
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setBulkLoading(false))
+  }
+
+  const onMouseDownTabla = (e) => {
+    if (e.button !== 0) return
+    if (!tablaRef.current) return
+    const container = tablaRef.current
+    const containerRect = container.getBoundingClientRect()
+    const start = { x: e.clientX, y: e.clientY }
+    setDragging(true)
+    setDragStart(start)
+    setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
+    dragBaseSelectionRef.current = new Set(selectedRefs)
+
+    // Determinar modo (añadir o quitar) según si el elemento bajo el cursor está ya seleccionado
+    let mode = 'add'
+    const row = e.target.closest('tr[data-product-ref]')
+    if (row) {
+      const ref = row.getAttribute('data-product-ref') || ''
+      if (ref && selectedRefs.has(ref)) mode = 'remove'
+    }
+    setDragMode(mode)
+
+    const onMove = (ev) => {
+      if (!dragging) return
+      ev.preventDefault()
+      const current = { x: ev.clientX, y: ev.clientY }
+      const x1 = Math.min(start.x, current.x)
+      const y1 = Math.min(start.y, current.y)
+      const x2 = Math.max(start.x, current.x)
+      const y2 = Math.max(start.y, current.y)
+      setDragRect({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 })
+
+      const rows = Array.from(container.querySelectorAll('tr[data-product-ref]'))
+      const within = new Set()
+      rows.forEach((rowEl) => {
+        const r = rowEl.getBoundingClientRect()
+        const intersect =
+          x1 <= r.right &&
+          x2 >= r.left &&
+          y1 <= r.bottom &&
+          y2 >= r.top
+        if (intersect) {
+          const ref = rowEl.getAttribute('data-product-ref') || ''
+          if (ref) within.add(ref)
+        }
+      })
+
+      const base = dragBaseSelectionRef.current
+      const next = new Set(base)
+      if (mode === 'add') {
+        within.forEach((ref) => next.add(ref))
+      } else {
+        within.forEach((ref) => next.delete(ref))
+      }
+      setSelectedRefs(next)
+    }
+
+    const onUp = () => {
+      setDragging(false)
+      setDragStart(null)
+      setDragRect(null)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   if (cargando && !cached) return (
     <div className="loading-wrap">
       <ProgressBar percent={null} message="Cargando catálogo..." />
@@ -213,6 +370,83 @@ function Productos({ productoDestacado, setProductoDestacado }) {
           {refreshing ? 'Actualizando…' : 'Actualizar catálogo'}
         </button>
       </div>
+
+      {vistaCatalogo !== '' && (
+        <section className="productos-catalogo-bulk" aria-label="Edición masiva de tipo de producto">
+          <div className="productos-catalogo-bulk-grid">
+            <div>
+              <label>
+                Tipo a asignar
+                <select
+                  value={tipoBulk}
+                  onChange={(e) => setTipoBulk(e.target.value)}
+                  className="productos-catalogo-filtro-select"
+                >
+                  <option value="">-- Seleccionar tipo --</option>
+                  {tiposProducto.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleAsignarTipoBulk}
+                disabled={bulkLoading || !tipoBulk || selectedRefs.size === 0}
+              >
+                {bulkLoading ? 'Asignando…' : 'Asignar a seleccionados'}
+              </button>
+              <span className="productos-catalogo-bulk-info">
+                Seleccionados: {selectedRefs.size}
+              </span>
+              <button
+                type="button"
+                className="btn btn-link btn-sm"
+                onClick={() => setSelectedRefs(new Set())}
+                disabled={selectedRefs.size === 0}
+              >
+                Limpiar selección
+              </button>
+              <button
+                type="button"
+                className="btn btn-link btn-sm"
+                onClick={() => {
+                  const all = new Set(
+                    ordenados.map((p) => [p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || '')
+                  )
+                  all.delete('')
+                  setSelectedRefs(all)
+                }}
+                disabled={ordenados.length === 0}
+              >
+                Seleccionar todo el filtrado
+              </button>
+            </div>
+            <div>
+              <label>
+                Añadir nuevo tipo
+                <input
+                  type="text"
+                  value={nuevoTipo}
+                  onChange={(e) => setNuevoTipo(e.target.value)}
+                  placeholder="Nuevo tipo de producto"
+                  className="productos-catalogo-filtro-input"
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleCrearTipo}
+                disabled={!nuevoTipo.trim()}
+              >
+                Guardar tipo
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {refreshing && (
         <ProgressBar
@@ -321,7 +555,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                   aria-expanded={marcaExpandida === marca}
                 >
                   <span className="productos-catalogo-marca-icono" aria-hidden>◉</span>
-                  <span className="productos-catalogo-marca-nombre">{marca}</span>
+                  <span className="productos-catalogo-marca-nombre">{formatBrand(marca)}</span>
                 </button>
               ))}
             </div>
@@ -329,11 +563,39 @@ function Productos({ productoDestacado, setProductoDestacado }) {
               const { productos: productosMarca } = porMarca.find((r) => r.marca === marcaExpandida) ?? { productos: [] }
               return (
                 <div className="productos-catalogo-marca-detalle">
-                  <h3 className="productos-catalogo-marca-detalle-titulo">{marcaExpandida}</h3>
-                  <div className="table-wrapper tabla-productos-catalogo tabla-productos-catalogo--compacta">
+                  <h3 className="productos-catalogo-marca-detalle-titulo">{formatBrand(marcaExpandida)}</h3>
+                  <div
+                    className="table-wrapper tabla-productos-catalogo tabla-productos-catalogo--compacta"
+                    ref={tablaRef}
+                    onMouseDown={onMouseDownTabla}
+                  >
                     <table>
                       <thead>
                         <tr>
+                          <th>
+                            <input
+                              type="checkbox"
+                              checked={
+                                productosMarca.length > 0 &&
+                                productosMarca.every((p) => {
+                                  const ref = [p.brand || marcaExpandida, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''
+                                  return ref && selectedRefs.has(ref)
+                                })
+                              }
+                              onChange={(e) => {
+                                const checked = e.target.checked
+                                const next = new Set(selectedRefs)
+                                productosMarca.forEach((p) => {
+                                  const ref = [p.brand || marcaExpandida, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''
+                                  if (!ref) return
+                                  if (checked) next.add(ref)
+                                  else next.delete(ref)
+                                })
+                                setSelectedRefs(next)
+                              }}
+                              title="Seleccionar todos los productos de esta marca"
+                            />
+                          </th>
                           <th>Nº serie base</th>
                           <th>Tipo</th>
                           <th>Fecha creación</th>
@@ -342,8 +604,20 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {productosMarca.map((p, i) => (
-                          <tr key={`${p.base_serial}-${p.folder_rel}-${i}`}>
+                        {productosMarca.map((p, i) => {
+                          const ref = [p.brand || marcaExpandida, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''
+                          const checked =
+                            !!ref && selectedRefs.has(ref)
+                          return (
+                          <tr key={`${p.base_serial}-${p.folder_rel}-${i}`} data-product-ref={ref}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleSeleccionProducto({ ...p, brand: p.brand || marcaExpandida })}
+                                title="Seleccionar producto para edición masiva"
+                              />
+                            </td>
                             <td>{p.base_serial ?? '-'}</td>
                             <td>{p.product_type ?? '-'}</td>
                             <td>{p.creation_date ?? '-'}</td>
@@ -374,7 +648,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                               </button>
                             </td>
                           </tr>
-                        ))}
+                        )})}
                       </tbody>
                     </table>
                   </div>
@@ -385,10 +659,22 @@ function Productos({ productoDestacado, setProductoDestacado }) {
         </>
       ) : (
         <>
-          <div className="table-wrapper tabla-productos-catalogo">
+          <div
+            className="table-wrapper tabla-productos-catalogo"
+            ref={tablaRef}
+            onMouseDown={onMouseDownTabla}
+          >
             <table>
               <thead>
                 <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={(e) => seleccionarPaginaActual(e.target.checked)}
+                      title="Seleccionar todos los productos de esta página"
+                    />
+                  </th>
                   <th>Marca</th>
                   <th>Nº serie base</th>
                   <th>Tipo</th>
@@ -399,8 +685,22 @@ function Productos({ productoDestacado, setProductoDestacado }) {
               </thead>
               <tbody>
                 {enPagina.map((p, i) => (
-                  <tr key={`${p.base_serial}-${p.folder_rel}-${i}`}>
-                    <td>{p.brand ?? '-'}</td>
+                  <tr
+                    key={`${p.base_serial}-${p.folder_rel}-${i}`}
+                    data-product-ref={[p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''}
+                  >
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={(() => {
+                          const ref = [p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''
+                          return !!ref && selectedRefs.has(ref)
+                        })()}
+                        onChange={() => toggleSeleccionProducto(p)}
+                        title="Seleccionar producto para edición masiva"
+                      />
+                    </td>
+                    <td>{formatBrand(p.brand) || '-'}</td>
                     <td>{p.base_serial ?? '-'}</td>
                     <td>{p.product_type ?? '-'}</td>
                     <td>{p.creation_date ?? '-'}</td>
