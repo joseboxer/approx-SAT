@@ -742,18 +742,21 @@ def insert_rma_item(
 
 
 def update_estado_by_rma_number(conn: sqlite3.Connection, rma_number: str, estado: str) -> int:
-    """Actualiza el estado de todos los ítems del RMA. Marca estado_manual=1 para que prevalezca sobre auto."""
+    """Actualiza el estado de todos los ítems del RMA.
+    Marca estado_manual=1 para que prevalezca sobre auto y limpia en_revision_at (ya no está en revisión)."""
     cur = conn.execute(
-        "UPDATE rma_items SET estado = ?, estado_manual = 1 WHERE rma_number = ?",
+        "UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL WHERE rma_number = ?",
         (estado or "", str(rma_number).strip()),
     )
     return cur.rowcount
 
 
 def update_estado_by_item_id(conn: sqlite3.Connection, item_id: int, estado: str) -> bool:
-    """Actualiza el estado de un único ítem RMA por su id. Marca estado_manual=1 para que prevalezca sobre asignación automática. Devuelve True si se actualizó alguna fila."""
+    """Actualiza el estado de un único ítem RMA por su id.
+    Marca estado_manual=1 para que prevalezca sobre auto y limpia en_revision_at (ya no está en revisión).
+    Devuelve True si se actualizó alguna fila."""
     cur = conn.execute(
-        "UPDATE rma_items SET estado = ?, estado_manual = 1 WHERE id = ?",
+        "UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL WHERE id = ?",
         (estado or "", int(item_id)),
     )
     return cur.rowcount > 0
@@ -821,13 +824,14 @@ def get_rma_items_en_revision(conn: sqlite3.Connection) -> list[dict]:
 def update_estado_by_rma_numbers(
     conn: sqlite3.Connection, rma_numbers: list[str], estado: str
 ) -> int:
-    """Actualiza el estado de todos los ítems de los RMAs indicados. Marca estado_manual=1."""
+    """Actualiza el estado de todos los ítems de los RMAs indicados.
+    Marca estado_manual=1 y limpia en_revision_at (ya no están en revisión)."""
     estado = (estado or "").strip()
     if not rma_numbers:
         return 0
     placeholders = ",".join("?" * len(rma_numbers))
     cur = conn.execute(
-        f"UPDATE rma_items SET estado = ?, estado_manual = 1 WHERE rma_number IN ({placeholders})",
+        f"UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL WHERE rma_number IN ({placeholders})",
         [estado] + [str(n).strip() for n in rma_numbers],
     )
     return cur.rowcount
