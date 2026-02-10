@@ -550,8 +550,10 @@ function ListadoRMA({
                             const texto = averia.slice(0, 40)
                             return (
                               <>
-                                {texto}
-                                {averia.length > 40 ? '…' : ''}
+                                <span className="celda-averia-text">
+                                  {texto}
+                                  {averia.length > 40 ? '…' : ''}
+                                </span>
                                 {url && (
                                   <button
                                     type="button"
@@ -570,8 +572,16 @@ function ListadoRMA({
                           })()}
                         </td>
                         <td className="celda-observaciones" title={(p.OBSERVACIONES ?? '').toString().trim() || undefined}>
-                          {(p.OBSERVACIONES ?? '').toString().slice(0, 40)}
-                          {p.OBSERVACIONES?.length > 40 ? '…' : ''}
+                          {(() => {
+                            const obs = (p.OBSERVACIONES ?? '').toString()
+                            const texto = obs.slice(0, 40)
+                            return (
+                              <span className="celda-observaciones-text">
+                                {texto}
+                                {obs.length > 40 ? '…' : ''}
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td>
                           <div className="rma-estado-cell">
@@ -786,8 +796,10 @@ function ListadoRMA({
                                       const texto = averia.slice(0, 50)
                                       return (
                                         <>
-                                          {texto}
-                                          {averia.length > 50 ? '…' : ''}
+                                          <span className="celda-averia-text">
+                                            {texto}
+                                            {averia.length > 50 ? '…' : ''}
+                                          </span>
                                           {url && (
                                             <button
                                               type="button"
@@ -806,12 +818,16 @@ function ListadoRMA({
                                     })()}
                                   </td>
                                   <td title={(item.OBSERVACIONES ?? '').toString().trim() || undefined}>
-                                    {(item.OBSERVACIONES ?? '')
-                                      .toString()
-                                      .slice(0, 50)}
-                                    {item.OBSERVACIONES?.length > 50
-                                      ? '…'
-                                      : ''}
+                                    {(() => {
+                                      const obs = (item.OBSERVACIONES ?? '').toString()
+                                      const texto = obs.slice(0, 50)
+                                      return (
+                                        <span className="celda-observaciones-text">
+                                          {texto}
+                                          {obs.length > 50 ? '…' : ''}
+                                        </span>
+                                      )
+                                    })()}
                                   </td>
                                   <td>
                                     <div className="rma-estado-cell">

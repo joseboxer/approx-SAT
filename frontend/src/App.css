@@ -1220,13 +1220,24 @@
 }
 /* Celdas de texto largo: no solapar, truncar con ellipsis; usar title para ver completo al pasar el ratón */
 .table-wrapper.tabla-rma td:nth-child(4),
-.table-wrapper.tabla-rma td:nth-child(5),
-.table-wrapper.tabla-rma td:nth-child(9),
-.table-wrapper.tabla-rma td:nth-child(10) {
+.table-wrapper.tabla-rma td:nth-child(5) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 0;
+}
+.celda-averia-text,
+.celda-observaciones-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.celda-averia-link {
+  margin-top: 0.25rem;
+  padding: 0;
+  font-size: 0.75rem;
 }
 .tabla-desplegable td:nth-child(8),
 .tabla-desplegable td:nth-child(9) {

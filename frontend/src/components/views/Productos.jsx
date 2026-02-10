@@ -58,6 +58,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   const [dragMode, setDragMode] = useState('add') // 'add' | 'remove'
   const [dragContext, setDragContext] = useState(null) // 'productos' | 'tipos'
   const dragBaseSelectionRef = useRef(new Set())
+  const dragLastPosRef = useRef(null)
 
   const {
     taskId: refreshTaskId,
@@ -351,6 +352,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     setDragContext('productos')
     setDragStart(start)
     setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
+    dragLastPosRef.current = start
     dragBaseSelectionRef.current = new Set(selectedRefs)
 
     // Determinar modo (añadir o quitar) según si el elemento bajo el cursor está ya seleccionado
@@ -368,6 +370,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       if (selMove && selMove.removeAllRanges) selMove.removeAllRanges()
 
       const current = { x: ev.clientX, y: ev.clientY }
+      dragLastPosRef.current = current
       const x1 = Math.min(start.x, current.x)
       const y1 = Math.min(start.y, current.y)
       const x2 = Math.max(start.x, current.x)
@@ -439,6 +442,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     setDragContext('tipos')
     setDragStart(start)
     setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
+    dragLastPosRef.current = start
     dragBaseSelectionRef.current = new Set(tiposSeleccionados)
 
     // Determinar modo (añadir o quitar) según si el elemento bajo el cursor está ya seleccionado
@@ -511,6 +515,34 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }
+
+  // Autoscroll continuo mientras se arrastra, aunque el ratón permanezca quieto
+  useEffect(() => {
+    if (!dragging || !dragContext) return
+
+    const interval = window.setInterval(() => {
+      const pos = dragLastPosRef.current
+      if (!pos) return
+
+      const container =
+        dragContext === 'productos' ? tablaRef.current : dragContext === 'tipos' ? tiposListaRef.current : null
+      if (!container) return
+
+      const bounds = container.getBoundingClientRect()
+      const edgeThreshold = 32
+      const maxStep = dragContext === 'productos' ? 20 : 18
+
+      if (pos.y > bounds.bottom - edgeThreshold) {
+        const factor = Math.min(1, (pos.y - (bounds.bottom - edgeThreshold)) / edgeThreshold)
+        container.scrollTop += 4 + maxStep * factor
+      } else if (pos.y < bounds.top + edgeThreshold) {
+        const factor = Math.min(1, ((bounds.top + edgeThreshold) - pos.y) / edgeThreshold)
+        container.scrollTop -= 4 + maxStep * factor
+      }
+    }, 40)
+
+    return () => window.clearInterval(interval)
+  }, [dragging, dragContext])
 
   if (cargando && !cached) return (
     <div className="loading-wrap">
