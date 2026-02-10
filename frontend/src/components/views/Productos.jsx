@@ -647,6 +647,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
               <div
                 className="productos-catalogo-tipos-gestion"
                 onMouseDown={onMouseDownTipos}
+                ref={tiposListaRef}
               >
                 <p className="productos-catalogo-tipos-gestion-title">
                   <span>Tipos disponibles</span>
@@ -664,7 +665,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                     </button>
                   )}
                 </p>
-                <div className="productos-catalogo-tipos-list" ref={tiposListaRef}>
+                <div className="productos-catalogo-tipos-list">
                   {tiposProducto.map((t) => {
                     const checked = tiposSeleccionados.has(t)
                     const enEdicion = tipoEnEdicion === t
