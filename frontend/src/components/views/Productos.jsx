@@ -430,8 +430,8 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   }
 
   const onMouseDownTipos = (e) => {
-    // Solo activar selección por arrastre con Shift+Alt (no interfiere con zoom del navegador)
-    if (e.button !== 0 || !e.shiftKey || !e.altKey) return
+    // Activar selección por arrastre con botón izquierdo (sin modificadores) dentro de la lista de tipos
+    if (e.button !== 0) return
     if (!tiposListaRef.current) return
     // Evitar selección de texto nativa
     e.preventDefault()
