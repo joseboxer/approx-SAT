@@ -22,6 +22,7 @@ function Repuestos() {
   const [formDescripcion, setFormDescripcion] = useState('')
   const [formCantidad, setFormCantidad] = useState(0)
   const [formProductos, setFormProductos] = useState([]) // array of product_ref
+  const [filtroProductoRef, setFiltroProductoRef] = useState('') // búsqueda por nº serie base / referencia
   const [guardando, setGuardando] = useState(false)
   const [editandoCantidad, setEditandoCantidad] = useState(null) // id cuando se edita cantidad inline
 
@@ -49,6 +50,16 @@ function Repuestos() {
     const label = [p.brand, p.base_serial].filter(Boolean).join(' — ') || ref
     return { value: ref, label }
   })
+
+  const opcionesProductosFiltradas = React.useMemo(() => {
+    const q = (filtroProductoRef || '').trim().toLowerCase()
+    if (!q) return opcionesProductos
+    return opcionesProductos.filter((opt) => {
+      const v = (opt.value || '').toLowerCase()
+      const lbl = (opt.label || '').toLowerCase()
+      return v.includes(q) || lbl.includes(q)
+    })
+  }, [opcionesProductos, filtroProductoRef])
 
   const abrirCrear = () => {
     setFormNombre('')
@@ -297,11 +308,24 @@ function Repuestos() {
                 className="modal-input"
               />
               <label className="modal-label">Vinculado a productos (catálogo)</label>
+              {opcionesProductos.length > 0 && (
+                <div className="repuestos-productos-busqueda">
+                  <input
+                    type="text"
+                    value={filtroProductoRef}
+                    onChange={(e) => setFiltroProductoRef(e.target.value)}
+                    placeholder="Buscar por nº serie base..."
+                    className="modal-input repuestos-productos-busqueda-input"
+                  />
+                </div>
+              )}
               <div className="repuestos-productos-select">
                 {opcionesProductos.length === 0 ? (
                   <p className="modal-hint">Carga el catálogo en Productos para elegir productos.</p>
+                ) : opcionesProductosFiltradas.length === 0 ? (
+                  <p className="modal-hint">No hay productos que coincidan con la búsqueda.</p>
                 ) : (
-                  opcionesProductos.map((opt) => (
+                  opcionesProductosFiltradas.map((opt) => (
                     <label key={opt.value} className="repuestos-productos-check">
                       <input
                         type="checkbox"
