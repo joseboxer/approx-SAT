@@ -1140,6 +1140,17 @@
 .table-wrapper.tabla-rma .celda-acciones .btn {
   flex-shrink: 0;
 }
+.rma-revision-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #b45309; /* ámbar/aviso */
+  background: color-mix(in srgb, #fbbf24 20%, transparent);
+  border-radius: var(--radius, 4px);
+  white-space: nowrap;
+}
 .rma-revisado-badge {
   display: inline-block;
   margin-left: 0.35rem;

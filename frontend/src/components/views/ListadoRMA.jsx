@@ -550,9 +550,11 @@ function ListadoRMA({
                               </option>
                             ))}
                           </select>
-                          {(p.estado ?? '').trim() !== '' && (
-                            <span className="rma-revisado-badge" title="Con estado asignado (revisado)">Revisado</span>
-                          )}
+                          {p.en_revision_at ? (
+                            <span className="rma-revision-badge" title="Marcado para revisar">En revisión</span>
+                          ) : (p.estado ?? '').trim() !== '' ? (
+                            <span className="rma-revisado-badge" title="Con estado final asignado">Revisado</span>
+                          ) : null}
                         </td>
                       </>
                     ) : (
@@ -769,9 +771,11 @@ function ListadoRMA({
                                         </option>
                                       ))}
                                     </select>
-                                    {(item.estado ?? '').trim() !== '' && (
-                                      <span className="rma-revisado-badge" title="Con estado asignado (revisado)">Revisado</span>
-                                    )}
+                                    {item.en_revision_at ? (
+                                      <span className="rma-revision-badge" title="Marcado para revisar">En revisión</span>
+                                    ) : (item.estado ?? '').trim() !== '' ? (
+                                      <span className="rma-revisado-badge" title="Con estado final asignado">Revisado</span>
+                                    ) : null}
                                   </td>
                                   <td className="celda-acciones">
                                     <div className="celda-acciones-wrap">
