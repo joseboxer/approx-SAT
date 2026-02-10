@@ -374,6 +374,18 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       const y2 = Math.max(start.y, current.y)
       setDragRect({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 })
 
+      // Autoscroll vertical al acercarse a los bordes del contenedor
+      const bounds = container.getBoundingClientRect()
+      const edgeThreshold = 32
+      const maxStep = 20
+      if (current.y > bounds.bottom - edgeThreshold) {
+        const factor = Math.min(1, (current.y - (bounds.bottom - edgeThreshold)) / edgeThreshold)
+        container.scrollTop += 4 + maxStep * factor
+      } else if (current.y < bounds.top + edgeThreshold) {
+        const factor = Math.min(1, ((bounds.top + edgeThreshold) - current.y) / edgeThreshold)
+        container.scrollTop -= 4 + maxStep * factor
+      }
+
       const rows = Array.from(container.querySelectorAll('tr[data-product-ref]'))
       const within = new Set()
       rows.forEach((rowEl) => {
@@ -450,12 +462,14 @@ function Productos({ productoDestacado, setProductoDestacado }) {
 
       // Autoscroll cuando el ratón se acerca al borde inferior/superior
       const bounds = container.getBoundingClientRect()
-      const edgeThreshold = 24
-      const scrollStep = 12
+      const edgeThreshold = 32
+      const maxStep = 18
       if (current.y > bounds.bottom - edgeThreshold) {
-        container.scrollTop += scrollStep
+        const factor = Math.min(1, (current.y - (bounds.bottom - edgeThreshold)) / edgeThreshold)
+        container.scrollTop += 4 + maxStep * factor
       } else if (current.y < bounds.top + edgeThreshold) {
-        container.scrollTop -= scrollStep
+        const factor = Math.min(1, ((bounds.top + edgeThreshold) - current.y) / edgeThreshold)
+        container.scrollTop -= 4 + maxStep * factor
       }
 
       const items = Array.from(container.querySelectorAll('[data-tipo]'))
@@ -635,10 +649,20 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                 onMouseDown={onMouseDownTipos}
               >
                 <p className="productos-catalogo-tipos-gestion-title">
-                  Tipos disponibles
+                  <span>Tipos disponibles</span>
                   <span className="productos-catalogo-tipos-gestion-hint">
-                    (marca para borrar varios; pulsa editar para renombrar)
+                    (Shift+Alt y arrastrar para seleccionar varios; pulsa editar para renombrar)
                   </span>
+                  {tiposSeleccionados.size > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-xs"
+                      onClick={handleBorrarTipos}
+                      disabled={bulkLoading}
+                    >
+                      Borrar {tiposSeleccionados.size} tipo{tiposSeleccionados.size > 1 ? 's' : ''}
+                    </button>
+                  )}
                 </p>
                 <div className="productos-catalogo-tipos-list" ref={tiposListaRef}>
                   {tiposProducto.map((t) => {
@@ -695,16 +719,6 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                       </div>
                     )
                   })}
-                </div>
-                <div className="productos-catalogo-tipos-gestion-acciones">
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={handleBorrarTipos}
-                    disabled={bulkLoading || !tiposSeleccionados.size}
-                  >
-                    Borrar tipos seleccionados
-                  </button>
                 </div>
               </div>
             </div>
