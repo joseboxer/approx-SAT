@@ -51,10 +51,12 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   const [nombreTipoEdit, setNombreTipoEdit] = useState('')
   const [selectedRefs, setSelectedRefs] = useState(() => new Set())
   const tablaRef = useRef(null)
+  const tiposListaRef = useRef(null)
   const [dragging, setDragging] = useState(false)
   const [dragStart, setDragStart] = useState(null)
   const [dragRect, setDragRect] = useState(null)
   const [dragMode, setDragMode] = useState('add') // 'add' | 'remove'
+  const [dragContext, setDragContext] = useState(null) // 'productos' | 'tipos'
   const dragBaseSelectionRef = useRef(new Set())
 
   const {
@@ -335,8 +337,8 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   }
 
   const onMouseDownTabla = (e) => {
-    // Solo activar selección por arrastre con Shift+Control
-    if (e.button !== 0 || !e.shiftKey || !e.ctrlKey) return
+    // Solo activar selección por arrastre con Shift+Alt (no interfiere con zoom del navegador)
+    if (e.button !== 0 || !e.shiftKey || !e.altKey) return
     if (!tablaRef.current) return
     // Evitar selección de texto nativa
     e.preventDefault()
@@ -346,6 +348,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     const container = tablaRef.current
     const start = { x: e.clientX, y: e.clientY }
     setDragging(true)
+    setDragContext('productos')
     setDragStart(start)
     setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
     dragBaseSelectionRef.current = new Set(selectedRefs)
@@ -398,6 +401,91 @@ function Productos({ productoDestacado, setProductoDestacado }) {
 
     const onUp = () => {
       setDragging(false)
+      setDragStart(null)
+      setDragRect(null)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const onMouseDownTipos = (e) => {
+    // Solo activar selección por arrastre con Shift+Alt (no interfiere con zoom del navegador)
+    if (e.button !== 0 || !e.shiftKey || !e.altKey) return
+    if (!tiposListaRef.current) return
+    // Evitar selección de texto nativa
+    e.preventDefault()
+    const sel = window.getSelection && window.getSelection()
+    if (sel && sel.removeAllRanges) sel.removeAllRanges()
+
+    const container = tiposListaRef.current
+    const start = { x: e.clientX, y: e.clientY }
+    setDragging(true)
+    setDragContext('tipos')
+    setDragStart(start)
+    setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
+    dragBaseSelectionRef.current = new Set(tiposSeleccionados)
+
+    // Determinar modo (añadir o quitar) según si el elemento bajo el cursor está ya seleccionado
+    let mode = 'add'
+    const item = e.target.closest('[data-tipo]')
+    if (item) {
+      const t = item.getAttribute('data-tipo') || ''
+      if (t && tiposSeleccionados.has(t)) mode = 'remove'
+    }
+
+    const onMove = (ev) => {
+      ev.preventDefault()
+      const selMove = window.getSelection && window.getSelection()
+      if (selMove && selMove.removeAllRanges) selMove.removeAllRanges()
+
+      const current = { x: ev.clientX, y: ev.clientY }
+      const x1 = Math.min(start.x, current.x)
+      const y1 = Math.min(start.y, current.y)
+      const x2 = Math.max(start.x, current.x)
+      const y2 = Math.max(start.y, current.y)
+      setDragRect({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 })
+
+      // Autoscroll cuando el ratón se acerca al borde inferior/superior
+      const bounds = container.getBoundingClientRect()
+      const edgeThreshold = 24
+      const scrollStep = 12
+      if (current.y > bounds.bottom - edgeThreshold) {
+        container.scrollTop += scrollStep
+      } else if (current.y < bounds.top + edgeThreshold) {
+        container.scrollTop -= scrollStep
+      }
+
+      const items = Array.from(container.querySelectorAll('[data-tipo]'))
+      const within = new Set()
+      items.forEach((el) => {
+        const r = el.getBoundingClientRect()
+        const intersect =
+          x1 <= r.right &&
+          x2 >= r.left &&
+          y1 <= r.bottom &&
+          y2 >= r.top
+        if (intersect) {
+          const t = el.getAttribute('data-tipo') || ''
+          if (t) within.add(t)
+        }
+      })
+
+      const base = dragBaseSelectionRef.current
+      const next = new Set(base)
+      if (mode === 'add') {
+        within.forEach((t) => next.add(t))
+      } else {
+        within.forEach((t) => next.delete(t))
+      }
+      setTiposSeleccionados(next)
+    }
+
+    const onUp = () => {
+      setDragging(false)
+      setDragContext(null)
       setDragStart(null)
       setDragRect(null)
       window.removeEventListener('mousemove', onMove)
@@ -542,19 +630,26 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                   Guardar tipo
                 </button>
               </div>
-              <div className="productos-catalogo-tipos-gestion">
+              <div
+                className="productos-catalogo-tipos-gestion"
+                onMouseDown={onMouseDownTipos}
+              >
                 <p className="productos-catalogo-tipos-gestion-title">
                   Tipos disponibles
                   <span className="productos-catalogo-tipos-gestion-hint">
                     (marca para borrar varios; pulsa editar para renombrar)
                   </span>
                 </p>
-                <div className="productos-catalogo-tipos-list">
+                <div className="productos-catalogo-tipos-list" ref={tiposListaRef}>
                   {tiposProducto.map((t) => {
                     const checked = tiposSeleccionados.has(t)
                     const enEdicion = tipoEnEdicion === t
                     return (
-                      <div key={t} className={`productos-catalogo-tipo-item ${checked ? 'tipo-seleccionado' : ''}`}>
+                      <div
+                        key={t}
+                        data-tipo={t}
+                        className={`productos-catalogo-tipo-item ${checked ? 'tipo-seleccionado' : ''}`}
+                      >
                         <label className="productos-catalogo-tipo-check">
                           <input
                             type="checkbox"
