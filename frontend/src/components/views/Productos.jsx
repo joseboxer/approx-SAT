@@ -58,7 +58,6 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   const [dragMode, setDragMode] = useState('add') // 'add' | 'remove'
   const [dragContext, setDragContext] = useState(null) // 'productos' | 'tipos'
   const dragBaseSelectionRef = useRef(new Set())
-  const dragScrollDirRef = useRef(null) // 'up' | 'down' | null
 
   const {
     taskId: refreshTaskId,
@@ -350,7 +349,6 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     const start = { x: e.clientX, y: e.clientY }
     setDragging(true)
     setDragContext('productos')
-    dragScrollDirRef.current = null
     setDragStart(start)
     setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
     dragBaseSelectionRef.current = new Set(selectedRefs)
@@ -430,8 +428,8 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   }
 
   const onMouseDownTipos = (e) => {
-    // Activar selección por arrastre con botón izquierdo (sin modificadores) dentro de la lista de tipos
-    if (e.button !== 0) return
+    // Misma lógica que productos: Shift+Alt para no interferir con scroll / clic normal
+    if (e.button !== 0 || !e.shiftKey || !e.altKey) return
     if (!tiposListaRef.current) return
     // Evitar selección de texto nativa
     e.preventDefault()
@@ -442,7 +440,6 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     const start = { x: e.clientX, y: e.clientY }
     setDragging(true)
     setDragContext('tipos')
-    dragScrollDirRef.current = null
     setDragStart(start)
     setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
     dragLastPosRef.current = start
@@ -468,14 +465,17 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       const y2 = Math.max(start.y, current.y)
       setDragRect({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 })
 
+      // Autoscroll vertical al acercarse a los bordes del contenedor (lista de tipos),
+      // exactamente igual que en la tabla de productos.
       const bounds = container.getBoundingClientRect()
       const edgeThreshold = 32
+      const maxStep = 18
       if (current.y > bounds.bottom - edgeThreshold) {
-        dragScrollDirRef.current = 'down'
+        const factor = Math.min(1, (current.y - (bounds.bottom - edgeThreshold)) / edgeThreshold)
+        container.scrollTop += 4 + maxStep * factor
       } else if (current.y < bounds.top + edgeThreshold) {
-        dragScrollDirRef.current = 'up'
-      } else {
-        dragScrollDirRef.current = null
+        const factor = Math.min(1, ((bounds.top + edgeThreshold) - current.y) / edgeThreshold)
+        container.scrollTop -= 4 + maxStep * factor
       }
 
       const items = Array.from(container.querySelectorAll('[data-tipo]'))
@@ -516,42 +516,6 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }
-
-  // Autoscroll continuo mientras se arrastra en listas de TIPOS, aunque el ratón permanezca quieto:
-  // se basa solo en la última dirección detectada (arriba/abajo), no en que haya movimiento nuevo.
-  useEffect(() => {
-    if (!dragging || dragContext !== 'tipos') return
-
-    const interval = window.setInterval(() => {
-      const container =
-        dragContext === 'tipos' ? tiposListaRef.current : null
-      if (!container) return
-
-      const dir = dragScrollDirRef.current
-      if (!dir) return
-
-      const edgeThreshold = 32
-      const maxStep = 18
-
-      if (dir === 'down') {
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight) {
-          // Ya estamos al final, dejar de forzar scroll
-          dragScrollDirRef.current = null
-          return
-        }
-        // Intensidad fija hacia abajo mientras el cursor siga más allá del borde inferior lógico
-        container.scrollTop += 4 + maxStep
-      } else if (dir === 'up') {
-        if (container.scrollTop <= 0) {
-          dragScrollDirRef.current = null
-          return
-        }
-        container.scrollTop -= 4 + maxStep
-      }
-    }, 40)
-
-    return () => window.clearInterval(interval)
-  }, [dragging, dragContext])
 
   if (cargando && !cached) return (
     <div className="loading-wrap">
