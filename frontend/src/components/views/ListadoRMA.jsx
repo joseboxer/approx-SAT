@@ -75,7 +75,7 @@ function ListadoRMA({
   const [estadoFiltro, setEstadoFiltro] = useState('__todos__') // __todos__ = todos, '' = sin estado, 'abonado', etc.
   const [filtroFechaRecogidaDesde, setFiltroFechaRecogidaDesde] = useState('')
   const [filtroFechaRecogidaHasta, setFiltroFechaRecogidaHasta] = useState('')
-  const [columnaOrden, setColumnaOrden] = useState('FECHA RECIBIDO')
+  const [columnaOrden, setColumnaOrden] = useState('fila')
   const [ordenAsc, setOrdenAsc] = useState(false)
   const [productosDesplegableAbierto, setProductosDesplegableAbierto] =
     useState(null)
@@ -550,6 +550,9 @@ function ListadoRMA({
                               </option>
                             ))}
                           </select>
+                          {(p.estado ?? '').trim() !== '' && (
+                            <span className="rma-revisado-badge" title="Con estado asignado (revisado)">Revisado</span>
+                          )}
                         </td>
                       </>
                     ) : (
@@ -625,9 +628,9 @@ function ListadoRMA({
                             className="btn btn-secondary btn-sm"
                             onClick={() => marcarEnRevision(p.id)}
                             disabled={enRevisionItemId === p.id}
-                            title="Marcar como en revisión (acceso rápido en En revisión)"
+                            title="Marcar para revisar (acceso rápido en Revisar)"
                           >
-                            {enRevisionItemId === p.id ? '…' : 'En revisión'}
+                            {enRevisionItemId === p.id ? '…' : 'Revisar'}
                           </button>
                         )}
                       </div>
@@ -766,6 +769,9 @@ function ListadoRMA({
                                         </option>
                                       ))}
                                     </select>
+                                    {(item.estado ?? '').trim() !== '' && (
+                                      <span className="rma-revisado-badge" title="Con estado asignado (revisado)">Revisado</span>
+                                    )}
                                   </td>
                                   <td className="celda-acciones">
                                     <div className="celda-acciones-wrap">
@@ -775,9 +781,9 @@ function ListadoRMA({
                                           className="btn btn-secondary btn-sm"
                                           onClick={() => marcarEnRevision(item.id)}
                                           disabled={enRevisionItemId === item.id}
-                                          title="Marcar como en revisión (acceso rápido en En revisión)"
+                                          title="Marcar para revisar (acceso rápido en Revisar)"
                                         >
-                                          {enRevisionItemId === item.id ? '…' : 'En revisión'}
+                                          {enRevisionItemId === item.id ? '…' : 'Revisar'}
                                         </button>
                                       )}
                                       {serie !== '-' && rmaNum != null && (

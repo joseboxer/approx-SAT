@@ -32,6 +32,7 @@ export const OPCIONES_ESTADO = [
   { value: 'abonado', label: 'Abonado' },
   { value: 'reparado', label: 'Reparado' },
   { value: 'no_anomalias', label: 'No tiene anomalías' },
+  { value: 'fuera_garantia', label: 'Fuera de garantía' },
 ]
 
 export const COLUMNAS_CLIENTES = [
@@ -76,7 +77,7 @@ export const VISTAS_LABELS = {
   [VISTAS.INICIO]: 'Inicio',
   [VISTAS.RMA]: 'Listado de reparaciones',
   [VISTAS.RMA_ESPECIALES]: 'RMA especiales',
-  [VISTAS.EN_REVISION]: 'En revisión',
+  [VISTAS.EN_REVISION]: 'Revisar',
   [VISTAS.CLIENTES]: 'Clientes',
   [VISTAS.PRODUCTOS]: 'Catálogo de productos',
   [VISTAS.PRODUCTOS_RMA]: 'Productos en reparación',

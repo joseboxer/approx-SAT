@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, VISTAS } from '../../constants'
+import ModalNotificar from '../ModalNotificar'
+import { API_URL, AUTH_STORAGE_KEY, VISTAS, OPCIONES_ESTADO } from '../../constants'
 
 function getAuthHeaders() {
   try {
@@ -13,6 +14,9 @@ function EnRevision({ setVista, setSerialDestacado, setRmaDestacado }) {
   const [list, setList] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
+  const [updatingEstadoItemId, setUpdatingEstadoItemId] = useState(null)
+  const [notificarOpen, setNotificarOpen] = useState(false)
+  const [notificarRef, setNotificarRef] = useState(null)
 
   const refetch = useCallback(() => {
     setCargando(true)
@@ -43,17 +47,47 @@ function EnRevision({ setVista, setSerialDestacado, setRmaDestacado }) {
     }
   }
 
-  if (cargando) return <p className="loading">Cargando ítems en revisión...</p>
+  const handleEstadoChange = (item, newEstado) => {
+    if (item.id == null || updatingEstadoItemId != null) return
+    setUpdatingEstadoItemId(item.id)
+    fetch(`${API_URL}/api/rmas/items/${item.id}/estado`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ estado: newEstado }),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error('Error al guardar estado')
+        return r.json()
+      })
+      .then(() => {
+        refetch()
+        const rmaNum = item['Nº DE RMA'] ?? item['NÂº DE RMA']
+        const serial = item['Nº DE SERIE'] ?? item['NÂº DE SERIE']
+        setNotificarRef(
+          rmaNum != null
+            ? { rma_number: String(rmaNum), ...(serial ? { serial: String(serial) } : {}) }
+            : null
+        )
+        setNotificarOpen(true)
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setUpdatingEstadoItemId(null))
+  }
+
+  if (cargando) return <p className="loading">Cargando ítems a revisar...</p>
   if (error) return <div className="error-msg">Error: {error}</div>
 
   return (
     <>
-      <h1 className="page-title">En revisión</h1>
+      <h1 className="page-title">Revisar</h1>
       <p className="text-muted">
-        Ítems RMA que has marcado como &quot;En revisión&quot; y aún no tienen estado (resolución). Acceso rápido cuando no llega resolución el mismo día. Cuando asignes estado, saldrán de esta lista.
+        Ítems RMA que has marcado para revisar y aún no tienen estado (resolución). Acceso rápido cuando no llega resolución el mismo día. Cuando asignes estado, saldrán de esta lista.
       </p>
       {list.length === 0 ? (
-        <p className="notificaciones-empty">No hay ítems en revisión.</p>
+        <p className="notificaciones-empty">No hay ítems pendientes de revisar.</p>
       ) : (
         <div className="table-wrapper">
           <table>
@@ -64,7 +98,8 @@ function EnRevision({ setVista, setSerialDestacado, setRmaDestacado }) {
                 <th>Nº serie</th>
                 <th>Cliente</th>
                 <th>Fecha recibido</th>
-                <th>En revisión desde</th>
+                <th>Marcado para revisar</th>
+                <th>Estado</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -105,6 +140,21 @@ function EnRevision({ setVista, setSerialDestacado, setRmaDestacado }) {
                       ? new Date(item.en_revision_at).toLocaleString('es-ES')
                       : '-'}
                   </td>
+                  <td>
+                    <select
+                      className="rma-estado-inline-select"
+                      value={item.estado ?? ''}
+                      onChange={(e) => handleEstadoChange(item, e.target.value)}
+                      disabled={updatingEstadoItemId === item.id}
+                      aria-label="Estado (al asignar sale de la lista y se abre notificar)"
+                    >
+                      {OPCIONES_ESTADO.map((o) => (
+                        <option key={o.value === '' ? '__' : o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="celda-acciones">
                     <div className="celda-acciones-wrap">
                       <button
@@ -131,6 +181,16 @@ function EnRevision({ setVista, setSerialDestacado, setRmaDestacado }) {
           </table>
         </div>
       )}
+      <ModalNotificar
+        open={notificarOpen}
+        onClose={() => {
+          setNotificarOpen(false)
+          setNotificarRef(null)
+        }}
+        type="rma"
+        referenceData={notificarRef || {}}
+        onSuccess={() => refetch()}
+      />
     </>
   )
 }
