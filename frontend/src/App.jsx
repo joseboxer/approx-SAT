@@ -13,6 +13,7 @@ import ProductosRMA from './components/views/ProductosRMA'
 import Repuestos from './components/views/Repuestos'
 import ListaOculta from './components/views/ListaOculta'
 import RMAEspeciales from './components/views/RMAEspeciales'
+import EnRevision from './components/views/EnRevision'
 import Informes from './components/views/Informes'
 import Configuracion from './components/views/Configuracion'
 import AdminPanel from './components/views/AdminPanel'
@@ -43,6 +44,7 @@ function AppContent() {
   const [productoDestacado, setProductoDestacado] = useState(null)
   const [rmaDestacado, setRmaDestacado] = useState(null)
   const [serialDestacado, setSerialDestacado] = useState(null)
+  const [rmaEspecialDestacadoId, setRmaEspecialDestacadoId] = useState(null)
   const [notifCountKey, setNotifCountKey] = useState(0)
   const refreshNotifCount = () => setNotifCountKey((k) => k + 1)
 
@@ -136,8 +138,22 @@ function AppContent() {
         return <Repuestos />
       case VISTAS.OCULTA:
         return <ListaOculta />
+      case VISTAS.EN_REVISION:
+        return (
+          <EnRevision
+            setVista={setVista}
+            setSerialDestacado={setSerialDestacado}
+            setRmaDestacado={setRmaDestacado}
+          />
+        )
       case VISTAS.RMA_ESPECIALES:
-        return <RMAEspeciales setVista={setVista} />
+        return (
+          <RMAEspeciales
+            setVista={setVista}
+            rmaEspecialDestacadoId={rmaEspecialDestacadoId}
+            setRmaEspecialDestacadoId={setRmaEspecialDestacadoId}
+          />
+        )
       case VISTAS.INFORMES:
         return <Informes />
       case VISTAS.CONFIGURACION:
@@ -152,6 +168,7 @@ function AppContent() {
             setSerialDestacado={setSerialDestacado}
             setProductoDestacado={setProductoDestacado}
             setClienteDestacado={setClienteDestacado}
+            setRmaEspecialDestacadoId={setRmaEspecialDestacadoId}
             onMarkRead={refreshNotifCount}
           />
         )

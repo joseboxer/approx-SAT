@@ -84,6 +84,23 @@ function ListadoRMA({
   const [aplicandoMasivo, setAplicandoMasivo] = useState(false)
   const [notificarOpen, setNotificarOpen] = useState(false)
   const [notificarRef, setNotificarRef] = useState(null)
+  const [enRevisionItemId, setEnRevisionItemId] = useState(null)
+
+  const marcarEnRevision = useCallback((itemId) => {
+    if (!itemId || enRevisionItemId != null) return
+    setEnRevisionItemId(itemId)
+    fetch(`${API_URL}/api/rmas/items/${itemId}/en-revision`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error('Error al marcar')
+        return r.json()
+      })
+      .then(() => refetchProductos?.())
+      .catch(() => {})
+      .finally(() => setEnRevisionItemId(null))
+  }, [enRevisionItemId, refetchProductos])
 
   const columnasFiltro = useMemo(
     () => getColumnasFiltroRma(claveSerieReal),
@@ -429,9 +446,13 @@ function ListadoRMA({
               const fechaEnviado = p['FECHA ENVIADO']
               const fechaRecogida = p['FECHA RECOGIDA']
               const unaSolaLinea = n === 1
+              const todosConEstado = unaSolaLinea
+                ? (p.estado ?? '').trim() !== ''
+                : grupo.items.every((it) => (it.estado ?? '').trim() !== '')
+              const rowClass = [isSelected && 'row-selected', todosConEstado && 'rma-row-resuelto'].filter(Boolean).join(' ')
               return (
                 <React.Fragment key={key}>
-                  <tr className={isSelected ? 'row-selected' : ''}>
+                  <tr className={rowClass || undefined}>
                     <td className="col-checkbox">
                       <input
                         type="checkbox"
@@ -566,37 +587,50 @@ function ListadoRMA({
                         <td>—</td>
                       </>
                     )}
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-editar"
-                        onClick={() => setEditandoRmaId(grupo.rmaId)}
-                        title="Editar campos de este RMA"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ocultar"
-                        onClick={() => ocultarRmaGroup && ocultarRmaGroup(grupo)}
-                        title="Ocultar este RMA (aparecerá en Lista oculta)"
-                      >
-                        Ocultar
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-notificar"
-                        onClick={() => {
-                          const rmaNum = p['NÂº DE RMA'] ?? p['Nº DE RMA']
-                          if (rmaNum != null) {
-                            setNotificarRef({ rma_number: String(rmaNum) })
-                            setNotificarOpen(true)
-                          }
-                        }}
-                        title="Notificar a un usuario (compartir este RMA)"
-                      >
-                        Notificar
-                      </button>
+                    <td className="celda-acciones">
+                      <div className="celda-acciones-wrap">
+                        <button
+                          type="button"
+                          className="btn btn-editar"
+                          onClick={() => setEditandoRmaId(grupo.rmaId)}
+                          title="Editar campos de este RMA"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ocultar"
+                          onClick={() => ocultarRmaGroup && ocultarRmaGroup(grupo)}
+                          title="Ocultar este RMA (aparecerá en Lista oculta)"
+                        >
+                          Ocultar
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-notificar"
+                          onClick={() => {
+                            const rmaNum = p['NÂº DE RMA'] ?? p['Nº DE RMA']
+                            if (rmaNum != null) {
+                              setNotificarRef({ rma_number: String(rmaNum) })
+                              setNotificarOpen(true)
+                            }
+                          }}
+                          title="Notificar a un usuario (compartir este RMA)"
+                        >
+                          Notificar
+                        </button>
+                        {unaSolaLinea && p.id != null && !p.en_revision_at && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => marcarEnRevision(p.id)}
+                            disabled={enRevisionItemId === p.id}
+                            title="Marcar como en revisión (acceso rápido en En revisión)"
+                          >
+                            {enRevisionItemId === p.id ? '…' : 'En revisión'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                   {!unaSolaLinea && abierto && (
@@ -617,10 +651,14 @@ function ListadoRMA({
                                 <th>Avería</th>
                                 <th>Observaciones</th>
                                 <th>Estado</th>
+                                <th>Acciones</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {grupo.items.map((item, j) => (
+                              {grupo.items.map((item, j) => {
+                                const rmaNum = item['NÂº DE RMA'] ?? item['Nº DE RMA'] ?? p['NÂº DE RMA'] ?? p['Nº DE RMA']
+                                const serie = getSerie(item)
+                                return (
                                 <tr key={j}>
                                   <td>
                                     {item['NÂº DE RMA'] ??
@@ -729,8 +767,37 @@ function ListadoRMA({
                                       ))}
                                     </select>
                                   </td>
+                                  <td className="celda-acciones">
+                                    <div className="celda-acciones-wrap">
+                                      {item.id != null && !item.en_revision_at && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary btn-sm"
+                                          onClick={() => marcarEnRevision(item.id)}
+                                          disabled={enRevisionItemId === item.id}
+                                          title="Marcar como en revisión (acceso rápido en En revisión)"
+                                        >
+                                          {enRevisionItemId === item.id ? '…' : 'En revisión'}
+                                        </button>
+                                      )}
+                                      {serie !== '-' && rmaNum != null && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-notificar btn-sm"
+                                          onClick={() => {
+                                            setNotificarRef({ rma_number: String(rmaNum), serial: serie })
+                                            setNotificarOpen(true)
+                                          }}
+                                          title="Notificar este número de serie a un usuario"
+                                        >
+                                          Notificar
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
                                 </tr>
-                              ))}
+                              )
+                              })}
                             </tbody>
                           </table>
                         </div>

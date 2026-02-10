@@ -128,7 +128,8 @@ def _init_db(conn: sqlite3.Connection):
             reference_data TEXT NOT NULL,
             message TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            read_at TEXT
+            read_at TEXT,
+            deleted_by_sender_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_notifications_to_user ON notifications(to_user_id);
         CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
@@ -169,6 +170,12 @@ def _init_db(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE rma_items ADD COLUMN date_sent TEXT")
     if "excel_row" not in cols:
         conn.execute("ALTER TABLE rma_items ADD COLUMN excel_row INTEGER")
+    rma_cols = [row[1] for row in conn.execute("PRAGMA table_info(rma_items)").fetchall()]
+    if "estado_manual" not in rma_cols:
+        conn.execute("ALTER TABLE rma_items ADD COLUMN estado_manual INTEGER NOT NULL DEFAULT 0")
+    if "en_revision_at" not in rma_cols:
+        conn.execute("ALTER TABLE rma_items ADD COLUMN en_revision_at TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_rma_items_en_revision_at ON rma_items(en_revision_at)")
     if "is_admin" not in [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]:
         conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
     # Tabla push_subscriptions (Web Push) - creada en _init_db con CREATE IF NOT EXISTS
@@ -193,6 +200,10 @@ def _init_db(conn: sqlite3.Connection):
         conn.execute("UPDATE notifications SET category = 'sin_categoria' WHERE category IS NULL")
     # Índice de category (para BDs nuevas la columna ya existe; para antiguas se acaba de añadir)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category)")
+    # Borrado lógico por el remitente: solo el que envía puede "borrar"; el mensaje va a bandeja de borrados (no se elimina)
+    if "deleted_by_sender_at" not in notif_cols:
+        conn.execute("ALTER TABLE notifications ADD COLUMN deleted_by_sender_at TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_deleted_by_sender ON notifications(deleted_by_sender_at)")
     # Tablas RMA especiales (1 Excel = 1 RMA, columnas variables por archivo)
     cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='rma_especiales'")
     if cur.fetchone() is None:
@@ -423,15 +434,24 @@ def get_notifications_for_user(
 
 
 def get_notifications_sent_by_user(
-    conn: sqlite3.Connection, from_user_id: int, category: str | None = None
+    conn: sqlite3.Connection,
+    from_user_id: int,
+    category: str | None = None,
+    deleted_only: bool = False,
 ) -> list[dict]:
-    """Lista notificaciones enviadas por el usuario, con to_username. Opcionalmente filtradas por category."""
+    """Lista notificaciones enviadas por el usuario, con to_username. Opcionalmente filtradas por category.
+    deleted_only=True: solo las que el remitente ha borrado (bandeja de borrados)."""
     q = """SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.category, n.reference_data, n.message, n.created_at, n.read_at,
+                  n.deleted_by_sender_at,
                   u.username AS to_username
            FROM notifications n
            JOIN users u ON u.id = n.to_user_id
            WHERE n.from_user_id = ?"""
     params: list = [from_user_id]
+    if deleted_only:
+        q += " AND n.deleted_by_sender_at IS NOT NULL AND n.deleted_by_sender_at != ''"
+    else:
+        q += " AND (n.deleted_by_sender_at IS NULL OR n.deleted_by_sender_at = '')"
     if category and category.strip():
         q += " AND n.category = ?"
         params.append(category.strip())
@@ -450,6 +470,7 @@ def get_notifications_sent_by_user(
             "message": row["message"] or "",
             "created_at": row["created_at"],
             "read_at": row["read_at"],
+            "deleted_by_sender_at": row["deleted_by_sender_at"],
         })
     return out
 
@@ -472,9 +493,9 @@ def create_notification(
     message: str | None = None,
     category: str = "sin_categoria",
 ) -> int:
-    """Crea una notificación. category: abono, envio o sin_categoria. Devuelve el id."""
+    """Crea una notificación. category: abono, envio, sin_categoria, fuera_garantia. Devuelve el id."""
     cat = (category or "sin_categoria").strip() or "sin_categoria"
-    if cat not in ("abono", "envio", "sin_categoria"):
+    if cat not in ("abono", "envio", "sin_categoria", "fuera_garantia"):
         cat = "sin_categoria"
     cur = conn.execute(
         """INSERT INTO notifications (from_user_id, to_user_id, type, category, reference_data, message)
@@ -489,6 +510,30 @@ def mark_notification_read(conn: sqlite3.Connection, notification_id: int, to_us
     cur = conn.execute(
         "UPDATE notifications SET read_at = datetime('now') WHERE id = ? AND to_user_id = ? AND read_at IS NULL",
         (notification_id, to_user_id),
+    )
+    return cur.rowcount > 0
+
+
+def soft_delete_notification_by_sender(
+    conn: sqlite3.Connection, notification_id: int, from_user_id: int
+) -> bool:
+    """Marca la notificación como borrada por el remitente (va a bandeja de borrados). Solo el remitente puede borrar. Devuelve True si se actualizó."""
+    cur = conn.execute(
+        """UPDATE notifications SET deleted_by_sender_at = datetime('now')
+           WHERE id = ? AND from_user_id = ? AND (deleted_by_sender_at IS NULL OR deleted_by_sender_at = '')""",
+        (notification_id, from_user_id),
+    )
+    return cur.rowcount > 0
+
+
+def restore_notification_by_sender(
+    conn: sqlite3.Connection, notification_id: int, from_user_id: int
+) -> bool:
+    """Restaura una notificación borrada por el remitente (sale de la bandeja de borrados). Devuelve True si se actualizó."""
+    cur = conn.execute(
+        """UPDATE notifications SET deleted_by_sender_at = NULL
+           WHERE id = ? AND from_user_id = ? AND deleted_by_sender_at IS NOT NULL""",
+        (notification_id, from_user_id),
     )
     return cur.rowcount > 0
 
@@ -594,6 +639,10 @@ def _row_to_api(row: sqlite3.Row) -> dict:
         out["FECHA RECOGIDA"] = row["date_pickup"] or None
     if "date_sent" in row.keys():
         out["FECHA ENVIADO"] = row["date_sent"] or None
+    if "estado_manual" in row.keys():
+        out["estado_manual"] = bool(row["estado_manual"])
+    if "en_revision_at" in row.keys():
+        out["en_revision_at"] = row["en_revision_at"] or None
     return out
 
 
@@ -601,7 +650,7 @@ def get_all_rma_items(conn: sqlite3.Connection) -> list[dict]:
     cur = conn.execute(
         """SELECT id, rma_number, product, serial, client_name, client_email, client_phone,
                   date_received, averia, observaciones, estado, hidden, hidden_by, hidden_at,
-                  date_pickup, date_sent, excel_row
+                  date_pickup, date_sent, excel_row, estado_manual, en_revision_at
            FROM rma_items ORDER BY COALESCE(excel_row, id) DESC"""
     )
     return [_row_to_api(row) for row in cur.fetchall()]
@@ -693,17 +742,18 @@ def insert_rma_item(
 
 
 def update_estado_by_rma_number(conn: sqlite3.Connection, rma_number: str, estado: str) -> int:
+    """Actualiza el estado de todos los ítems del RMA. Marca estado_manual=1 para que prevalezca sobre auto."""
     cur = conn.execute(
-        "UPDATE rma_items SET estado = ? WHERE rma_number = ?",
+        "UPDATE rma_items SET estado = ?, estado_manual = 1 WHERE rma_number = ?",
         (estado or "", str(rma_number).strip()),
     )
     return cur.rowcount
 
 
 def update_estado_by_item_id(conn: sqlite3.Connection, item_id: int, estado: str) -> bool:
-    """Actualiza el estado de un único ítem RMA por su id. Devuelve True si se actualizó alguna fila."""
+    """Actualiza el estado de un único ítem RMA por su id. Marca estado_manual=1 para que prevalezca sobre asignación automática. Devuelve True si se actualizó alguna fila."""
     cur = conn.execute(
-        "UPDATE rma_items SET estado = ? WHERE id = ?",
+        "UPDATE rma_items SET estado = ?, estado_manual = 1 WHERE id = ?",
         (estado or "", int(item_id)),
     )
     return cur.rowcount > 0
@@ -745,16 +795,39 @@ def update_fecha_recibido_by_rma_number(
     return cur.rowcount
 
 
+def set_en_revision_at(conn: sqlite3.Connection, item_id: int) -> bool:
+    """Marca un ítem RMA como 'en revisión' (empezando a revisarlo). Devuelve True si se actualizó."""
+    cur = conn.execute(
+        "UPDATE rma_items SET en_revision_at = datetime('now') WHERE id = ? AND (en_revision_at IS NULL OR en_revision_at = '')",
+        (int(item_id),),
+    )
+    return cur.rowcount > 0
+
+
+def get_rma_items_en_revision(conn: sqlite3.Connection) -> list[dict]:
+    """Lista ítems RMA que están en revisión y aún no tienen estado (resolución). Una vez tienen estado, salen de la lista."""
+    cur = conn.execute(
+        """SELECT id, rma_number, product, serial, client_name, client_email, client_phone,
+                  date_received, averia, observaciones, estado, hidden, hidden_by, hidden_at,
+                  date_pickup, date_sent, excel_row, estado_manual, en_revision_at
+           FROM rma_items
+           WHERE hidden = 0 AND en_revision_at IS NOT NULL AND en_revision_at != ''
+             AND (estado IS NULL OR TRIM(COALESCE(estado, '')) = '')
+           ORDER BY en_revision_at DESC, id DESC"""
+    )
+    return [_row_to_api(row) for row in cur.fetchall()]
+
+
 def update_estado_by_rma_numbers(
     conn: sqlite3.Connection, rma_numbers: list[str], estado: str
 ) -> int:
-    """Actualiza el estado de todos los ítems de los RMAs indicados."""
+    """Actualiza el estado de todos los ítems de los RMAs indicados. Marca estado_manual=1."""
     estado = (estado or "").strip()
     if not rma_numbers:
         return 0
     placeholders = ",".join("?" * len(rma_numbers))
     cur = conn.execute(
-        f"UPDATE rma_items SET estado = ? WHERE rma_number IN ({placeholders})",
+        f"UPDATE rma_items SET estado = ?, estado_manual = 1 WHERE rma_number IN ({placeholders})",
         [estado] + [str(n).strip() for n in rma_numbers],
     )
     return cur.rowcount
@@ -980,7 +1053,7 @@ def get_productos_rma(conn: sqlite3.Connection) -> list[dict]:
         cur = conn.execute(
             f"""SELECT id, rma_number, product, serial, client_name, client_email, client_phone,
                       date_received, averia, observaciones, estado, hidden, hidden_by, hidden_at,
-                      date_pickup, date_sent
+                      date_pickup, date_sent, estado_manual, en_revision_at
                FROM rma_items
                WHERE hidden = 0 AND TRIM(COALESCE(serial, '')) IN ({placeholders})
                ORDER BY TRIM(COALESCE(serial, '')), date_received, id""",

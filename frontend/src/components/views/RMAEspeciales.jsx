@@ -86,11 +86,18 @@ function formatRmaFecha(r) {
   return formatCreatedAt(r.file_date || r.created_at)
 }
 
-function RMAEspeciales({ setVista }) {
+function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestacadoId }) {
   const [list, setList] = useState([])
   const [detalle, setDetalle] = useState(null)
   const [scanResult, setScanResult] = useState(null)
   const [cargando, setCargando] = useState(true)
+
+  useEffect(() => {
+    if (rmaEspecialDestacadoId != null) {
+      setDetalleId(rmaEspecialDestacadoId)
+      setRmaEspecialDestacadoId?.(null)
+    }
+  }, [rmaEspecialDestacadoId, setRmaEspecialDestacadoId])
   const [scanTaskId, setScanTaskId] = useState(null)
   const [scanProgress, setScanProgress] = useState(0)
   const [scanMessage, setScanMessage] = useState('')
@@ -554,17 +561,19 @@ function RMAEspeciales({ setVista }) {
                   <td>{r.rma_number}</td>
                   <td>{r.line_count ?? 0}</td>
                   <td>{formatRmaFecha(r)}</td>
-                  <td>
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleVerDetalle(r.id)}>
-                      Ver
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-primary"
-                      onClick={() => { setNotificarRef({ id: r.id, rma_number: r.rma_number }); setNotificarOpen(true) }}
-                    >
-                      Notificar
-                    </button>
+                  <td className="celda-acciones">
+                    <div className="celda-acciones-wrap">
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleVerDetalle(r.id)}>
+                        Ver
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => { setNotificarRef({ id: r.id, rma_number: r.rma_number }); setNotificarOpen(true) }}
+                      >
+                        Notificar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -742,16 +751,18 @@ function RMAEspeciales({ setVista }) {
                           ))}
                         </select>
                       </td>
-                      <td>
-                        <button type="button" className="btn btn-sm btn-primary" onClick={handleGuardarLinea} disabled={savingLineaId === lin.id}>
-                          {savingLineaId === lin.id ? 'Guardando…' : 'Guardar'}
-                        </button>
-                        <button type="button" className="btn btn-sm btn-secondary" onClick={handleCancelarEditarLinea} disabled={savingLineaId === lin.id}>
-                          Cancelar
-                        </button>
-                        <button type="button" className="btn btn-sm btn-danger" onClick={() => handleEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
-                          {deletingLineaId === lin.id ? '…' : 'Eliminar'}
-                        </button>
+                      <td className="celda-acciones">
+                        <div className="celda-acciones-wrap">
+                          <button type="button" className="btn btn-sm btn-primary" onClick={handleGuardarLinea} disabled={savingLineaId === lin.id}>
+                            {savingLineaId === lin.id ? 'Guardando…' : 'Guardar'}
+                          </button>
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={handleCancelarEditarLinea} disabled={savingLineaId === lin.id}>
+                            Cancelar
+                          </button>
+                          <button type="button" className="btn btn-sm btn-danger" onClick={() => handleEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
+                            {deletingLineaId === lin.id ? '…' : 'Eliminar'}
+                          </button>
+                        </div>
                       </td>
                     </>
                   ) : (
@@ -772,13 +783,15 @@ function RMAEspeciales({ setVista }) {
                           ))}
                         </select>
                       </td>
-                      <td>
-                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleEditarLinea(lin)}>
-                          Editar
-                        </button>
-                        <button type="button" className="btn btn-sm btn-danger" onClick={() => handleEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
-                          {deletingLineaId === lin.id ? '…' : 'Eliminar'}
-                        </button>
+                      <td className="celda-acciones">
+                        <div className="celda-acciones-wrap">
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleEditarLinea(lin)}>
+                            Editar
+                          </button>
+                          <button type="button" className="btn btn-sm btn-danger" onClick={() => handleEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
+                            {deletingLineaId === lin.id ? '…' : 'Eliminar'}
+                          </button>
+                        </div>
                       </td>
                     </>
                   )}
@@ -909,20 +922,22 @@ function RMAEspeciales({ setVista }) {
                   <td>{r.rma_number}</td>
                   <td>{r.line_count ?? 0}</td>
                   <td>{formatRmaFecha(r)}</td>
-                  <td>
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleVerDetalle(r.id)}>
-                      Ver
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-primary"
-                      onClick={() => {
-                        setNotificarRef({ id: r.id, rma_number: r.rma_number })
-                        setNotificarOpen(true)
-                      }}
-                    >
-                      Notificar
-                    </button>
+                  <td className="celda-acciones">
+                    <div className="celda-acciones-wrap">
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleVerDetalle(r.id)}>
+                        Ver
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => {
+                          setNotificarRef({ id: r.id, rma_number: r.rma_number })
+                          setNotificarOpen(true)
+                        }}
+                      >
+                        Notificar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

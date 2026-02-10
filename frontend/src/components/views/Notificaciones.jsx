@@ -14,6 +14,7 @@ function parseRef(ref) {
   try {
     if (typeof ref === 'string') return ref
     const o = typeof ref === 'object' ? ref : JSON.parse(ref)
+    if (o.rma_number && o.serial) return `RMA ${o.rma_number} — ${o.serial}`
     if (o.rma_number) return `RMA ${o.rma_number}`
     if (o.serial) return o.serial
     if (o.brand && o.base_serial) return `${o.brand} — ${o.base_serial}`
@@ -27,6 +28,7 @@ function parseRef(ref) {
 
 const BANDEJA_RECIBIDOS = 'recibidos'
 const BANDEJA_ENVIADOS = 'enviados'
+const BANDEJA_BORRADOS = 'borrados'
 
 /** Devuelve etiqueta de fecha al estilo WhatsApp: "Hoy", "Ayer" o "31 ene 2025" */
 function getDateLabel(createdAt) {
@@ -66,16 +68,19 @@ function Notificaciones({
   setSerialDestacado,
   setProductoDestacado,
   setClienteDestacado,
+  setRmaEspecialDestacadoId,
   onMarkRead,
 }) {
   const [bandeja, setBandeja] = useState(() => {
     try {
       const t = localStorage.getItem(NOTIFICATIONS_TAB_KEY)
-      return t === BANDEJA_ENVIADOS ? BANDEJA_ENVIADOS : BANDEJA_RECIBIDOS
+      if (t === BANDEJA_ENVIADOS || t === BANDEJA_BORRADOS) return t
+      return BANDEJA_RECIBIDOS
     } catch {
       return BANDEJA_RECIBIDOS
     }
   })
+  const [actioningId, setActioningId] = useState(null)
   const [categoria, setCategoria] = useState(() => {
     try {
       const c = localStorage.getItem(NOTIFICATIONS_CATEGORY_KEY)
@@ -102,11 +107,16 @@ function Notificaciones({
   const refetch = useCallback(() => {
     setCargando(true)
     setError(null)
-    const base = bandeja === BANDEJA_ENVIADOS
-      ? `${API_URL}/api/notifications/sent`
-      : `${API_URL}/api/notifications`
-    const url = categoria
-      ? `${base}?category=${encodeURIComponent(categoria)}`
+    let base
+    if (bandeja === BANDEJA_BORRADOS) {
+      base = `${API_URL}/api/notifications/sent?deleted=1`
+    } else if (bandeja === BANDEJA_ENVIADOS) {
+      base = `${API_URL}/api/notifications/sent`
+    } else {
+      base = `${API_URL}/api/notifications`
+    }
+    const url = categoria && bandeja !== BANDEJA_BORRADOS
+      ? `${base}${base.includes('?') ? '&' : '?'}category=${encodeURIComponent(categoria)}`
       : base
     fetch(url, { headers: getAuthHeaders() })
       .then((r) => {
@@ -124,6 +134,38 @@ function Notificaciones({
 
   const groupedList = useMemo(() => groupByDate(list), [list])
 
+  const handleBorrar = (n) => {
+    if (!n.id || actioningId !== null) return
+    setActioningId(n.id)
+    fetch(`${API_URL}/api/notifications/${n.id}/delete`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    })
+      .then((r) => {
+        if (!r.ok) return r.json().then((d) => { throw new Error(d.detail || 'Error al borrar') })
+        return r.json()
+      })
+      .then(() => refetch())
+      .catch((err) => setError(err.message))
+      .finally(() => setActioningId(null))
+  }
+
+  const handleRestaurar = (n) => {
+    if (!n.id || actioningId !== null) return
+    setActioningId(n.id)
+    fetch(`${API_URL}/api/notifications/${n.id}/restore`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    })
+      .then((r) => {
+        if (!r.ok) return r.json().then((d) => { throw new Error(d.detail || 'Error al restaurar') })
+        return r.json()
+      })
+      .then(() => refetch())
+      .catch((err) => setError(err.message))
+      .finally(() => setActioningId(null))
+  }
+
   const handleVer = (n) => {
     let ref
     try {
@@ -133,10 +175,14 @@ function Notificaciones({
     }
     const type = (n.type || '').toLowerCase()
 
-    if (type === 'rma' && ref.rma_number) {
+    if (type === 'rma' && ref.serial) {
+      setSerialDestacado?.(ref.serial)
+      setVista?.(VISTAS.PRODUCTOS_RMA)
+    } else if (type === 'rma' && ref.rma_number) {
       setRmaDestacado?.(ref.rma_number)
       setVista?.(VISTAS.RMA)
-    } else if (type === 'rma_especial' && ref.rma_number) {
+    } else if (type === 'rma_especial' && (ref.id != null || ref.rma_number)) {
+      if (ref.id != null) setRmaEspecialDestacadoId?.(ref.id)
       setVista?.(VISTAS.RMA_ESPECIALES)
     } else if (type === 'producto_rma' && ref.serial) {
       setSerialDestacado?.(ref.serial)
@@ -189,10 +235,19 @@ function Notificaciones({
         >
           Enviados
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={bandeja === BANDEJA_BORRADOS}
+          className={`notificaciones-tab ${bandeja === BANDEJA_BORRADOS ? 'active' : ''}`}
+          onClick={() => setBandeja(BANDEJA_BORRADOS)}
+        >
+          Borrados
+        </button>
       </div>
 
       <div className="notificaciones-categorias" role="tablist" aria-label="Filtro por categoría">
-        {NOTIFICATION_CATEGORY_VALUES.map((cat) => (
+        {bandeja === BANDEJA_BORRADOS ? null : NOTIFICATION_CATEGORY_VALUES.map((cat) => (
           <button
             key={cat || 'sin-filtro'}
             type="button"
@@ -209,14 +264,18 @@ function Notificaciones({
       <p className="notificaciones-desc">
         {bandeja === BANDEJA_RECIBIDOS
           ? `Recibidos${categoria ? ` · Filtro: ${NOTIFICATION_CATEGORIES[categoria]}` : ''}. Pulsa «Ver» para ir al apartado correspondiente.`
-          : `Enviados${categoria ? ` · Filtro: ${NOTIFICATION_CATEGORIES[categoria]}` : ''}.`}
+          : bandeja === BANDEJA_BORRADOS
+            ? 'Mensajes que has borrado desde Enviados. No se eliminan de la base de datos; puedes restaurarlos.'
+            : `Enviados${categoria ? ` · Filtro: ${NOTIFICATION_CATEGORIES[categoria]}` : ''}. Solo tú puedes borrarlos; pasarán a la bandeja Borrados.`}
       </p>
 
       {list.length === 0 ? (
         <p className="notificaciones-empty">
           {bandeja === BANDEJA_RECIBIDOS
             ? (categoria ? `No tienes mensajes recibidos en ${NOTIFICATION_CATEGORIES[categoria]}.` : 'No tienes mensajes recibidos.')
-            : (categoria ? `No has enviado ningún mensaje en ${NOTIFICATION_CATEGORIES[categoria]}.` : 'No has enviado ningún mensaje.')}
+            : bandeja === BANDEJA_BORRADOS
+              ? 'No tienes mensajes en la bandeja de borrados.'
+              : (categoria ? `No has enviado ningún mensaje en ${NOTIFICATION_CATEGORIES[categoria]}.` : 'No has enviado ningún mensaje.')}
         </p>
       ) : (
         <ul className="notificaciones-list">
@@ -251,13 +310,37 @@ function Notificaciones({
                   {n.message && (
                     <p className="notificaciones-item-message">{n.message}</p>
                   )}
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm notificaciones-btn-ver"
-                    onClick={() => handleVer(n)}
-                  >
-                    Ver
-                  </button>
+                  <div className="notificaciones-item-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm notificaciones-btn-ver"
+                      onClick={() => handleVer(n)}
+                    >
+                      Ver
+                    </button>
+                    {bandeja === BANDEJA_ENVIADOS && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleBorrar(n)}
+                        disabled={actioningId === n.id}
+                        title="Mover a Borrados (solo tú puedes borrarlo)"
+                      >
+                        {actioningId === n.id ? '…' : 'Borrar'}
+                      </button>
+                    )}
+                    {bandeja === BANDEJA_BORRADOS && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleRestaurar(n)}
+                        disabled={actioningId === n.id}
+                        title="Volver a Enviados"
+                      >
+                        {actioningId === n.id ? '…' : 'Restaurar'}
+                      </button>
+                    )}
+                  </div>
                 </li>
               ))}
             </React.Fragment>

@@ -77,10 +77,14 @@ from database import (
     get_notifications_for_user,
     get_notifications_sent_by_user,
     count_unread_notifications,
+    set_en_revision_at,
+    get_rma_items_en_revision,
     save_push_subscription,
     get_push_subscriptions_for_user,
     create_notification,
     mark_notification_read,
+    soft_delete_notification_by_sender,
+    restore_notification_by_sender,
     get_all_rma_especiales,
     get_rma_especial_by_id,
     get_rma_especial_by_rma_number,
@@ -528,12 +532,30 @@ def actualizar_estado_item(
     body: EstadoBody,
     username: str = Depends(get_current_username),
 ):
-    """Actualiza el estado de un único ítem RMA (por id). Permite estado distinto por número de serie."""
+    """Actualiza el estado de un único ítem RMA (por id). Permite estado distinto por número de serie. El estado manual prevalece sobre asignación automática."""
     with get_connection() as conn:
         ok = update_estado_by_item_id(conn, item_id, (body.estado or "").strip())
     if not ok:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
     return {"ok": True}
+
+
+@app.patch("/api/rmas/items/{item_id:int}/en-revision")
+def marcar_item_en_revision(item_id: int, username: str = Depends(get_current_username)):
+    """Marca un ítem RMA como 'en revisión' (empezando a revisarlo). Aparecerá en la lista En revisión hasta que tenga estado."""
+    with get_connection() as conn:
+        ok = set_en_revision_at(conn, item_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Ítem no encontrado o ya estaba en revisión")
+    return {"ok": True}
+
+
+@app.get("/api/rmas/en-revision")
+def listar_items_en_revision(username: str = Depends(get_current_username)):
+    """Lista ítems RMA que están en revisión y aún no tienen estado (resolución). Para acceso rápido cuando no llega resolución el mismo día."""
+    with get_connection() as conn:
+        items = get_rma_items_en_revision(conn)
+    return items
 
 
 class FechaRecogidaBody(BaseModel):
@@ -2110,14 +2132,19 @@ def listar_notificaciones(
 @app.get("/api/notifications/sent")
 def listar_notificaciones_enviadas(
     category: str | None = None,
+    deleted: bool = False,
     username: str = Depends(get_current_username),
 ):
-    """Lista notificaciones enviadas por el usuario actual. category opcional: abono, envio, sin_categoria."""
+    """Lista notificaciones enviadas por el usuario actual. category opcional. deleted=true: solo las borradas por el remitente (bandeja de borrados)."""
     with get_connection() as conn:
         user = get_user_by_username(conn, username)
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-        items = get_notifications_sent_by_user(conn, user["id"], category=category if category else None)
+        items = get_notifications_sent_by_user(
+            conn, user["id"],
+            category=category if category else None,
+            deleted_only=deleted,
+        )
     return items
 
 
@@ -2233,7 +2260,7 @@ def crear_notificacion(body: NotificationBody, username: str = Depends(get_curre
             raise HTTPException(status_code=400, detail="No puedes notificarte a ti mismo")
         ref_json = json.dumps(body.reference_data, ensure_ascii=False)
         cat = (body.category or "sin_categoria").strip() or "sin_categoria"
-        if cat not in ("abono", "envio", "sin_categoria"):
+        if cat not in ("abono", "envio", "sin_categoria", "fuera_garantia"):
             cat = "sin_categoria"
         nid = create_notification(
             conn,
@@ -2268,6 +2295,32 @@ def marcar_notificacion_leida(notification_id: int, username: str = Depends(get_
     if not ok:
         raise HTTPException(status_code=404, detail="Notificación no encontrada o ya leída")
     return {"mensaje": "Marcada como leída"}
+
+
+@app.patch("/api/notifications/{notification_id:int}/delete")
+def borrar_notificacion_remitente(notification_id: int, username: str = Depends(get_current_username)):
+    """Borra (mueve a bandeja de borrados) una notificación. Solo puede hacerlo quien la envió. No se elimina de la BD."""
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        ok = soft_delete_notification_by_sender(conn, notification_id, user["id"])
+    if not ok:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada o no puedes borrarla (solo el remitente)")
+    return {"mensaje": "Mensaje movido a borrados"}
+
+
+@app.patch("/api/notifications/{notification_id:int}/restore")
+def restaurar_notificacion_remitente(notification_id: int, username: str = Depends(get_current_username)):
+    """Restaura una notificación desde la bandeja de borrados. Solo el remitente puede restaurar."""
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        ok = restore_notification_by_sender(conn, notification_id, user["id"])
+    if not ok:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada o no está en borrados")
+    return {"mensaje": "Mensaje restaurado a Enviados"}
 
 
 # Servir frontend compilado (para despliegue en un solo servidor)

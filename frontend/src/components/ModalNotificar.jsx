@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { API_URL, AUTH_STORAGE_KEY, NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_SIN_FILTRO, LAST_NOTIFICATION_TO_USER_KEY, NOTIFICATIONS_CATEGORY_KEY } from '../constants'
 
-const CATEGORIAS_ENVIO = ['abono', 'envio', 'sin_categoria']
+const CATEGORIAS_ENVIO = ['abono', 'envio', 'sin_categoria', 'fuera_garantia']
 
 function getAuthHeaders() {
   try {

@@ -1080,7 +1080,8 @@
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border-light);
   box-shadow: var(--shadow-md);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   width: 100%;
 }
 
@@ -1108,8 +1109,15 @@
 .table-wrapper.tabla-rma thead th:nth-child(9) { width: 11%; } /* Avería */
 .table-wrapper.tabla-rma thead th:nth-child(10) { width: 11%; } /* Observaciones */
 .table-wrapper.tabla-rma thead th:nth-child(11) { width: 10%; min-width: 9rem; } /* Estado */
-.table-wrapper.tabla-rma thead th:nth-child(12) { width: 9%; min-width: 8rem; } /* Acciones */
+.table-wrapper.tabla-rma thead th:nth-child(12) { width: 11%; min-width: 11rem; } /* Acciones */
 .table-wrapper.tabla-rma tr.row-selected { background: var(--color-bg-subtle); }
+/* RMA con estado asignado (resuelto): color de fondo para identificar visualmente */
+.table-wrapper.tabla-rma tr.rma-row-resuelto {
+  background: color-mix(in srgb, var(--color-primary, #0ea5e9) 8%, var(--color-card-bg, #fff));
+}
+.table-wrapper.tabla-rma tr.rma-row-resuelto.row-selected {
+  background: color-mix(in srgb, var(--color-primary, #0ea5e9) 12%, var(--color-bg-subtle, #f5f5f5));
+}
 /* Celda Estado: select visible sin solapar botones */
 .table-wrapper.tabla-rma td:nth-child(11) {
   position: relative;
@@ -1120,7 +1128,17 @@
 .table-wrapper.tabla-rma td:nth-child(12) {
   position: relative;
   z-index: 1;
-  white-space: nowrap;
+  overflow: visible;
+  vertical-align: middle;
+}
+.table-wrapper.tabla-rma td:nth-child(12) .celda-acciones-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.table-wrapper.tabla-rma .celda-acciones .btn {
+  flex-shrink: 0;
 }
 .rma-estado-inline-select {
   width: 100%;
@@ -1324,6 +1342,18 @@
 }
 
 .table-wrapper-productos-rma { margin-bottom: 1rem; }
+/* Celdas de acciones: flex wrap para que todos los botones se vean sin solaparse */
+.celda-acciones-wrap,
+.productos-rma-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.celda-acciones-wrap .btn,
+.productos-rma-acciones .btn {
+  flex-shrink: 0;
+}
 .productos-rma-garantia-label {
   display: inline-flex;
   align-items: center;
@@ -2835,8 +2865,16 @@
   white-space: pre-wrap;
 }
 
+.notificaciones-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
 .notificaciones-btn-ver {
-  margin-top: 0.25rem;
+  margin-top: 0;
 }
 
 .btn-secondary {

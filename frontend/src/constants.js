@@ -12,19 +12,20 @@ export const API_URL = typeof import.meta.env?.VITE_API_URL === 'string' && impo
 
 export const AUTH_STORAGE_KEY = 'garantia-sat-token'
 export const AUTH_USER_KEY = 'garantia-sat-user'
-export const NOTIFICATIONS_TAB_KEY = 'garantia-notifications-tab' // 'recibidos' | 'enviados'
+export const NOTIFICATIONS_TAB_KEY = 'garantia-notifications-tab' // 'recibidos' | 'enviados' | 'borrados'
 export const NOTIFICATIONS_CATEGORY_KEY = 'garantia-notifications-category' // 'abono' | 'envio' | 'sin_categoria'
 export const LAST_NOTIFICATION_TO_USER_KEY = 'garantia-last-notification-to-user-id'
 
-/** Filtros de notificaciones: Sin filtro (todas) + Abono, Envío, Sin categoría */
+/** Filtros de notificaciones: Sin filtro (todas) + Abono, Envío, Sin categoría, Fuera de garantía */
 export const NOTIFICATION_CATEGORY_SIN_FILTRO = ''
 export const NOTIFICATION_CATEGORIES = {
   [NOTIFICATION_CATEGORY_SIN_FILTRO]: 'Sin filtro',
   abono: 'Abono',
   envio: 'Envío',
   sin_categoria: 'Sin categoría',
+  fuera_garantia: 'Fuera de garantía',
 }
-export const NOTIFICATION_CATEGORY_VALUES = [NOTIFICATION_CATEGORY_SIN_FILTRO, 'abono', 'envio', 'sin_categoria']
+export const NOTIFICATION_CATEGORY_VALUES = [NOTIFICATION_CATEGORY_SIN_FILTRO, 'abono', 'envio', 'sin_categoria', 'fuera_garantia']
 
 export const OPCIONES_ESTADO = [
   { value: '', label: '—' },
@@ -58,6 +59,7 @@ export const VISTAS = {
   INICIO: 'inicio',
   RMA: 'rma',
   RMA_ESPECIALES: 'rma-especiales',
+  EN_REVISION: 'en-revision',
   CLIENTES: 'clientes',
   PRODUCTOS: 'productos',
   PRODUCTOS_RMA: 'productos-rma',
@@ -74,6 +76,7 @@ export const VISTAS_LABELS = {
   [VISTAS.INICIO]: 'Inicio',
   [VISTAS.RMA]: 'Listado de reparaciones',
   [VISTAS.RMA_ESPECIALES]: 'RMA especiales',
+  [VISTAS.EN_REVISION]: 'En revisión',
   [VISTAS.CLIENTES]: 'Clientes',
   [VISTAS.PRODUCTOS]: 'Catálogo de productos',
   [VISTAS.PRODUCTOS_RMA]: 'Productos en reparación',
