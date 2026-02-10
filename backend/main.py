@@ -1893,6 +1893,98 @@ def asignar_tipo_catalogo(body: CatalogoAsignarTipoBody, username: str = Depends
     return {"ok": True, "actualizados": changed}
 
 
+class CatalogoBorrarTiposBody(BaseModel):
+    tipos: list[str]
+
+
+@app.post("/api/productos-catalogo/tipos/borrar")
+def borrar_tipos_catalogo(body: CatalogoBorrarTiposBody, username: str = Depends(get_current_username)):
+    """
+    Elimina uno o varios tipos de producto:
+    - Los quita de la lista editable (PRODUCT_TYPES_EXTRA).
+    - Deja sin tipo (product_type = NULL) todos los productos que lo tenían.
+    """
+    tipos_norm = {(t or "").strip() for t in (body.tipos or []) if (t or "").strip()}
+    if not tipos_norm:
+        raise HTTPException(status_code=400, detail="Indica al menos un tipo a borrar.")
+    with get_connection() as conn:
+        scanned_at, productos = get_catalog_cache(conn)
+        changed = 0
+        if scanned_at is not None and productos:
+            for p in productos:
+                pt = (p.get("product_type") or "").strip()
+                if pt in tipos_norm:
+                    p["product_type"] = None
+                    changed += 1
+            set_catalog_cache(conn, productos)
+
+        extras_raw = get_setting(conn, "PRODUCT_TYPES_EXTRA") or "[]"
+        try:
+            extras = json.loads(extras_raw)
+            if not isinstance(extras, list):
+                extras = []
+        except Exception:
+            extras = []
+        extras_norm = [(e or "").strip() for e in extras]
+        extras_filtrados = [e for e in extras if (e or "").strip() not in tipos_norm]
+        # Solo guardamos si hay cambios
+        if extras_filtrados != extras:
+            set_setting(conn, "PRODUCT_TYPES_EXTRA", json.dumps(extras_filtrados, ensure_ascii=False))
+    return {"ok": True, "afectados": changed}
+
+
+class CatalogoRenombrarTipoBody(BaseModel):
+    antiguo: str
+    nuevo: str
+
+
+@app.post("/api/productos-catalogo/tipos/renombrar")
+def renombrar_tipo_catalogo(body: CatalogoRenombrarTipoBody, username: str = Depends(get_current_username)):
+    """
+    Renombra un tipo de producto:
+    - Actualiza product_type en todos los productos que lo tengan.
+    - Actualiza la lista editable (PRODUCT_TYPES_EXTRA).
+    """
+    antiguo = (body.antiguo or "").strip()
+    nuevo = (body.nuevo or "").strip()
+    if not antiguo or not nuevo:
+        raise HTTPException(status_code=400, detail="Indica tipo antiguo y nuevo.")
+    if antiguo == nuevo:
+        return {"ok": True, "renombrados": 0}
+
+    with get_connection() as conn:
+        scanned_at, productos = get_catalog_cache(conn)
+        changed = 0
+        if scanned_at is not None and productos:
+            for p in productos:
+                pt = (p.get("product_type") or "").strip()
+                if pt == antiguo:
+                    p["product_type"] = nuevo
+                    changed += 1
+            set_catalog_cache(conn, productos)
+
+        extras_raw = get_setting(conn, "PRODUCT_TYPES_EXTRA") or "[]"
+        try:
+            extras = json.loads(extras_raw)
+            if not isinstance(extras, list):
+                extras = []
+        except Exception:
+            extras = []
+        extras_norm = [(e or "").strip() for e in extras]
+        if antiguo in extras_norm and nuevo not in extras_norm:
+            # Sustituir antiguo por nuevo
+            nuevas = []
+            for e in extras:
+                if (e or "").strip() == antiguo:
+                    nuevas.append(nuevo)
+                else:
+                    nuevas.append(e)
+            extras = nuevas
+        set_setting(conn, "PRODUCT_TYPES_EXTRA", json.dumps(extras, ensure_ascii=False))
+
+    return {"ok": True, "renombrados": changed}
+
+
 def _run_catalog_refresh_task(task_id: str, catalog_path: str) -> None:
     """Escanea QNAP, guarda en caché y actualiza progreso (directorio + % en tiempo real)."""
     try:

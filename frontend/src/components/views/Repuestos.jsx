@@ -46,18 +46,18 @@ function Repuestos() {
   }, [refetch])
 
   const opcionesProductos = catalogo.map((p) => {
+    const brand = (p.brand || '').replace(/^PRODUCTOS\\s+/i, '').trim()
     const ref = [p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || '-'
-    const label = [p.brand, p.base_serial].filter(Boolean).join(' — ') || ref
-    return { value: ref, label }
+    const label = [brand, p.base_serial].filter(Boolean).join(' — ') || ref
+    return { value: ref, label, base_serial: p.base_serial || '' }
   })
 
   const opcionesProductosFiltradas = React.useMemo(() => {
     const q = (filtroProductoRef || '').trim().toLowerCase()
     if (!q) return opcionesProductos
     return opcionesProductos.filter((opt) => {
-      const v = (opt.value || '').toLowerCase()
-      const lbl = (opt.label || '').toLowerCase()
-      return v.includes(q) || lbl.includes(q)
+      const serie = (opt.base_serial || '').toLowerCase()
+      return serie.includes(q)
     })
   }, [opcionesProductos, filtroProductoRef])
 

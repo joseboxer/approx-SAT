@@ -46,6 +46,9 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   const [nuevoTipo, setNuevoTipo] = useState('')
   const [tipoBulk, setTipoBulk] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [tiposSeleccionados, setTiposSeleccionados] = useState(() => new Set())
+  const [tipoEnEdicion, setTipoEnEdicion] = useState(null)
+  const [nombreTipoEdit, setNombreTipoEdit] = useState('')
   const [selectedRefs, setSelectedRefs] = useState(() => new Set())
   const tablaRef = useRef(null)
   const [dragging, setDragging] = useState(false)
@@ -244,11 +247,103 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       .finally(() => setBulkLoading(false))
   }
 
+  const handleToggleTipoSeleccion = (tipo) => {
+    const t = (tipo || '').trim()
+    if (!t) return
+    setTiposSeleccionados((prev) => {
+      const next = new Set(prev)
+      if (next.has(t)) next.delete(t)
+      else next.add(t)
+      return next
+    })
+  }
+
+  const handleBorrarTipos = () => {
+    if (!tiposSeleccionados.size) return
+    const lista = Array.from(tiposSeleccionados)
+    // Aviso importante al usuario
+    // eslint-disable-next-line no-alert
+    const ok = window.confirm(
+      `Vas a borrar estos tipos:\n\n${lista.join(
+        ', '
+      )}\n\nTodos los productos que tengan alguno de esos tipos se quedarán sin tipo.\n\n¿Quieres continuar?`
+    )
+    if (!ok) return
+    setBulkLoading(true)
+    fetch(`${API_URL}/api/productos-catalogo/tipos/borrar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ tipos: lista }),
+    })
+      .then((r) => (r.ok ? r.json() : r.json().then((d) => { throw new Error(d.detail || 'Error al borrar tipos') })))
+      .then(() => {
+        setTiposProducto((prev) => prev.filter((t) => !lista.includes(t)))
+        setTiposSeleccionados(new Set())
+        setTipoEnEdicion(null)
+        setNombreTipoEdit('')
+        refetch()
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setBulkLoading(false))
+  }
+
+  const empezarEditarTipo = (tipo) => {
+    const t = (tipo || '').trim()
+    if (!t) return
+    setTipoEnEdicion(t)
+    setNombreTipoEdit(t)
+  }
+
+  const cancelarEditarTipo = () => {
+    setTipoEnEdicion(null)
+    setNombreTipoEdit('')
+  }
+
+  const guardarEditarTipo = () => {
+    const antiguo = (tipoEnEdicion || '').trim()
+    const nuevo = (nombreTipoEdit || '').trim()
+    if (!antiguo || !nuevo || antiguo === nuevo) {
+      cancelarEditarTipo()
+      return
+    }
+    setBulkLoading(true)
+    fetch(`${API_URL}/api/productos-catalogo/tipos/renombrar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ antiguo, nuevo }),
+    })
+      .then((r) => (r.ok ? r.json() : r.json().then((d) => { throw new Error(d.detail || 'Error al renombrar tipo') })))
+      .then(() => {
+        setTiposProducto((prev) =>
+          prev.map((t) => (t === antiguo ? nuevo : t))
+        )
+        // Actualizar selección de tipos
+        setTiposSeleccionados((prev) => {
+          const next = new Set()
+          prev.forEach((t) => {
+            if (t === antiguo) next.add(nuevo)
+            else next.add(t)
+          })
+          return next
+        })
+        setTipoEnEdicion(null)
+        setNombreTipoEdit('')
+        refetch()
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setBulkLoading(false))
+  }
+
   const onMouseDownTabla = (e) => {
-    if (e.button !== 0) return
+    // Solo activar selección por arrastre con Shift+Control
+    if (e.button !== 0 || !e.shiftKey || !e.ctrlKey) return
     if (!tablaRef.current) return
+    // Evitar selección de texto nativa
+    e.preventDefault()
+    const sel = window.getSelection && window.getSelection()
+    if (sel && sel.removeAllRanges) sel.removeAllRanges()
+
     const container = tablaRef.current
-    const containerRect = container.getBoundingClientRect()
     const start = { x: e.clientX, y: e.clientY }
     setDragging(true)
     setDragStart(start)
@@ -265,8 +360,10 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     setDragMode(mode)
 
     const onMove = (ev) => {
-      if (!dragging) return
       ev.preventDefault()
+      const selMove = window.getSelection && window.getSelection()
+      if (selMove && selMove.removeAllRanges) selMove.removeAllRanges()
+
       const current = { x: ev.clientX, y: ev.clientY }
       const x1 = Math.min(start.x, current.x)
       const y1 = Math.min(start.y, current.y)
@@ -319,7 +416,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   if (error) return <div className="error-msg">Error: {error}</div>
 
   return (
-    <div data-tour="productos">
+    <div data-tour="productos" className={dragging ? 'productos-catalogo-dragging' : ''}>
       <h1 className="page-title">Productos (catálogo)</h1>
       {productoNoEncontrado && (
         <div className="rma-no-encontrado productos-catalogo-no-encontrado" role="alert">
@@ -374,7 +471,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       {vistaCatalogo !== '' && (
         <section className="productos-catalogo-bulk" aria-label="Edición masiva de tipo de producto">
           <div className="productos-catalogo-bulk-grid">
-            <div>
+            <div className="productos-catalogo-bulk-acciones">
               <label>
                 Tipo a asignar
                 <select
@@ -424,25 +521,97 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                 Seleccionar todo el filtrado
               </button>
             </div>
-            <div>
-              <label>
-                Añadir nuevo tipo
-                <input
-                  type="text"
-                  value={nuevoTipo}
-                  onChange={(e) => setNuevoTipo(e.target.value)}
-                  placeholder="Nuevo tipo de producto"
-                  className="productos-catalogo-filtro-input"
-                />
-              </label>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={handleCrearTipo}
-                disabled={!nuevoTipo.trim()}
-              >
-                Guardar tipo
-              </button>
+            <div className="productos-catalogo-bulk-tipos">
+              <div className="productos-catalogo-bulk-tipos-header">
+                <label>
+                  Añadir nuevo tipo
+                  <input
+                    type="text"
+                    value={nuevoTipo}
+                    onChange={(e) => setNuevoTipo(e.target.value)}
+                    placeholder="Nuevo tipo de producto"
+                    className="productos-catalogo-filtro-input"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleCrearTipo}
+                  disabled={!nuevoTipo.trim()}
+                >
+                  Guardar tipo
+                </button>
+              </div>
+              <div className="productos-catalogo-tipos-gestion">
+                <p className="productos-catalogo-tipos-gestion-title">
+                  Tipos disponibles
+                  <span className="productos-catalogo-tipos-gestion-hint">
+                    (marca para borrar varios; pulsa editar para renombrar)
+                  </span>
+                </p>
+                <div className="productos-catalogo-tipos-list">
+                  {tiposProducto.map((t) => {
+                    const checked = tiposSeleccionados.has(t)
+                    const enEdicion = tipoEnEdicion === t
+                    return (
+                      <div key={t} className={`productos-catalogo-tipo-item ${checked ? 'tipo-seleccionado' : ''}`}>
+                        <label className="productos-catalogo-tipo-check">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => handleToggleTipoSeleccion(t)}
+                          />
+                          <span>{t}</span>
+                        </label>
+                        {!enEdicion && (
+                          <button
+                            type="button"
+                            className="btn btn-link btn-xs"
+                            onClick={() => empezarEditarTipo(t)}
+                          >
+                            Editar
+                          </button>
+                        )}
+                        {enEdicion && (
+                          <div className="productos-catalogo-tipo-edit">
+                            <input
+                              type="text"
+                              value={nombreTipoEdit}
+                              onChange={(e) => setNombreTipoEdit(e.target.value)}
+                              className="productos-catalogo-filtro-input"
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-xs"
+                              onClick={guardarEditarTipo}
+                              disabled={!nombreTipoEdit.trim()}
+                            >
+                              Guardar
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-xs"
+                              onClick={cancelarEditarTipo}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="productos-catalogo-tipos-gestion-acciones">
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    onClick={handleBorrarTipos}
+                    disabled={bulkLoading || !tiposSeleccionados.size}
+                  >
+                    Borrar tipos seleccionados
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -606,11 +775,14 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                       <tbody>
                         {productosMarca.map((p, i) => {
                           const ref = [p.brand || marcaExpandida, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''
-                          const checked =
-                            !!ref && selectedRefs.has(ref)
+                          const checked = !!ref && selectedRefs.has(ref)
                           return (
-                          <tr key={`${p.base_serial}-${p.folder_rel}-${i}`} data-product-ref={ref}>
-                            <td>
+                          <tr
+                            key={`${p.base_serial}-${p.folder_rel}-${i}`}
+                            data-product-ref={ref}
+                            className={checked ? 'producto-row-seleccionado' : ''}
+                          >
+                            <td className="productos-catalogo-col-select">
                               <input
                                 type="checkbox"
                                 checked={checked}
@@ -667,7 +839,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
             <table>
               <thead>
                 <tr>
-                  <th>
+                  <th className="productos-catalogo-col-select">
                     <input
                       type="checkbox"
                       checked={allPageSelected}
@@ -688,8 +860,12 @@ function Productos({ productoDestacado, setProductoDestacado }) {
                   <tr
                     key={`${p.base_serial}-${p.folder_rel}-${i}`}
                     data-product-ref={[p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''}
+                    className={(() => {
+                      const ref = [p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || ''
+                      return ref && selectedRefs.has(ref) ? 'producto-row-seleccionado' : ''
+                    })()}
                   >
-                    <td>
+                    <td className="productos-catalogo-col-select">
                       <input
                         type="checkbox"
                         checked={(() => {
@@ -758,6 +934,31 @@ function Productos({ productoDestacado, setProductoDestacado }) {
           />
         </>
       )}
+
+      {dragRect && (
+        <div
+          className="productos-catalogo-drag-rect"
+          style={{
+            left: dragRect.x,
+            top: dragRect.y,
+            width: dragRect.width,
+            height: dragRect.height,
+          }}
+        />
+      )}
+
+      {dragRect && dragging && (
+        <div
+          className="productos-catalogo-drag-rect"
+          style={{
+            left: `${dragRect.x}px`,
+            top: `${dragRect.y}px`,
+            width: `${dragRect.width}px`,
+            height: `${dragRect.height}px`,
+          }}
+        />
+      )}
+
       <ModalNotificar
         open={notificarOpen}
         onClose={() => { setNotificarOpen(false); setNotificarRef(null); }}

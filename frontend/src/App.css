@@ -1568,6 +1568,125 @@
   font-size: 0.85rem;
 }
 
+/* Selección de productos (catálogo) */
+.productos-catalogo-col-select {
+  width: 3rem;
+  text-align: center;
+}
+.tabla-productos-catalogo input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+.producto-row-seleccionado {
+  background: rgba(14, 165, 233, 0.06);
+}
+.productos-catalogo-bulk {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+}
+.productos-catalogo-bulk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 3fr);
+  gap: 0.75rem 1.25rem;
+  align-items: flex-start;
+}
+.productos-catalogo-bulk-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+}
+.productos-catalogo-bulk-info {
+  margin-left: 0.25rem;
+  color: var(--text-muted);
+}
+.productos-catalogo-bulk-tipos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.productos-catalogo-bulk-tipos-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+.productos-catalogo-tipos-gestion {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  background: #f8fafc;
+  border: 1px solid var(--color-border-light);
+  max-height: 220px;
+  overflow: auto;
+}
+.productos-catalogo-tipos-gestion-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 0.35rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+.productos-catalogo-tipos-gestion-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 0.5rem;
+}
+.productos-catalogo-tipos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.productos-catalogo-tipo-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+}
+.productos-catalogo-tipo-item.tipo-seleccionado {
+  background: rgba(14, 165, 233, 0.08);
+}
+.productos-catalogo-tipo-check {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+.productos-catalogo-tipo-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.productos-catalogo-tipos-gestion-acciones {
+  margin-top: 0.35rem;
+  display: flex;
+  justify-content: flex-end;
+}
+.productos-catalogo-tipos-gestion-acciones .btn {
+  font-size: 0.8rem;
+}
+.btn-xs {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.7rem;
+}
+
+/* Rectángulo de selección por arrastre */
+.productos-catalogo-drag-rect {
+  position: fixed;
+  border: 1px solid rgba(14, 165, 233, 0.7);
+  background: rgba(14, 165, 233, 0.08);
+  pointer-events: none;
+  z-index: 1000;
+}
+
 /* ========== Configuración (paths QNAP, Excel) ========== */
 .configuracion-desc {
   margin: 0 0 1.25rem 0;
