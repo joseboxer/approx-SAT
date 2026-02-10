@@ -58,7 +58,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   const [dragMode, setDragMode] = useState('add') // 'add' | 'remove'
   const [dragContext, setDragContext] = useState(null) // 'productos' | 'tipos'
   const dragBaseSelectionRef = useRef(new Set())
-  const dragLastPosRef = useRef(null)
+  const dragScrollDirRef = useRef(null) // 'up' | 'down' | null
 
   const {
     taskId: refreshTaskId,
@@ -350,9 +350,9 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     const start = { x: e.clientX, y: e.clientY }
     setDragging(true)
     setDragContext('productos')
+    dragScrollDirRef.current = null
     setDragStart(start)
     setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
-    dragLastPosRef.current = start
     dragBaseSelectionRef.current = new Set(selectedRefs)
 
     // Determinar modo (añadir o quitar) según si el elemento bajo el cursor está ya seleccionado
@@ -370,23 +370,20 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       if (selMove && selMove.removeAllRanges) selMove.removeAllRanges()
 
       const current = { x: ev.clientX, y: ev.clientY }
-      dragLastPosRef.current = current
       const x1 = Math.min(start.x, current.x)
       const y1 = Math.min(start.y, current.y)
       const x2 = Math.max(start.x, current.x)
       const y2 = Math.max(start.y, current.y)
       setDragRect({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 })
 
-      // Autoscroll vertical al acercarse a los bordes del contenedor
       const bounds = container.getBoundingClientRect()
       const edgeThreshold = 32
-      const maxStep = 20
       if (current.y > bounds.bottom - edgeThreshold) {
-        const factor = Math.min(1, (current.y - (bounds.bottom - edgeThreshold)) / edgeThreshold)
-        container.scrollTop += 4 + maxStep * factor
+        dragScrollDirRef.current = 'down'
       } else if (current.y < bounds.top + edgeThreshold) {
-        const factor = Math.min(1, ((bounds.top + edgeThreshold) - current.y) / edgeThreshold)
-        container.scrollTop -= 4 + maxStep * factor
+        dragScrollDirRef.current = 'up'
+      } else {
+        dragScrollDirRef.current = null
       }
 
       const rows = Array.from(container.querySelectorAll('tr[data-product-ref]'))
@@ -440,6 +437,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     const start = { x: e.clientX, y: e.clientY }
     setDragging(true)
     setDragContext('tipos')
+    dragScrollDirRef.current = null
     setDragStart(start)
     setDragRect({ x: start.x, y: start.y, width: 0, height: 0 })
     dragLastPosRef.current = start
@@ -465,16 +463,14 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       const y2 = Math.max(start.y, current.y)
       setDragRect({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 })
 
-      // Autoscroll cuando el ratón se acerca al borde inferior/superior
       const bounds = container.getBoundingClientRect()
       const edgeThreshold = 32
-      const maxStep = 18
       if (current.y > bounds.bottom - edgeThreshold) {
-        const factor = Math.min(1, (current.y - (bounds.bottom - edgeThreshold)) / edgeThreshold)
-        container.scrollTop += 4 + maxStep * factor
+        dragScrollDirRef.current = 'down'
       } else if (current.y < bounds.top + edgeThreshold) {
-        const factor = Math.min(1, ((bounds.top + edgeThreshold) - current.y) / edgeThreshold)
-        container.scrollTop -= 4 + maxStep * factor
+        dragScrollDirRef.current = 'up'
+      } else {
+        dragScrollDirRef.current = null
       }
 
       const items = Array.from(container.querySelectorAll('[data-tipo]'))
@@ -516,28 +512,37 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     window.addEventListener('mouseup', onUp)
   }
 
-  // Autoscroll continuo mientras se arrastra, aunque el ratón permanezca quieto
+  // Autoscroll continuo mientras se arrastra, aunque el ratón permanezca quieto:
+  // se basa solo en la última dirección detectada (arriba/abajo), no en que haya movimiento nuevo.
   useEffect(() => {
     if (!dragging || !dragContext) return
 
     const interval = window.setInterval(() => {
-      const pos = dragLastPosRef.current
-      if (!pos) return
-
       const container =
         dragContext === 'productos' ? tablaRef.current : dragContext === 'tipos' ? tiposListaRef.current : null
       if (!container) return
 
-      const bounds = container.getBoundingClientRect()
+      const dir = dragScrollDirRef.current
+      if (!dir) return
+
       const edgeThreshold = 32
       const maxStep = dragContext === 'productos' ? 20 : 18
+      const bounds = container.getBoundingClientRect()
 
-      if (pos.y > bounds.bottom - edgeThreshold) {
-        const factor = Math.min(1, (pos.y - (bounds.bottom - edgeThreshold)) / edgeThreshold)
-        container.scrollTop += 4 + maxStep * factor
-      } else if (pos.y < bounds.top + edgeThreshold) {
-        const factor = Math.min(1, ((bounds.top + edgeThreshold) - pos.y) / edgeThreshold)
-        container.scrollTop -= 4 + maxStep * factor
+      if (dir === 'down') {
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight) {
+          // Ya estamos al final, dejar de forzar scroll
+          dragScrollDirRef.current = null
+          return
+        }
+        // Intensidad fija hacia abajo mientras el cursor siga más allá del borde inferior lógico
+        container.scrollTop += 4 + maxStep
+      } else if (dir === 'up') {
+        if (container.scrollTop <= 0) {
+          dragScrollDirRef.current = null
+          return
+        }
+        container.scrollTop -= 4 + maxStep
       }
     }, 40)
 
