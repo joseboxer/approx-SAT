@@ -537,24 +537,26 @@ function ListadoRMA({
                           {p.OBSERVACIONES?.length > 40 ? '…' : ''}
                         </td>
                         <td>
-                          <select
-                            className="rma-estado-inline-select"
-                            value={p.estado ?? ''}
-                            onChange={(e) => p.id != null && guardarEstadoItem(p.id, e.target.value)}
-                            disabled={updatingEstadoItemId === p.id}
-                            aria-label="Estado de esta línea"
-                          >
-                            {OPCIONES_ESTADO.map((o) => (
-                              <option key={o.value === '' ? '__' : o.value} value={o.value}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </select>
-                          {p.en_revision_at ? (
-                            <span className="rma-revision-badge" title="Marcado para revisar">En revisión</span>
-                          ) : (p.estado ?? '').trim() !== '' ? (
-                            <span className="rma-revisado-badge" title="Con estado final asignado">Revisado</span>
-                          ) : null}
+                          <div className="rma-estado-cell">
+                            <select
+                              className="rma-estado-inline-select"
+                              value={p.estado ?? ''}
+                              onChange={(e) => p.id != null && guardarEstadoItem(p.id, e.target.value)}
+                              disabled={updatingEstadoItemId === p.id}
+                              aria-label="Estado de esta línea"
+                            >
+                              {OPCIONES_ESTADO.map((o) => (
+                                <option key={o.value === '' ? '__' : o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            {p.en_revision_at ? (
+                              <span className="rma-revision-badge" title="Marcado para revisar">En revisión</span>
+                            ) : (p.estado ?? '').trim() !== '' ? (
+                              <span className="rma-revisado-badge" title="Con estado final asignado">Revisado</span>
+                            ) : null}
+                          </div>
                         </td>
                       </>
                     ) : (
@@ -755,27 +757,29 @@ function ListadoRMA({
                                       : ''}
                                   </td>
                                   <td>
-                                    <select
-                                      className="rma-estado-inline-select"
-                                      value={item.estado ?? ''}
-                                      onChange={(e) =>
-                                        item.id != null &&
-                                        guardarEstadoItem(item.id, e.target.value)
-                                      }
-                                      disabled={updatingEstadoItemId === item.id}
-                                      aria-label="Estado de esta línea"
-                                    >
-                                      {OPCIONES_ESTADO.map((o) => (
-                                        <option key={o.value === '' ? '__' : o.value} value={o.value}>
-                                          {o.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    {item.en_revision_at ? (
-                                      <span className="rma-revision-badge" title="Marcado para revisar">En revisión</span>
-                                    ) : (item.estado ?? '').trim() !== '' ? (
-                                      <span className="rma-revisado-badge" title="Con estado final asignado">Revisado</span>
-                                    ) : null}
+                                    <div className="rma-estado-cell">
+                                      <select
+                                        className="rma-estado-inline-select"
+                                        value={item.estado ?? ''}
+                                        onChange={(e) =>
+                                          item.id != null &&
+                                          guardarEstadoItem(item.id, e.target.value)
+                                        }
+                                        disabled={updatingEstadoItemId === item.id}
+                                        aria-label="Estado de esta línea"
+                                      >
+                                        {OPCIONES_ESTADO.map((o) => (
+                                          <option key={o.value === '' ? '__' : o.value} value={o.value}>
+                                            {o.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      {item.en_revision_at ? (
+                                        <span className="rma-revision-badge" title="Marcado para revisar">En revisión</span>
+                                      ) : (item.estado ?? '').trim() !== '' ? (
+                                        <span className="rma-revisado-badge" title="Con estado final asignado">Revisado</span>
+                                      ) : null}
+                                    </div>
                                   </td>
                                   <td className="celda-acciones">
                                     <div className="celda-acciones-wrap">

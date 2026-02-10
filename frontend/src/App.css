@@ -1195,16 +1195,16 @@
   max-width: 0;
 }
 .tabla-desplegable td:nth-child(10) {
-  /* Estado: que el select y los badges se vean sin apelmazarse */
-  white-space: nowrap;
+  /* Estado: que el select y los badges se vean sin apelmazarse.
+     Dejamos que pueda haber salto de línea si hace falta. */
+  white-space: normal;
   vertical-align: middle;
 }
-.tabla-desplegable td:nth-child(10) .rma-estado-inline-select {
-  max-width: 8rem;
-}
-.tabla-desplegable td:nth-child(10) .rma-revision-badge,
-.tabla-desplegable td:nth-child(10) .rma-revisado-badge {
-  margin-left: 0.3rem;
+.tabla-desplegable td:nth-child(10) .rma-estado-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 /* ========== Repuestos ========== */
