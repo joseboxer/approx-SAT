@@ -2,10 +2,18 @@
 set -e
 
 # Arrancar Garantia SAT con HTTPS (para que las notificaciones funcionen en todos los equipos)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/backend"
+# Resolver ruta del script de forma robusta (Linux: readlink -f; symlinks y ejecución desde cualquier sitio)
+SOURCE="${BASH_SOURCE[0]}"
+if command -v readlink &>/dev/null && readlink -f "$SOURCE" &>/dev/null; then
+  SCRIPT_DIR="$(dirname "$(readlink -f "$SOURCE")")"
+else
+  SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+fi
+BACKEND_DIR="$SCRIPT_DIR/backend"
+cd "$BACKEND_DIR"
 
 if [[ ! -f key.pem || ! -f cert.pem ]]; then
+  echo "Buscando certificados en: $BACKEND_DIR"
   echo "No se encontraron key.pem y cert.pem en la carpeta backend."
   echo ""
   echo "Genera un certificado con SAN (necesario para que el navegador lo marque como seguro):"
