@@ -1,18 +1,16 @@
-#!/usr/bin/env bash
+#!/bin/sh
 set -e
 
 # Arrancar Garantia SAT con HTTPS (para que las notificaciones funcionen en todos los equipos)
-# Resolver ruta del script de forma robusta (Linux: readlink -f; symlinks y ejecución desde cualquier sitio)
-SOURCE="${BASH_SOURCE[0]}"
-if command -v readlink &>/dev/null && readlink -f "$SOURCE" &>/dev/null; then
-  SCRIPT_DIR="$(dirname "$(readlink -f "$SOURCE")")"
-else
-  SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+# Ruta del script: compatible con sh y bash (sh run-https.sh o ./run-https.sh)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if command -v readlink >/dev/null 2>&1 && readlink -f "$0" >/dev/null 2>&1; then
+  SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 fi
 BACKEND_DIR="$SCRIPT_DIR/backend"
 cd "$BACKEND_DIR"
 
-if [[ ! -f key.pem || ! -f cert.pem ]]; then
+if [ ! -f key.pem ] || [ ! -f cert.pem ]; then
   echo "Buscando certificados en: $BACKEND_DIR"
   echo "No se encontraron key.pem y cert.pem en la carpeta backend."
   echo ""
@@ -23,11 +21,11 @@ if [[ ! -f key.pem || ! -f cert.pem ]]; then
   exit 1
 fi
 
-if [[ ! -f venv/bin/activate ]]; then
+if [ ! -f venv/bin/activate ]; then
   echo "Crea primero el entorno virtual: python3 -m venv venv"
   exit 1
 fi
-source venv/bin/activate
+. venv/bin/activate
 
 echo "Iniciando servidor con HTTPS (puerto 443, por defecto)..."
 echo "  IMPORTANTE: Ejecuta este script con sudo para usar el puerto 443."
