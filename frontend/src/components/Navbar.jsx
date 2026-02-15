@@ -35,6 +35,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
   const productosMenuRef = useRef(null)
 
   const rmaVistas = [
+    { key: VISTAS.REPARACIONES_HUB, label: 'Ver todas las opciones', isHub: true },
     { key: VISTAS.RMA, label: 'Lista RMA' },
     { key: VISTAS.RMA_ESPECIALES, label: 'RMA especiales' },
     { key: VISTAS.EN_REVISION, label: 'En revisión' },
@@ -43,6 +44,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
   ]
 
   const productosVistas = [
+    { key: VISTAS.PRODUCTOS_HUB, label: 'Ver todas las opciones', isHub: true },
     { key: VISTAS.PRODUCTOS, label: 'Catálogo de productos', clearCliente: false },
     { key: VISTAS.REPUESTOS, label: 'Repuestos' },
   ]
@@ -107,6 +109,14 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
       </div>
 
       <div className="nav-links">
+        <button
+          type="button"
+          className={`nav-link ${vista === VISTAS.MENU ? 'active' : ''}`}
+          onClick={() => go(VISTAS.MENU)}
+          title="Ver menú general con todas las secciones"
+        >
+          Menú
+        </button>
         <button
           type="button"
           className={`nav-link ${vista === VISTAS.INICIO ? 'active' : ''}`}

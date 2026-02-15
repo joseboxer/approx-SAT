@@ -6,7 +6,10 @@ import { TourProvider } from './context/TourContext'
 import Layout from './components/Layout'
 import LoginRegister from './components/LoginRegister'
 import Inicio from './components/views/Inicio'
+import MenuGeneral from './components/views/MenuGeneral'
 import ListadoRMA from './components/views/ListadoRMA'
+import ReparacionesHub from './components/views/ReparacionesHub'
+import ProductosHub from './components/views/ProductosHub'
 import Clientes from './components/views/Clientes'
 import Productos from './components/views/Productos'
 import ProductosRMA from './components/views/ProductosRMA'
@@ -103,6 +106,12 @@ function AppContent() {
             setRmaDestacado={setRmaDestacado}
           />
         )
+      case VISTAS.MENU:
+        return <MenuGeneral setVista={setVista} />
+      case VISTAS.REPARACIONES_HUB:
+        return <ReparacionesHub setVista={setVista} />
+      case VISTAS.PRODUCTOS_HUB:
+        return <ProductosHub setVista={setVista} />
       case VISTAS.RMA:
         return (
           <ListadoRMA

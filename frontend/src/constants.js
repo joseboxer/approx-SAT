@@ -58,13 +58,16 @@ export const COLUMNAS_PRODUCTOS_RMA = [
 
 export const VISTAS = {
   INICIO: 'inicio',
+  MENU: 'menu',
   RMA: 'rma',
   RMA_ESPECIALES: 'rma-especiales',
   EN_REVISION: 'en-revision',
+  REPARACIONES_HUB: 'reparaciones-hub',
   CLIENTES: 'clientes',
   PRODUCTOS: 'productos',
   PRODUCTOS_RMA: 'productos-rma',
   REPUESTOS: 'repuestos',
+  PRODUCTOS_HUB: 'productos-hub',
   OCULTA: 'oculta',
   INFORMES: 'informes',
   CONFIGURACION: 'configuracion',
@@ -75,13 +78,16 @@ export const VISTAS = {
 /** Etiquetas para breadcrumbs y títulos. */
 export const VISTAS_LABELS = {
   [VISTAS.INICIO]: 'Inicio',
+  [VISTAS.MENU]: 'Menú',
   [VISTAS.RMA]: 'Lista RMA',
   [VISTAS.RMA_ESPECIALES]: 'RMA especiales',
   [VISTAS.EN_REVISION]: 'En revisión',
+  [VISTAS.REPARACIONES_HUB]: 'Reparaciones',
   [VISTAS.CLIENTES]: 'Clientes',
   [VISTAS.PRODUCTOS]: 'Catálogo de productos',
   [VISTAS.PRODUCTOS_RMA]: 'Productos con RMA',
   [VISTAS.REPUESTOS]: 'Repuestos',
+  [VISTAS.PRODUCTOS_HUB]: 'Productos',
   [VISTAS.OCULTA]: 'Reparaciones ocultas',
   [VISTAS.INFORMES]: 'Informes',
   [VISTAS.CONFIGURACION]: 'Ajustes',
