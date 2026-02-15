@@ -215,12 +215,36 @@
   border-color: rgba(255, 255, 255, 0.3);
 }
 
+@media (max-width: 1200px) {
+  .navbar {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-height: 56px;
+  }
+  .nav-links {
+    margin-left: 1rem;
+  }
+}
+
 @media (max-width: 1024px) {
   .nav-serial-search {
     margin-left: 0.5rem;
   }
   .nav-serial-input {
     width: 10rem;
+  }
+  .navbar {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  .nav-brand-subtitle {
+    font-size: 0.75rem;
+  }
+  .nav-link {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
   }
 }
 
@@ -238,6 +262,38 @@
   .nav-serial-input {
     width: 8rem;
   }
+  .navbar {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  .nav-brand-subtitle {
+    display: none;
+  }
+  .nav-links {
+    margin-left: 0.5rem;
+  }
+  .nav-link {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .nav-serial-search {
+    min-width: 0;
+    flex: 1;
+    max-width: 140px;
+  }
+  .nav-serial-input {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .nav-links .nav-link:not(.nav-link-notif) {
+    display: none;
+  }
 }
 
 .nav-logout {
@@ -249,12 +305,13 @@
   opacity: 1;
 }
 
-/* Desplegables horizontales en la barra (RMA, Productos) */
+/* Desplegables en la barra (RMA, Productos): panel vertical bajo el botón para no salirse en pantallas pequeñas */
 .nav-dropdown {
   position: relative;
 }
 
 .nav-dropdown-inline-wrap {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0;
@@ -272,16 +329,45 @@
   opacity: 0.9;
 }
 
+/* Panel desplegable: vertical bajo el botón, siempre dentro de pantalla */
 .nav-dropdown-inline {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.25rem;
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 2rem));
+  max-height: 70vh;
+  overflow-y: auto;
   display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-left: 0;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.35rem 0;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
 }
 
 .nav-dropdown-inline-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 1rem;
+  white-space: normal;
   flex-shrink: 0;
-  white-space: nowrap;
+  border-radius: 0;
+  margin: 0;
+}
+
+.nav-dropdown-inline-item:hover {
+  background: var(--color-bg-subtle);
+}
+
+.nav-dropdown-inline-item.active {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
 
 /* Nav derecha: menú hamburguesa */
