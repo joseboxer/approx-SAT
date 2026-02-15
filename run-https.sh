@@ -21,11 +21,18 @@ if [ ! -f key.pem ] || [ ! -f cert.pem ]; then
   exit 1
 fi
 
-if [ ! -f venv/bin/activate ]; then
-  echo "Crea primero el entorno virtual: python3 -m venv venv"
+VENV_ACTIVATE=""
+if [ -f venv/bin/activate ]; then
+  VENV_ACTIVATE="venv/bin/activate"
+elif [ -f "$SCRIPT_DIR/venv/bin/activate" ]; then
+  VENV_ACTIVATE="$SCRIPT_DIR/venv/bin/activate"
+fi
+if [ -z "$VENV_ACTIVATE" ]; then
+  echo "No se encontró el entorno virtual en backend/venv ni en la raíz del proyecto (venv)."
+  echo "Créalo en backend: cd backend && python3 -m venv venv"
   exit 1
 fi
-. venv/bin/activate
+. "$VENV_ACTIVATE"
 
 echo "Iniciando servidor con HTTPS (puerto 443, por defecto)..."
 echo "  IMPORTANTE: Ejecuta este script con sudo para usar el puerto 443."
