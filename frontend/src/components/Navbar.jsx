@@ -24,6 +24,9 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
   const serialInputRef = useRef(null)
   const rmaMenuRef = useRef(null)
   const hamburgerRef = useRef(null)
+  const lastRmaClickRef = useRef(0)
+  const lastProductosClickRef = useRef(0)
+  const DOBLE_CLIC_MS = 500
 
   const go = (v, clearCliente = true, clearProducto = true) => {
     setVista(v)
@@ -35,7 +38,6 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
   const productosMenuRef = useRef(null)
 
   const rmaVistas = [
-    { key: VISTAS.REPARACIONES_HUB, label: 'Ver todas las opciones', isHub: true },
     { key: VISTAS.RMA, label: 'Lista RMA' },
     { key: VISTAS.RMA_ESPECIALES, label: 'RMA especiales' },
     { key: VISTAS.EN_REVISION, label: 'En revisión' },
@@ -44,7 +46,6 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
   ]
 
   const productosVistas = [
-    { key: VISTAS.PRODUCTOS_HUB, label: 'Ver todas las opciones', isHub: true },
     { key: VISTAS.PRODUCTOS, label: 'Catálogo de productos', clearCliente: false },
     { key: VISTAS.REPUESTOS, label: 'Repuestos' },
   ]
@@ -111,14 +112,6 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
       <div className="nav-links">
         <button
           type="button"
-          className={`nav-link ${vista === VISTAS.MENU ? 'active' : ''}`}
-          onClick={() => go(VISTAS.MENU)}
-          title="Ver menú general con todas las secciones"
-        >
-          Menú
-        </button>
-        <button
-          type="button"
           className={`nav-link ${vista === VISTAS.INICIO ? 'active' : ''}`}
           onClick={() => go(VISTAS.INICIO)}
           title={ATAJO_POR_VISTA[VISTAS.INICIO] ? `Inicio (Atajo: ${ATAJO_POR_VISTA[VISTAS.INICIO]})` : 'Inicio'}
@@ -182,11 +175,21 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
           <button
             type="button"
             className={`nav-link nav-dropdown-trigger ${isRmaVista ? 'active' : ''}`}
-            onClick={() => setShowRmaMenu((s) => !s)}
+            onClick={() => {
+              const now = Date.now()
+              if (now - lastRmaClickRef.current < DOBLE_CLIC_MS) {
+                lastRmaClickRef.current = 0
+                go(VISTAS.REPARACIONES_HUB)
+                setShowRmaMenu(false)
+              } else {
+                lastRmaClickRef.current = now
+                setShowRmaMenu((s) => !s)
+              }
+            }}
             aria-expanded={showRmaMenu}
             aria-haspopup="true"
-            aria-label="Reparaciones (listado, productos, ocultas)"
-            title={ATAJO_POR_VISTA[VISTAS.RMA] ? `Reparaciones (Atajo: ${ATAJO_POR_VISTA[VISTAS.RMA]})` : 'Reparaciones'}
+            aria-label="Reparaciones (listado, productos, ocultas). Doble clic: ver todas las opciones."
+            title={ATAJO_POR_VISTA[VISTAS.RMA] ? `Reparaciones (Atajo: ${ATAJO_POR_VISTA[VISTAS.RMA]}). Doble clic: ver todas las opciones.` : 'Reparaciones. Doble clic: ver todas las opciones.'}
           >
             Reparaciones <span className="nav-dropdown-arrow" aria-hidden>{showRmaMenu ? '▲' : '▼'}</span>
           </button>
@@ -212,11 +215,21 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
           <button
             type="button"
             className={`nav-link nav-dropdown-trigger ${isProductosVista ? 'active' : ''}`}
-            onClick={() => setShowProductosMenu((s) => !s)}
+            onClick={() => {
+              const now = Date.now()
+              if (now - lastProductosClickRef.current < DOBLE_CLIC_MS) {
+                lastProductosClickRef.current = 0
+                go(VISTAS.PRODUCTOS_HUB)
+                setShowProductosMenu(false)
+              } else {
+                lastProductosClickRef.current = now
+                setShowProductosMenu((s) => !s)
+              }
+            }}
             aria-expanded={showProductosMenu}
             aria-haspopup="true"
-            aria-label="Productos (catálogo y repuestos)"
-            title={ATAJO_POR_VISTA[VISTAS.PRODUCTOS] || ATAJO_POR_VISTA[VISTAS.PRODUCTOS_RMA] ? `Productos (Atajo: ${ATAJO_POR_VISTA[VISTAS.PRODUCTOS] ?? ATAJO_POR_VISTA[VISTAS.PRODUCTOS_RMA]})` : 'Productos'}
+            aria-label="Productos (catálogo y repuestos). Doble clic: ver todas las opciones."
+            title={ATAJO_POR_VISTA[VISTAS.PRODUCTOS] || ATAJO_POR_VISTA[VISTAS.PRODUCTOS_RMA] ? `Productos (Atajo: ${ATAJO_POR_VISTA[VISTAS.PRODUCTOS] ?? ATAJO_POR_VISTA[VISTAS.PRODUCTOS_RMA]}). Doble clic: ver todas las opciones.` : 'Productos. Doble clic: ver todas las opciones.'}
           >
             Productos <span className="nav-dropdown-arrow" aria-hidden>{showProductosMenu ? '▲' : '▼'}</span>
           </button>

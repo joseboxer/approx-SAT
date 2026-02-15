@@ -1,6 +1,19 @@
 import React from 'react'
 import Navbar from './Navbar'
-import { VISTAS_LABELS } from '../constants'
+import { VISTAS, VISTAS_LABELS, VISTA_PARENT } from '../constants'
+
+function buildBreadcrumbChain(vista) {
+  const chain = []
+  let v = vista
+  while (v) {
+    chain.unshift({ vista: v, label: VISTAS_LABELS[v] ?? v })
+    v = VISTA_PARENT[v] ?? null
+  }
+  if (chain.length === 0 || chain[0].vista !== VISTAS.INICIO) {
+    chain.unshift({ vista: VISTAS.INICIO, label: 'Inicio' })
+  }
+  return chain
+}
 
 function Layout({
   vista,
@@ -14,7 +27,7 @@ function Layout({
   refreshNotifCount,
   children,
 }) {
-  const labelActual = VISTAS_LABELS[vista] ?? vista
+  const breadcrumbChain = buildBreadcrumbChain(vista)
 
   return (
     <div className="app">
@@ -28,13 +41,26 @@ function Layout({
         refreshNotifCount={refreshNotifCount}
       />
       <nav className="breadcrumbs" aria-label="Navegación">
-        <span className="breadcrumb-item breadcrumb-inicio">Inicio</span>
-        {vista !== 'inicio' && (
-          <>
-            <span className="breadcrumb-sep" aria-hidden>›</span>
-            <span className="breadcrumb-item breadcrumb-current">{labelActual}</span>
-          </>
-        )}
+        {breadcrumbChain.map(({ vista: v, label }, i) => {
+          const isLast = i === breadcrumbChain.length - 1
+          return (
+            <React.Fragment key={v}>
+              {i > 0 && <span className="breadcrumb-sep" aria-hidden>›</span>}
+              {isLast ? (
+                <span className="breadcrumb-item breadcrumb-current">{label}</span>
+              ) : (
+                <button
+                  type="button"
+                  className="breadcrumb-item breadcrumb-link"
+                  onClick={() => setVista(v)}
+                  title={`Ir a ${label}`}
+                >
+                  {label}
+                </button>
+              )}
+            </React.Fragment>
+          )
+        })}
       </nav>
       <main className="main app-view-transition">{children}</main>
     </div>

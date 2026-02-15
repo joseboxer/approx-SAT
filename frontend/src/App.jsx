@@ -5,7 +5,6 @@ import { CatalogRefreshProvider } from './context/CatalogRefreshContext'
 import { TourProvider } from './context/TourContext'
 import Layout from './components/Layout'
 import LoginRegister from './components/LoginRegister'
-import Inicio from './components/views/Inicio'
 import MenuGeneral from './components/views/MenuGeneral'
 import ListadoRMA from './components/views/ListadoRMA'
 import ReparacionesHub from './components/views/ReparacionesHub'
@@ -100,13 +99,6 @@ function AppContent() {
   const renderVista = () => {
     switch (vista) {
       case VISTAS.INICIO:
-        return (
-          <Inicio
-            setVista={setVista}
-            setRmaDestacado={setRmaDestacado}
-          />
-        )
-      case VISTAS.MENU:
         return <MenuGeneral setVista={setVista} />
       case VISTAS.REPARACIONES_HUB:
         return <ReparacionesHub setVista={setVista} />
@@ -182,7 +174,7 @@ function AppContent() {
           />
         )
       default:
-        return <Inicio setVista={setVista} setRmaDestacado={setRmaDestacado} />
+        return <MenuGeneral setVista={setVista} />
     }
   }
 

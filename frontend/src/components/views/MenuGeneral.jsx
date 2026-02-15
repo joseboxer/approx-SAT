@@ -2,7 +2,6 @@ import React from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { VISTAS } from '../../constants'
 
-const ICON_INICIO = '⌂'
 const ICON_CLIENTES = '👥'
 const ICON_MENSAJES = '✉'
 const ICON_REPARACIONES = '🔧'
@@ -12,7 +11,7 @@ const ICON_ADMIN = '🛡'
 const ICON_INFORMES = '📊'
 
 /**
- * Vista de menú general: acceso elegante a todas las secciones.
+ * Inicio: menú general unificado. Acceso a todas las secciones.
  * Reparaciones y Productos llevan a sus respectivos hubs.
  */
 function MenuGeneral({ setVista }) {
@@ -23,7 +22,6 @@ function MenuGeneral({ setVista }) {
   }
 
   const secciones = [
-    { key: VISTAS.INICIO, label: 'Inicio', desc: 'Panel principal y resumen', icon: ICON_INICIO },
     { key: VISTAS.CLIENTES, label: 'Clientes', desc: 'Listado y búsqueda de clientes', icon: ICON_CLIENTES },
     { key: VISTAS.NOTIFICACIONES, label: 'Mensajes y avisos', desc: 'Notificaciones y comunicaciones', icon: ICON_MENSAJES },
     { key: VISTAS.REPARACIONES_HUB, label: 'Reparaciones', desc: 'Lista RMA, especiales, en revisión…', icon: ICON_REPARACIONES },
@@ -36,7 +34,7 @@ function MenuGeneral({ setVista }) {
   return (
     <div className="menu-general">
       <header className="menu-general-header">
-        <h1 className="menu-general-title">Menú</h1>
+        <h1 className="menu-general-title">Inicio</h1>
         <p className="menu-general-lead">Elige una sección para continuar.</p>
       </header>
       <div className="menu-hub-grid">
