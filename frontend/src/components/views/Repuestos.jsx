@@ -46,10 +46,11 @@ function Repuestos() {
   }, [refetch])
 
   const opcionesProductos = catalogo.map((p) => {
-    const brand = (p.brand || '').replace(/^PRODUCTOS\\s+/i, '').trim()
-    const ref = [p.brand, p.base_serial].filter(Boolean).join('|') || p.base_serial || '-'
-    const label = [brand, p.base_serial].filter(Boolean).join(' — ') || ref
-    return { value: ref, label, base_serial: p.base_serial || '' }
+    const brand = (p.brand || '').replace(/^PRODUCTOS\s+/i, '').trim()
+    const baseSerial = String(p.base_serial ?? '').trim()
+    const ref = [p.brand, p.base_serial].filter(Boolean).join('|') || baseSerial || '-'
+    const label = [brand, baseSerial].filter(Boolean).join(' — ') || ref
+    return { value: ref, label, base_serial: baseSerial }
   })
 
   const opcionesProductosFiltradas = React.useMemo(() => {
@@ -66,6 +67,7 @@ function Repuestos() {
     setFormDescripcion('')
     setFormCantidad(0)
     setFormProductos([])
+    setFiltroProductoRef('')
     setModal('crear')
   }
 
@@ -74,6 +76,7 @@ function Repuestos() {
     setFormDescripcion(repuesto.descripcion || '')
     setFormCantidad(repuesto.cantidad ?? 0)
     setFormProductos(Array.isArray(repuesto.productos) ? [...repuesto.productos] : [])
+    setFiltroProductoRef('')
     setModal({ tipo: 'editar', repuesto })
   }
 
