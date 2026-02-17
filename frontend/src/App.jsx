@@ -114,6 +114,7 @@ function AppContent() {
             rmaDestacado={rmaDestacado}
             serialDestacado={serialDestacado}
             setRmaDestacado={setRmaDestacado}
+            refreshNotifCount={refreshNotifCount}
           />
         )
       case VISTAS.CLIENTES:

@@ -1,5 +1,6 @@
 import React from 'react'
 import Navbar from './Navbar'
+import AlertaEstadoSinNotificar from './AlertaEstadoSinNotificar'
 import { VISTAS, VISTAS_LABELS, VISTA_PARENT } from '../constants'
 
 function buildBreadcrumbChain(vista) {
@@ -62,6 +63,7 @@ function Layout({
           )
         })}
       </nav>
+      <AlertaEstadoSinNotificar setVista={setVista} notifCountKey={notifCountKey} />
       <main className="main app-view-transition">{children}</main>
     </div>
   )

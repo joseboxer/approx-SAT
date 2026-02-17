@@ -53,6 +53,7 @@ from database import (
     update_estado_by_rma_number,
     update_estado_by_rma_numbers,
     update_estado_by_item_id,
+    get_rma_items_estado_sin_notificar,
     update_fecha_recogida_by_rma_number,
     set_hidden_by_rma_number,
     set_serial_warranty,
@@ -2335,6 +2336,15 @@ def contar_notificaciones_no_leidas(username: str = Depends(get_current_username
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         count = count_unread_notifications(conn, user["id"])
     return {"count": count}
+
+
+@app.get("/api/rmas/estado-sin-notificar")
+def listar_productos_estado_sin_notificar(username: str = Depends(get_current_username)):
+    """Productos con estado asignado (desde ahora) que no tienen ninguna notificación.
+    Alerta: hay que notificar a alguien sobre estos cambios. No retroactivo."""
+    with get_connection() as conn:
+        items = get_rma_items_estado_sin_notificar(conn)
+    return {"items": items, "count": len(items)}
 
 
 # --- Web Push (notificaciones aunque el navegador esté cerrado) ---

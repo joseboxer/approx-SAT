@@ -176,6 +176,8 @@ def _init_db(conn: sqlite3.Connection):
     if "en_revision_at" not in rma_cols:
         conn.execute("ALTER TABLE rma_items ADD COLUMN en_revision_at TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_rma_items_en_revision_at ON rma_items(en_revision_at)")
+    if "estado_assigned_at" not in rma_cols:
+        conn.execute("ALTER TABLE rma_items ADD COLUMN estado_assigned_at TEXT")
     if "is_admin" not in [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]:
         conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
     # Tabla push_subscriptions (Web Push) - creada en _init_db con CREATE IF NOT EXISTS
@@ -237,6 +239,8 @@ def _init_db(conn: sqlite3.Connection):
     rma_cols = [row[1] for row in conn.execute("PRAGMA table_info(rma_especiales)").fetchall()]
     if "file_date" not in rma_cols:
         conn.execute("ALTER TABLE rma_especiales ADD COLUMN file_date TEXT")
+    if "estado_assigned_at" not in rma_cols:
+        conn.execute("ALTER TABLE rma_especiales ADD COLUMN estado_assigned_at TEXT")
     # Formatos RMA especiales: firma de cabecera (celdas de la fila) + índices de columna para serial/fallo/resolución
     conn.execute("""
         CREATE TABLE IF NOT EXISTS rma_especial_formats (
@@ -255,6 +259,8 @@ def _init_db(conn: sqlite3.Connection):
     if "estado" not in linea_cols:
         conn.execute("ALTER TABLE rma_especial_lineas ADD COLUMN estado TEXT DEFAULT ''")
         conn.execute("UPDATE rma_especial_lineas SET estado = '' WHERE estado IS NULL")
+    if "estado_assigned_at" not in linea_cols:
+        conn.execute("ALTER TABLE rma_especial_lineas ADD COLUMN estado_assigned_at TEXT")
     fmt_cols = [row[1] for row in conn.execute("PRAGMA table_info(rma_especial_formats)").fetchall()]
     if "header_row" not in fmt_cols:
         conn.execute("ALTER TABLE rma_especial_formats ADD COLUMN header_row INTEGER NOT NULL DEFAULT 0")
@@ -743,22 +749,40 @@ def insert_rma_item(
 
 def update_estado_by_rma_number(conn: sqlite3.Connection, rma_number: str, estado: str) -> int:
     """Actualiza el estado de todos los ítems del RMA.
-    Marca estado_manual=1 para que prevalezca sobre auto y limpia en_revision_at (ya no está en revisión)."""
-    cur = conn.execute(
-        "UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL WHERE rma_number = ?",
-        (estado or "", str(rma_number).strip()),
-    )
+    Marca estado_manual=1 para que prevalezca sobre auto y limpia en_revision_at (ya no está en revisión).
+    Si estado no vacío, marca estado_assigned_at para alertas de 'sin notificar' (no retroactivo)."""
+    estado_val = (estado or "").strip()
+    if estado_val:
+        cur = conn.execute(
+            """UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL,
+               estado_assigned_at = datetime('now') WHERE rma_number = ?""",
+            (estado_val, str(rma_number).strip()),
+        )
+    else:
+        cur = conn.execute(
+            "UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL, estado_assigned_at = NULL WHERE rma_number = ?",
+            (estado_val, str(rma_number).strip()),
+        )
     return cur.rowcount
 
 
 def update_estado_by_item_id(conn: sqlite3.Connection, item_id: int, estado: str) -> bool:
     """Actualiza el estado de un único ítem RMA por su id.
     Marca estado_manual=1 para que prevalezca sobre auto y limpia en_revision_at (ya no está en revisión).
+    Si estado no vacío, marca estado_assigned_at para alertas de 'sin notificar' (no retroactivo).
     Devuelve True si se actualizó alguna fila."""
-    cur = conn.execute(
-        "UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL WHERE id = ?",
-        (estado or "", int(item_id)),
-    )
+    estado_val = (estado or "").strip()
+    if estado_val:
+        cur = conn.execute(
+            """UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL,
+               estado_assigned_at = datetime('now') WHERE id = ?""",
+            (estado_val, int(item_id)),
+        )
+    else:
+        cur = conn.execute(
+            "UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL, estado_assigned_at = NULL WHERE id = ?",
+            (estado_val, int(item_id)),
+        )
     return cur.rowcount > 0
 
 
@@ -825,16 +849,65 @@ def update_estado_by_rma_numbers(
     conn: sqlite3.Connection, rma_numbers: list[str], estado: str
 ) -> int:
     """Actualiza el estado de todos los ítems de los RMAs indicados.
-    Marca estado_manual=1 y limpia en_revision_at (ya no están en revisión)."""
-    estado = (estado or "").strip()
+    Marca estado_manual=1 y limpia en_revision_at (ya no están en revisión).
+    Si estado no vacío, marca estado_assigned_at para alertas de 'sin notificar' (no retroactivo)."""
+    estado_val = (estado or "").strip()
     if not rma_numbers:
         return 0
     placeholders = ",".join("?" * len(rma_numbers))
-    cur = conn.execute(
-        f"UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL WHERE rma_number IN ({placeholders})",
-        [estado] + [str(n).strip() for n in rma_numbers],
-    )
+    if estado_val:
+        cur = conn.execute(
+            f"""UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL,
+                estado_assigned_at = datetime('now') WHERE rma_number IN ({placeholders})""",
+            [estado_val] + [str(n).strip() for n in rma_numbers],
+        )
+    else:
+        cur = conn.execute(
+            f"UPDATE rma_items SET estado = ?, estado_manual = 1, en_revision_at = NULL, estado_assigned_at = NULL WHERE rma_number IN ({placeholders})",
+            [estado_val] + [str(n).strip() for n in rma_numbers],
+        )
     return cur.rowcount
+
+
+def get_rma_items_estado_sin_notificar(conn: sqlite3.Connection) -> list[dict]:
+    """
+    Devuelve ítems RMA que tienen estado definido (estado_assigned_at no null) y NO existe
+    ninguna notificación para ese producto. Solo aplica a asignaciones de estado desde ahora
+    (estado_assigned_at), no retroactivo.
+    Una notificación cubre un ítem si: type='rma' y reference_data tiene rma_number coincidente
+    y (no tiene serial o serial coincide).
+    """
+    cur = conn.execute(
+        """SELECT i.id, i.rma_number, i.product, i.serial, i.client_name, i.estado, i.estado_assigned_at
+           FROM rma_items i
+           WHERE i.hidden = 0
+             AND TRIM(COALESCE(i.estado, '')) != ''
+             AND i.estado_assigned_at IS NOT NULL AND i.estado_assigned_at != ''
+             AND NOT EXISTS (
+               SELECT 1 FROM notifications n
+               WHERE n.type = 'rma'
+                 AND (n.deleted_by_sender_at IS NULL OR n.deleted_by_sender_at = '')
+                 AND json_extract(n.reference_data, '$.rma_number') = i.rma_number
+                 AND (
+                   json_extract(n.reference_data, '$.serial') IS NULL
+                   OR json_extract(n.reference_data, '$.serial') = ''
+                   OR json_extract(n.reference_data, '$.serial') = COALESCE(i.serial, '')
+                 )
+             )
+           ORDER BY i.estado_assigned_at DESC"""
+    )
+    return [
+        {
+            "id": row["id"],
+            "rma_number": row["rma_number"],
+            "product": row["product"] or "",
+            "serial": row["serial"] or "",
+            "client_name": row["client_name"] or "",
+            "estado": row["estado"] or "",
+            "estado_assigned_at": row["estado_assigned_at"],
+        }
+        for row in cur.fetchall()
+    ]
 
 
 def set_hidden_by_rma_number(
@@ -1234,19 +1307,34 @@ def insert_rma_especial(
 
 
 def update_rma_especial_estado(conn: sqlite3.Connection, rma_especial_id: int, estado: str) -> bool:
-    cur = conn.execute(
-        "UPDATE rma_especiales SET estado = ?, updated_at = datetime('now') WHERE id = ?",
-        (estado or "", rma_especial_id),
-    )
+    """Actualiza el estado del RMA especial. Si estado no vacío, marca estado_assigned_at (no retroactivo)."""
+    estado_val = (estado or "").strip()
+    if estado_val:
+        cur = conn.execute(
+            "UPDATE rma_especiales SET estado = ?, updated_at = datetime('now'), estado_assigned_at = datetime('now') WHERE id = ?",
+            (estado_val, rma_especial_id),
+        )
+    else:
+        cur = conn.execute(
+            "UPDATE rma_especiales SET estado = ?, updated_at = datetime('now'), estado_assigned_at = NULL WHERE id = ?",
+            (estado_val, rma_especial_id),
+        )
     return cur.rowcount > 0
 
 
 def update_rma_especial_linea_estado(conn: sqlite3.Connection, linea_id: int, estado: str) -> bool:
-    """Actualiza el estado de una línea (producto) de un RMA especial. Devuelve True si se actualizó."""
-    cur = conn.execute(
-        "UPDATE rma_especial_lineas SET estado = ? WHERE id = ?",
-        (estado or "", linea_id),
-    )
+    """Actualiza el estado de una línea (producto) de un RMA especial. Si estado no vacío, marca estado_assigned_at (no retroactivo)."""
+    estado_val = (estado or "").strip()
+    if estado_val:
+        cur = conn.execute(
+            "UPDATE rma_especial_lineas SET estado = ?, estado_assigned_at = datetime('now') WHERE id = ?",
+            (estado_val, linea_id),
+        )
+    else:
+        cur = conn.execute(
+            "UPDATE rma_especial_lineas SET estado = ?, estado_assigned_at = NULL WHERE id = ?",
+            (estado_val, linea_id),
+        )
     return cur.rowcount > 0
 
 
@@ -1278,11 +1366,14 @@ def update_rma_especial_linea(
         updates.append("resolucion = ?")
         params.append((resolucion or "").strip() or None)
     if estado is not None:
+        estado_val = (estado or "").strip()
         updates.append("estado = ?")
-        params.append((estado or "").strip() or None)
+        params.append(estado_val or None)
+        updates.append("estado_assigned_at = datetime('now')" if estado_val else "estado_assigned_at = NULL")
     if not updates:
         return True
     params.append(linea_id)
+    # estado_assigned_at se pasa como SQL, no como param
     conn.execute(f"UPDATE rma_especial_lineas SET {', '.join(updates)} WHERE id = ?", params)
     return True
 

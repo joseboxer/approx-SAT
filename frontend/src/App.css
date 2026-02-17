@@ -2412,6 +2412,23 @@
   font-weight: 500;
 }
 
+/* Alerta: productos con estado asignado sin notificar */
+.alerta-estado-sin-notificar {
+  margin: 0 1rem 1rem;
+  padding: 0.75rem 1rem;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: var(--radius);
+  border: 1px solid #fcd34d;
+  font-size: 0.9375rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.alerta-estado-sin-notificar-text { flex: 1; min-width: 12rem; }
+.alerta-estado-sin-notificar-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
 /* Avisos "no encontrado" al navegar entre vistas (RMA, Productos RMA, Catálogo) */
 .rma-no-encontrado {
   margin-bottom: 1rem;

@@ -46,6 +46,7 @@ function ListadoRMA({
   rmaDestacado,
   serialDestacado,
   setRmaDestacado,
+  refreshNotifCount,
 }) {
   const {
     productosVisibles,
@@ -76,12 +77,15 @@ function ListadoRMA({
             body: JSON.stringify({ estado: estado ? String(estado).trim() : '' }),
           }
         )
-        if (res.ok) refetchProductos()
+        if (res.ok) {
+          refetchProductos()
+          refreshNotifCount?.()
+        }
       } finally {
         setUpdatingEstadoItemId(null)
       }
     },
-    [refetchProductos]
+    [refetchProductos, refreshNotifCount]
   )
 
   const [pagina, setPagina] = useState(1)
@@ -302,11 +306,12 @@ function ListadoRMA({
       if (res.ok) {
         setSelectedRmaIds(new Set())
         refetchProductos()
+        refreshNotifCount?.()
       }
     } finally {
       setAplicandoMasivo(false)
     }
-  }, [selectedRmaIds, estadoMasivo, refetchProductos, aplicandoMasivo])
+  }, [selectedRmaIds, estadoMasivo, refetchProductos, refreshNotifCount, aplicandoMasivo])
 
   const selectedCount = selectedRmaIds.size
   const puedeAplicarMasivo = selectedCount > 0 && !aplicandoMasivo
@@ -911,6 +916,7 @@ function ListadoRMA({
         onClose={() => { setNotificarOpen(false); setNotificarRef(null); }}
         type="rma"
         referenceData={notificarRef || {}}
+        onSuccess={() => { refetchProductos(); refreshNotifCount?.(); }}
       />
     </div>
   )
