@@ -85,7 +85,13 @@ function Inicio({ setVista, setRmaDestacado }) {
     e?.preventDefault()
     setSyncError(null)
     setSyncResult(null)
+    setSyncProgress(0)
+    setSyncProgressMessage('Iniciando...')
     setSyncLoading(true)
+    if (syncPollRef.current) {
+      clearInterval(syncPollRef.current)
+      syncPollRef.current = null
+    }
     try {
       const token = localStorage.getItem('garantia-sat-token')
       const headers = token ? { Authorization: `Bearer ${token}` } : {}
@@ -100,16 +106,61 @@ function Inicio({ setVista, setRmaDestacado }) {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || 'Error al sincronizar')
-      setSyncResult(data)
-      setArchivoManual(null)
-      setMostrarSubir(false)
-      refetchProductos()
+      const taskId = data.task_id
+      if (!taskId) {
+        setSyncResult(data)
+        setArchivoManual(null)
+        setMostrarSubir(false)
+        refetchProductos()
+        setSyncLoading(false)
+        return
+      }
+      const poll = () => {
+        fetch(`${API_URL}/api/tasks/${taskId}`, { headers })
+          .then((r) => r.json())
+          .then((t) => {
+            setSyncProgress(t.percent ?? 0)
+            setSyncProgressMessage(t.message ?? '')
+            if (t.status === 'done') {
+              if (syncPollRef.current) clearInterval(syncPollRef.current)
+              syncPollRef.current = null
+              setSyncLoading(false)
+              setSyncResult(t.result ?? { mensaje: t.message ?? 'Sincronización completada.' })
+              setArchivoManual(null)
+              setMostrarSubir(false)
+              refetchProductos()
+            } else if (t.status === 'error') {
+              if (syncPollRef.current) clearInterval(syncPollRef.current)
+              syncPollRef.current = null
+              setSyncLoading(false)
+              setSyncError(t.message || 'Error al sincronizar')
+            } else if (t.status === 'not_found') {
+              if (syncPollRef.current) clearInterval(syncPollRef.current)
+              syncPollRef.current = null
+              setSyncLoading(false)
+              setSyncError('No se encontró la tarea de sincronización.')
+            }
+          })
+          .catch(() => {
+            if (syncPollRef.current) clearInterval(syncPollRef.current)
+            syncPollRef.current = null
+            setSyncLoading(false)
+            setSyncError('Error consultando el progreso de sincronización.')
+          })
+      }
+      poll()
+      syncPollRef.current = setInterval(poll, 500)
     } catch (err) {
       setSyncError(err.message)
-    } finally {
       setSyncLoading(false)
     }
   }
+
+  useEffect(() => {
+    return () => {
+      if (syncPollRef.current) clearInterval(syncPollRef.current)
+    }
+  }, [])
 
   return (
     <div data-tour="inicio">

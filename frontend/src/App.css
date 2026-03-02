@@ -1414,6 +1414,13 @@
 .table-wrapper.tabla-rma tr.rma-row-resuelto.row-selected {
   background: color-mix(in srgb, var(--color-primary, #0ea5e9) 12%, var(--color-bg-subtle, #f5f5f5));
 }
+/* RMA con algún producto en revisión: fondo amarillo (prioridad sobre resuelto) */
+.table-wrapper.tabla-rma tr.rma-row-revision {
+  background: color-mix(in srgb, #fbbf24 12%, var(--color-card-bg, #fff));
+}
+.table-wrapper.tabla-rma tr.rma-row-revision.row-selected {
+  background: color-mix(in srgb, #fbbf24 18%, var(--color-bg-subtle, #f5f5f5));
+}
 /* Celda Estado: select visible sin solapar botones */
 .table-wrapper.tabla-rma td:nth-child(11) {
   position: relative;

@@ -14,6 +14,7 @@ import Paginacion from '../Paginacion'
 import ModalNotificar from '../ModalNotificar'
 
 const COL_RMA = 'NÂº DE RMA'
+const LAST_RMA_SYNC_AT_KEY = 'garantia-last-rma-sync-at'
 
 function getFirstUrl(text) {
   if (!text) return null
@@ -104,6 +105,20 @@ function ListadoRMA({
   const [notificarOpen, setNotificarOpen] = useState(false)
   const [notificarRef, setNotificarRef] = useState(null)
   const [enRevisionItemId, setEnRevisionItemId] = useState(null)
+  const [syncLoading, setSyncLoading] = useState(false)
+  const [syncProgress, setSyncProgress] = useState(0)
+  const [syncProgressMessage, setSyncProgressMessage] = useState('')
+  const [syncResult, setSyncResult] = useState(null)
+  const [syncError, setSyncError] = useState(null)
+  const [lastSyncAt, setLastSyncAt] = useState(() => {
+    try {
+      return localStorage.getItem(LAST_RMA_SYNC_AT_KEY)
+    } catch {
+      return null
+    }
+  })
+  const [toast, setToast] = useState(null) // { type: 'ok' | 'error', text: string }
+  const syncPollRef = useRef(null)
 
   const marcarEnRevision = useCallback((itemId) => {
     if (!itemId || enRevisionItemId != null) return
@@ -125,6 +140,84 @@ function ListadoRMA({
     () => getColumnasFiltroRma(claveSerieReal),
     [claveSerieReal]
   )
+
+  const clearSyncPoll = useCallback(() => {
+    if (syncPollRef.current) {
+      clearInterval(syncPollRef.current)
+      syncPollRef.current = null
+    }
+  }, [])
+
+  const pushToast = useCallback((text, type = 'ok') => {
+    setToast({ type, text })
+  }, [])
+
+  const pollSyncTask = useCallback((taskId) => {
+    const poll = () => {
+      fetch(`${API_URL}/api/tasks/${taskId}`, { headers: getAuthHeaders() })
+        .then((r) => r.json())
+        .then((task) => {
+          setSyncProgress(task?.percent ?? 0)
+          setSyncProgressMessage(task?.message ?? '')
+          if (task?.status === 'done') {
+            clearSyncPoll()
+            setSyncLoading(false)
+            setSyncResult(task?.result ?? { mensaje: task?.message || 'Sincronización completada.' })
+            const nowIso = new Date().toISOString()
+            setLastSyncAt(nowIso)
+            try {
+              localStorage.setItem(LAST_RMA_SYNC_AT_KEY, nowIso)
+            } catch {}
+            pushToast('Sincronización RMA completada.', 'ok')
+            refetchProductos?.()
+          } else if (task?.status === 'error') {
+            clearSyncPoll()
+            setSyncLoading(false)
+            setSyncError(task?.message || 'Error al sincronizar')
+            pushToast(task?.message || 'Error al sincronizar', 'error')
+          } else if (task?.status === 'not_found') {
+            clearSyncPoll()
+            setSyncLoading(false)
+            setSyncError('No se encontró la tarea de sincronización.')
+            pushToast('No se encontró la tarea de sincronización.', 'error')
+          }
+        })
+        .catch(() => {
+          clearSyncPoll()
+          setSyncLoading(false)
+          setSyncError('Error consultando el progreso de sincronización.')
+          pushToast('Error consultando el progreso de sincronización.', 'error')
+        })
+    }
+    poll()
+    syncPollRef.current = setInterval(poll, 500)
+  }, [clearSyncPoll, refetchProductos, pushToast])
+
+  const handleSyncListado = useCallback(async () => {
+    if (syncLoading) return
+    setSyncError(null)
+    setSyncResult(null)
+    setSyncProgress(0)
+    setSyncProgressMessage('Iniciando...')
+    setSyncLoading(true)
+    clearSyncPoll()
+    try {
+      const res = await fetch(`${API_URL}/api/productos/sync`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.detail || 'Error al sincronizar')
+      const taskId = data?.task_id
+      if (!taskId) throw new Error('No se recibió task_id')
+      pollSyncTask(taskId)
+    } catch (err) {
+      clearSyncPoll()
+      setSyncLoading(false)
+      setSyncError(err?.message || 'Error al sincronizar')
+      pushToast(err?.message || 'Error al sincronizar', 'error')
+    }
+  }, [syncLoading, clearSyncPoll, pollSyncTask, pushToast])
 
   useEffect(() => {
     setPagina(1)
@@ -148,6 +241,16 @@ function ListadoRMA({
       setSerialDestacado?.(null)
     }
   }, [serialDestacado, claveSerieReal, setSerialDestacado])
+
+  useEffect(() => {
+    return () => clearSyncPoll()
+  }, [clearSyncPoll])
+
+  useEffect(() => {
+    if (!toast) return
+    const id = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(id)
+  }, [toast])
 
   const grupos = useMemo(() => {
     const byId = {}
@@ -325,6 +428,41 @@ function ListadoRMA({
   return (
     <div data-tour="rma">
       <h1 className="page-title">Listado RMA</h1>
+      <section className="sync-excel" aria-label="Sincronización RMA">
+        <p className="sync-desc">Sincroniza nuevos registros desde el Excel configurado en Ajustes.</p>
+        <p className="sync-desc" style={{ marginTop: '-0.25rem' }}>
+          Última sincronización:{' '}
+          {lastSyncAt
+            ? new Date(lastSyncAt).toLocaleString('es-ES')
+            : 'Aún no ejecutada'}
+        </p>
+        <div className="sync-form">
+          <button
+            type="button"
+            className="btn btn-primary sync-btn"
+            onClick={handleSyncListado}
+            disabled={syncLoading}
+          >
+            {syncLoading ? 'Sincronizando…' : 'Sincronizar'}
+          </button>
+        </div>
+        {syncLoading && (
+          <div className="sync-progress">
+            {syncProgressMessage ? `${syncProgressMessage} (${syncProgress}%)` : `Sincronizando... (${syncProgress}%)`}
+          </div>
+        )}
+        {syncError && (
+          <p className="sync-error" role="alert">{syncError}</p>
+        )}
+        {syncResult && !syncLoading && (
+          <p className="sync-ok">
+            {syncResult.mensaje ?? 'Sincronización completada.'}
+            {typeof syncResult.añadidos === 'number' && (
+              <> Se añadieron <strong>{syncResult.añadidos}</strong> registros nuevos.</>
+            )}
+          </p>
+        )}
+      </section>
       {mostrarNoEncontrado && (
         <div className="rma-no-encontrado" role="alert">
           No se encontró ningún RMA con ese criterio. Puede estar en la lista oculta.
@@ -469,7 +607,12 @@ function ListadoRMA({
               const todosConEstado = unaSolaLinea
                 ? (p.estado ?? '').trim() !== ''
                 : grupo.items.every((it) => (it.estado ?? '').trim() !== '')
-              const rowClass = [isSelected && 'row-selected', todosConEstado && 'rma-row-resuelto'].filter(Boolean).join(' ')
+              const tieneAlgunoEnRevision = grupo.items.some((it) => it.en_revision_at)
+              const rowClass = [
+                isSelected && 'row-selected',
+                tieneAlgunoEnRevision && 'rma-row-revision',
+                todosConEstado && 'rma-row-resuelto',
+              ].filter(Boolean).join(' ')
               return (
                 <React.Fragment key={key}>
                   <tr className={rowClass || undefined}>
@@ -918,6 +1061,26 @@ function ListadoRMA({
         referenceData={notificarRef || {}}
         onSuccess={() => { refetchProductos(); refreshNotifCount?.(); }}
       />
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            right: '1rem',
+            bottom: '1rem',
+            zIndex: 1200,
+            maxWidth: '420px',
+            padding: '0.7rem 0.9rem',
+            borderRadius: '8px',
+            color: '#fff',
+            boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
+            background: toast.type === 'error' ? '#c0392b' : '#0f766e',
+          }}
+        >
+          {toast.text}
+        </div>
+      )}
     </div>
   )
 }
