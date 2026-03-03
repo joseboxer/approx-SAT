@@ -48,7 +48,6 @@ from database import (
     get_catalog_cache,
     set_catalog_cache,
     insert_rma_item,
-    rma_item_exists,
     delete_all_rma_items,
     update_estado_by_rma_number,
     update_estado_by_rma_numbers,
@@ -416,34 +415,73 @@ def _run_sync_task(task_id: str, excel_path: str | None, file_content: bytes | N
             df = pd.read_excel(io.BytesIO(file_content), sheet_name=0)
         else:
             _update_task(task_id, percent=0, message="Leyendo Excel...")
-            path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path and excel_path.startswith("\\\\")) else (excel_path or "")
+            path_str = os.path.normpath(excel_path) if (os.name == "nt" and excel_path and excel_path.startswith("\\")) else (excel_path or "")
             df = _read_excel_with_engine(path_str, sheet_name=0)
         df = df.replace({np.nan: None})
         col_map = _excel_row_to_columns(df)
         if "rma_number" not in col_map:
             _update_task(task_id, status="error", percent=0, message="Excel sin columna Nº DE RMA", result=None)
             return
-        total = len(df)
+
         added = 0
-        seen: set[tuple[str, str]] = set()  # (rma_number, serial) para no insertar duplicados del Excel
+        skipped_existing = 0
+        seen_excel: set[tuple[str, str]] = set()  # evita duplicados dentro del propio Excel
+        pending_rows: list[tuple[int, object, tuple[str, str], str | None]] = []
+
         with get_connection() as conn:
+            existing_keys: set[tuple[str, str]] = set(
+                (
+                    str(r["rma_number"]).strip(),
+                    str(r["serial"] or "").strip(),
+                )
+                for r in conn.execute(
+                    "SELECT rma_number, COALESCE(serial, '') AS serial FROM rma_items"
+                ).fetchall()
+            )
+
+            # Fase 1: seleccionar solo filas nuevas (las existentes no se procesan)
             for idx, row in df.iterrows():
                 rma = _value(row.get(col_map.get("rma_number")))
                 serial = _value(row.get(col_map.get("serial"))) if col_map.get("serial") else None
                 serial_key = (serial or "").strip()
                 if not rma:
                     continue
-                if (rma, serial_key) in seen:
+                key = (rma, serial_key)
+                if key in seen_excel:
                     continue
-                seen.add((rma, serial_key))
-                pct = int(100 * (idx + 1) / total) if total else 100
-                _update_task(task_id, percent=pct, message=f"Procesando fila {idx + 2}...")
-                if rma_item_exists(conn, rma, serial_key):
+                seen_excel.add(key)
+                if key in existing_keys:
+                    skipped_existing += 1
                     continue
+                pending_rows.append((idx, row, key, serial))
+
+            total_pending = len(pending_rows)
+            if total_pending == 0:
+                _update_task(
+                    task_id,
+                    status="done",
+                    percent=100,
+                    message="Completado",
+                    result={
+                        "mensaje": "Sincronización completada",
+                        "añadidos": 0,
+                        "omitidos_existentes": skipped_existing,
+                    },
+                )
+                now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                set_setting(conn, "LAST_SYNC_AT", now)
+                set_setting(conn, "LAST_SYNC_STATUS", "ok")
+                set_setting(conn, "LAST_SYNC_MESSAGE", "Sincronización completada. No había filas nuevas.")
+                return
+
+            # Fase 2: insertar solo las filas nuevas detectadas
+            for i, (idx, row, key, serial) in enumerate(pending_rows, start=1):
+                pct = int(100 * i / total_pending)
+                _update_task(task_id, percent=pct, message=f"Añadiendo fila nueva {i}/{total_pending}...")
                 excel_row = int(idx) + 2
                 insert_rma_item(
                     conn,
-                    rma_number=rma,
+                    rma_number=key[0],
                     product=_value(row.get(col_map.get("product"))) if col_map.get("product") else None,
                     serial=serial,
                     client_name=_value(row.get(col_map.get("client_name"))) if col_map.get("client_name") else None,
@@ -457,18 +495,23 @@ def _run_sync_task(task_id: str, excel_path: str | None, file_content: bytes | N
                     excel_row=excel_row,
                 )
                 added += 1
+
         _update_task(
             task_id,
             status="done",
             percent=100,
             message="Completado",
-            result={"mensaje": "Sincronización completada", "añadidos": added},
+            result={
+                "mensaje": "Sincronización completada",
+                "añadidos": added,
+                "omitidos_existentes": skipped_existing,
+            },
         )
         now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         with get_connection() as c:
             set_setting(c, "LAST_SYNC_AT", now)
             set_setting(c, "LAST_SYNC_STATUS", "ok")
-            set_setting(c, "LAST_SYNC_MESSAGE", f"Sincronización completada. Añadidos: {added}.")
+            set_setting(c, "LAST_SYNC_MESSAGE", f"Sincronización completada. Añadidos: {added}. Omitidos existentes: {skipped_existing}.")
     except FileNotFoundError as e:
         msg = f"No se encuentra el archivo Excel: {e}"
         _update_task(task_id, status="error", percent=0, message=msg, result=None)
