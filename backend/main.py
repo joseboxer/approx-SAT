@@ -1159,19 +1159,29 @@ def _scan_rma_especiales_folder_impl(
             continue
         if update_fn and task_id:
             update_fn(task_id, percent=0, message=f"Recorriendo carpeta {year_dir.name}...")
-        for month_dir in sorted(year_dir.iterdir(), key=lambda d: d.name):
-            if not month_dir.is_dir():
-                continue
-            if update_fn and task_id:
-                update_fn(task_id, percent=0, message=f"Recorriendo {year_dir.name} / {month_dir.name}...")
-            for f in month_dir.iterdir():
+        for item in sorted(year_dir.iterdir(), key=lambda d: d.name):
+            if item.is_dir():
+                month_dir = item
+                if update_fn and task_id:
+                    update_fn(task_id, percent=0, message=f"Recorriendo {year_dir.name} / {month_dir.name}...")
+                for f in month_dir.iterdir():
+                    if f.suffix.lower() not in (".xlsx", ".xls"):
+                        continue
+                    if f.name.startswith("~$"):
+                        continue
+                    rma_number = _extract_rma_from_filename(f)
+                    if rma_number:
+                        files_to_scan.append((f, year_dir.name, month_dir.name))
+            else:
+                # Archivos directamente en la carpeta del año (ej: 2026/archivo.xlsx)
+                f = item
                 if f.suffix.lower() not in (".xlsx", ".xls"):
                     continue
                 if f.name.startswith("~$"):
                     continue
                 rma_number = _extract_rma_from_filename(f)
                 if rma_number:
-                    files_to_scan.append((f, year_dir.name, month_dir.name))
+                    files_to_scan.append((f, year_dir.name, "_"))
     total = len(files_to_scan)
     _dlog("main.py:_scan_rma_especiales_folder_impl:files", "Files to scan", {"total": total, "existing_rma_count": len(existing_rma_numbers)}, "C")
     if update_fn and task_id:
