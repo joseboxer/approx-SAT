@@ -128,6 +128,10 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   const [asignarColFalloIdx, setAsignarColFalloIdx] = useState(0)
   const [asignarColResolucionIdx, setAsignarColResolucionIdx] = useState(0)
   const [importando, setImportando] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadYear, setUploadYear] = useState(() => String(new Date().getFullYear()))
+  const [uploadFile, setUploadFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
   const [viewMode, setViewMode] = useState('lista') // 'lista' | 'carpetas'
   const [folderNav, setFolderNav] = useState(null)   // null | { year } | { year, month }
   // Filtros y ordenación para la vista de detalle (líneas de un RMA especial concreto)
@@ -218,6 +222,38 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   }, [scanTaskId, refetch])
 
   const escaneando = !!scanTaskId
+
+  const handleSubirExcel = async (e) => {
+    e?.preventDefault()
+    if (!uploadYear || !uploadFile) {
+      setError('Selecciona año y archivo Excel.')
+      return
+    }
+    setUploading(true)
+    setError(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadFile)
+      formData.append('year', uploadYear)
+      const res = await fetch(`${API_URL}/api/rma-especiales/upload`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.detail || 'Error al subir')
+      }
+      setUploadOpen(false)
+      setUploadFile(null)
+      await handleImportar({ path: data.path, rma_number: data.rma_number })
+      refetch()
+    } catch (err) {
+      setError(err.message || 'Error al subir el Excel')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const handleImportar = async (item) => {
     if (item.missing && item.missing.length > 0) {
@@ -839,7 +875,57 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
         >
           {escaneando ? 'Escaneando…' : 'Escanear carpeta'}
         </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => { setUploadOpen(true); setUploadFile(null); setUploadYear(String(new Date().getFullYear())) }}
+        >
+          Subir Excel
+        </button>
       </div>
+
+      {uploadOpen && (
+        <div className="modal-overlay" onClick={() => !uploading && setUploadOpen(false)} role="dialog" aria-modal="true">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-titulo">Subir Excel manualmente</h2>
+            <p className="modal-notificar-desc">
+              Elige el año y el archivo Excel. Se guardará en la carpeta RMA especiales y se intentará importar automáticamente.
+            </p>
+            <form onSubmit={handleSubirExcel}>
+              <div className="modal-notificar-field">
+                <label>Año</label>
+                <select
+                  value={uploadYear}
+                  onChange={(e) => setUploadYear(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: 8, border: '1px solid #ccc' }}
+                >
+                  {Array.from({ length: 15 }, (_, i) => new Date().getFullYear() - 5 + i).map((y) => (
+                    <option key={y} value={String(y)}>{y}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="modal-notificar-field">
+                <label>Archivo Excel</label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  required
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div className="modal-pie modal-pie-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => !uploading && setUploadOpen(false)} disabled={uploading}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={uploading || !uploadFile}>
+                  {uploading ? 'Subiendo…' : 'Subir e importar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {escaneando && (
         <ProgressBar

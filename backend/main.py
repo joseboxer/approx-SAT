@@ -25,7 +25,7 @@ from urllib.parse import urlencode, unquote
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -1560,6 +1560,54 @@ def escanear_rma_especiales(username: str = Depends(get_current_username)):
         _tasks[task_id] = {"status": "running", "percent": 0, "message": "Iniciando escaneo...", "result": None}
     threading.Thread(target=_run_rma_especiales_scan_task, args=(task_id, path_str), daemon=True).start()
     return {"task_id": task_id}
+
+
+def _sanitize_filename(name: str) -> str:
+    """Elimina caracteres no seguros del nombre de archivo."""
+    if not name or not isinstance(name, str):
+        return "archivo.xlsx"
+    safe = "".join(c for c in name if c not in '<>:"/\\|?*')
+    return (safe.strip() or "archivo")[:200]
+
+
+@app.post("/api/rma-especiales/upload")
+async def subir_excel_rma_especial(
+    file: UploadFile = File(...),
+    year: str = Form(...),
+    username: str = Depends(get_current_username),
+):
+    """
+    Sube un Excel desde el PC y lo guarda en la carpeta RMA especiales bajo el año indicado.
+    Devuelve path y rma_number para que el frontend llame a import.
+    """
+    year_str = (year or "").strip()
+    if not year_str or not year_str.isdigit() or len(year_str) != 4:
+        raise HTTPException(status_code=400, detail="El año debe ser de 4 dígitos (ej: 2026).")
+    y = int(year_str)
+    if y < 2000 or y > 2100:
+        raise HTTPException(status_code=400, detail="El año debe estar entre 2000 y 2100.")
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Debe subir un archivo Excel (.xlsx o .xls).")
+    with get_connection() as conn:
+        folder = (get_setting(conn, "RMA_ESPECIALES_FOLDER") or "").strip()
+        folder = _normalize_unc_path(folder)
+    if not folder:
+        raise HTTPException(status_code=400, detail="No hay carpeta de RMA especiales configurada. Configúrala en Ajustes.")
+    if not os.path.isdir(folder):
+        raise HTTPException(status_code=400, detail=f"No se encuentra la carpeta: {folder}")
+    year_dir = os.path.join(folder, year_str)
+    os.makedirs(year_dir, exist_ok=True)
+    safe_name = _sanitize_filename(file.filename)
+    if not safe_name.lower().endswith((".xlsx", ".xls")):
+        safe_name = safe_name + ".xlsx"
+    dest_path = os.path.join(year_dir, safe_name)
+    content = await file.read()
+    with open(dest_path, "wb") as f:
+        f.write(content)
+    rma_number = _extract_rma_from_filename(dest_path)
+    if not rma_number:
+        rma_number = Path(safe_name).stem or "RMA"
+    return {"path": dest_path, "rma_number": rma_number}
 
 
 class RmaEspecialImportBody(BaseModel):
