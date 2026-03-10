@@ -33,6 +33,17 @@ import pandas as pd
 import numpy as np
 from pydantic import BaseModel
 
+# #region agent log
+DEBUG_LOG_PATH = "/Users/josea/gofix/.cursor/debug.log"
+def _dlog(loc: str, msg: str, data: dict | None = None, hyp: str = ""):
+    try:
+        os.makedirs(os.path.dirname(DEBUG_LOG_PATH), exist_ok=True)
+        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"location": loc, "message": msg, "data": data or {}, "hypothesisId": hyp, "timestamp": int(datetime.now().timestamp() * 1000)}) + "\n")
+    except Exception:
+        pass
+# #endregion
+
 from auth import router as auth_router, get_current_username, get_password_hash
 from hosts_config import get_server_ip
 from productos_catalogo import get_productos_catalogo
@@ -1133,12 +1144,14 @@ def _scan_rma_especiales_folder_impl(
         existing_rma_numbers = {r["rma_number"] for r in get_all_rma_especiales(conn)}
     base = Path(base_path) if base_path else None
     if not base or not base.is_dir():
+        _dlog("main.py:_scan_rma_especiales_folder_impl:base_invalid", "Base path invalid", {"base_path": base_path, "base": str(base) if base else None}, "C")
         return []
     # Fase 1: listar archivos con progreso por año/mes
     if update_fn and task_id:
         update_fn(task_id, percent=0, message="Listando carpetas año / mes...")
     files_to_scan: list[tuple[Path, str, str]] = []  # (path, year_name, month_name)
     year_dirs = sorted([d for d in base.iterdir() if d.is_dir()], key=lambda d: d.name)
+    _dlog("main.py:_scan_rma_especiales_folder_impl:year_dirs", "Year dirs found", {"base": str(base), "year_count": len(year_dirs), "year_names": [d.name for d in year_dirs]}, "C")
     for year_dir in year_dirs:
         try:
             int(year_dir.name)
@@ -1160,6 +1173,7 @@ def _scan_rma_especiales_folder_impl(
                 if rma_number:
                     files_to_scan.append((f, year_dir.name, month_dir.name))
     total = len(files_to_scan)
+    _dlog("main.py:_scan_rma_especiales_folder_impl:files", "Files to scan", {"total": total, "existing_rma_count": len(existing_rma_numbers)}, "C")
     if update_fn and task_id:
         update_fn(
             task_id,
@@ -1256,6 +1270,7 @@ def _run_rma_especiales_scan_task(task_id: str, base_path: str) -> None:
         _update_task(task_id, percent=0, message="Listando carpetas año / mes...")
         update_progress = (task_id, lambda tid, **kw: _update_task(tid, **kw))
         items = _scan_rma_especiales_folder_impl(base_path, update_progress)
+        _dlog("main.py:_run_rma_especiales_scan_task:done", "Scan completed", {"task_id": task_id, "items_count": len(items)}, "A")
         _update_task(
             task_id,
             status="done",
@@ -1264,10 +1279,13 @@ def _run_rma_especiales_scan_task(task_id: str, base_path: str) -> None:
             result={"items": items, "total": len(items)},
         )
     except FileNotFoundError as e:
+        _dlog("main.py:_run_rma_especiales_scan_task:error", "FileNotFoundError", {"task_id": task_id, "error": str(e)}, "D")
         _update_task(task_id, status="error", percent=0, message=f"Carpeta no encontrada: {e}", result=None)
     except PermissionError as e:
+        _dlog("main.py:_run_rma_especiales_scan_task:error", "PermissionError", {"task_id": task_id, "error": str(e)}, "D")
         _update_task(task_id, status="error", percent=0, message=f"Sin permiso de acceso: {e}", result=None)
     except Exception as e:
+        _dlog("main.py:_run_rma_especiales_scan_task:error", "Exception", {"task_id": task_id, "error": str(e), "type": type(e).__name__}, "E")
         _update_task(task_id, status="error", percent=0, message=str(e), result=None)
 
 
@@ -1519,10 +1537,13 @@ def escanear_rma_especiales(username: str = Depends(get_current_username)):
     with get_connection() as conn:
         folder = (get_setting(conn, "RMA_ESPECIALES_FOLDER") or "").strip()
         folder = _normalize_unc_path(folder)
+    _dlog("main.py:escanear_rma_especiales:entry", "Scan RMA especiales started", {"folder_raw": folder or "(empty)", "folder_len": len(folder or "")}, "A")
     if not folder:
         raise HTTPException(status_code=400, detail="No hay carpeta de RMA especiales configurada. Configúrala en Ajustes (solo administrador).")
     path_str = os.path.normpath(folder) if (os.name == "nt" and folder.startswith("\\\\")) else folder
-    if not os.path.isdir(path_str):
+    is_dir = os.path.isdir(path_str)
+    _dlog("main.py:escanear_rma_especiales:path_check", "Path check", {"path_str": path_str, "is_dir": is_dir}, "B")
+    if not is_dir:
         raise HTTPException(status_code=400, detail=f"No se encuentra la carpeta: {path_str}")
     task_id = str(uuid.uuid4())
     with _tasks_lock:
