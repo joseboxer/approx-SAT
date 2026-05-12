@@ -58,6 +58,22 @@ function ListadoRMA({
     refetchProductos,
   } = useGarantia()
 
+  const [sinNotificarItemIds, setSinNotificarItemIds] = useState(() => new Set())
+
+  const fetchEstadoSinNotificar = useCallback(() => {
+    apiFetch(`${API_URL}/api/rmas/estado-sin-notificar`)
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((data) => {
+        const ids = new Set(
+          (Array.isArray(data.items) ? data.items : [])
+            .map((it) => it.id)
+            .filter((x) => x != null)
+        )
+        setSinNotificarItemIds(ids)
+      })
+      .catch(() => setSinNotificarItemIds(new Set()))
+  }, [])
+
   const [updatingEstadoRmaId, setUpdatingEstadoRmaId] = useState(null)
   const [updatingEstadoItemId, setUpdatingEstadoItemId] = useState(null)
 
@@ -115,21 +131,6 @@ function ListadoRMA({
   })
   const [toast, setToast] = useState(null) // { type: 'ok' | 'error', text: string }
   const syncPollRef = useRef(null)
-  const [sinNotificarItemIds, setSinNotificarItemIds] = useState(() => new Set())
-
-  const fetchEstadoSinNotificar = useCallback(() => {
-    apiFetch(`${API_URL}/api/rmas/estado-sin-notificar`)
-      .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((data) => {
-        const ids = new Set(
-          (Array.isArray(data.items) ? data.items : [])
-            .map((it) => it.id)
-            .filter((x) => x != null)
-        )
-        setSinNotificarItemIds(ids)
-      })
-      .catch(() => setSinNotificarItemIds(new Set()))
-  }, [])
 
   useEffect(() => {
     if (!cargando) fetchEstadoSinNotificar()
