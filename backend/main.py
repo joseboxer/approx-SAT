@@ -29,6 +29,8 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel
@@ -165,6 +167,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class AutoJsonBackupMiddleware(BaseHTTPMiddleware):
+    """Tras POST/PUT/PATCH/DELETE exitoso bajo /api/, encola copia JSON de la BD (auto_backup)."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        try:
+            if response.status_code < 200 or response.status_code >= 300:
+                return response
+            if request.method.upper() not in ("POST", "PUT", "PATCH", "DELETE"):
+                return response
+            path = request.url.path
+            if not path.startswith("/api/"):
+                return response
+            from auto_backup import should_skip_auto_backup_path, trigger_auto_backup_json_if_enabled
+
+            if should_skip_auto_backup_path(path):
+                return response
+            trigger_auto_backup_json_if_enabled()
+        except Exception:
+            pass
+        return response
+
+
+app.add_middleware(AutoJsonBackupMiddleware)
 
 # Tareas en segundo plano (sync, sync-reset, catalog refresh) con progreso en tiempo real
 _tasks: dict[str, dict] = {}
@@ -2511,6 +2539,46 @@ def _notification_reference_summary(raw: str | dict | None) -> str:
         return str(raw)
     if not isinstance(obj, dict):
         return str(obj)
+
+    line_previews = obj.get("line_previews")
+    if isinstance(line_previews, list) and line_previews:
+        chunks: list[str] = []
+        for ln in line_previews[:4]:
+            if not isinstance(ln, dict):
+                continue
+            bits = [str(ln.get("ref_proveedor") or "").strip(), str(ln.get("serial") or "").strip()]
+            bits = [b for b in bits if b]
+            head = " · ".join(bits) if bits else ""
+            fallo = str(ln.get("fallo") or "").strip()
+            res = str(ln.get("resolucion") or "").strip()
+            tail = " · ".join([t for t in (fallo[:160], res[:80]) if t])
+            line = " — ".join([p for p in (head, tail) if p])
+            if line:
+                chunks.append(line)
+        head = f"RMA especial {obj.get('rma_number') or ''}".strip()
+        lc = obj.get("line_count")
+        if lc is not None:
+            head = f"{head} ({lc} líneas)".strip()
+        if chunks:
+            return f"{head}: " + " | ".join(chunks) if head else " | ".join(chunks)
+        return head or json.dumps(obj, ensure_ascii=False)
+
+    parts: list[str] = []
+    if obj.get("rma_number"):
+        parts.append(f"RMA {obj['rma_number']}")
+    if obj.get("serial"):
+        parts.append(f"serie {obj['serial']}")
+    if obj.get("product"):
+        parts.append(str(obj["product"])[:80])
+    if obj.get("averia"):
+        parts.append(f"fallo: {str(obj['averia'])[:220]}")
+    if obj.get("client_name"):
+        parts.append(f"cliente: {str(obj['client_name'])[:120]}")
+    if parts:
+        return " — ".join(parts)
+    if obj.get("whole_rma_note"):
+        base = f"RMA {obj['rma_number']}" if obj.get("rma_number") else "RMA"
+        return f"{base} — {obj['whole_rma_note']}"
     if obj.get("rma_number") and obj.get("serial"):
         return f"RMA {obj['rma_number']} - {obj['serial']}"
     if obj.get("rma_number"):

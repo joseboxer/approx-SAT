@@ -9,7 +9,8 @@ import {
   getColumnasFiltroRma,
   compararValores,
 } from '../../utils/garantia'
-import { getAuthHeaders } from '../../utils/auth'
+import { apiFetch } from '../../utils/auth'
+import { buildRmaNotificationReference, buildWholeRmaNotificationReference } from '../../utils/notificationRef'
 import HerramientasTabla from '../HerramientasTabla'
 import Paginacion from '../Paginacion'
 import ModalNotificar from '../ModalNotificar'
@@ -64,11 +65,11 @@ function ListadoRMA({
     async (itemId, estado) => {
       setUpdatingEstadoItemId(itemId)
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `${API_URL}/api/rmas/items/${itemId}/estado`,
           {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ estado: estado ? String(estado).trim() : '' }),
           }
         )
@@ -117,7 +118,7 @@ function ListadoRMA({
   const [sinNotificarItemIds, setSinNotificarItemIds] = useState(() => new Set())
 
   const fetchEstadoSinNotificar = useCallback(() => {
-    fetch(`${API_URL}/api/rmas/estado-sin-notificar`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/rmas/estado-sin-notificar`)
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((data) => {
         const ids = new Set(
@@ -137,9 +138,8 @@ function ListadoRMA({
   const marcarEnRevision = useCallback((itemId) => {
     if (!itemId || enRevisionItemId != null) return
     setEnRevisionItemId(itemId)
-    fetch(`${API_URL}/api/rmas/items/${itemId}/en-revision`, {
+    apiFetch(`${API_URL}/api/rmas/items/${itemId}/en-revision`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
     })
       .then((r) => {
         if (!r.ok) throw new Error('Error al marcar')
@@ -168,7 +168,7 @@ function ListadoRMA({
 
   const pollSyncTask = useCallback((taskId) => {
     const poll = () => {
-      fetch(`${API_URL}/api/tasks/${taskId}`, { headers: getAuthHeaders() })
+      apiFetch(`${API_URL}/api/tasks/${taskId}`)
         .then((r) => r.json())
         .then((task) => {
           setSyncProgress(task?.percent ?? 0)
@@ -216,9 +216,8 @@ function ListadoRMA({
     setSyncLoading(true)
     clearSyncPoll()
     try {
-      const res = await fetch(`${API_URL}/api/productos/sync`, {
+      const res = await apiFetch(`${API_URL}/api/productos/sync`, {
         method: 'POST',
-        headers: getAuthHeaders(),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || 'Error al sincronizar')
@@ -409,11 +408,10 @@ function ListadoRMA({
     if (selectedRmaIds.size === 0 || aplicandoMasivo) return
     setAplicandoMasivo(true)
     try {
-      const res = await fetch(`${API_URL}/api/rmas/estado-masivo`, {
+      const res = await apiFetch(`${API_URL}/api/rmas/estado-masivo`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           rma_numbers: Array.from(selectedRmaIds),
@@ -583,9 +581,10 @@ function ListadoRMA({
       />
       <div className="table-wrapper tabla-rma">
         <table>
+          <caption className="sr-only">Listado de RMA y productos en reparación</caption>
           <thead>
             <tr>
-              <th className="col-checkbox">
+              <th scope="col" className="col-checkbox">
                 <input
                   type="checkbox"
                   aria-label="Seleccionar todos de la página"
@@ -596,17 +595,17 @@ function ListadoRMA({
                   }
                 />
               </th>
-              <th>Nº RMA</th>
-              <th>Producto</th>
-              <th>Nº serie</th>
-              <th>Cliente</th>
-              <th>Fecha recibido</th>
-              <th>Fecha enviado</th>
-              <th>Fecha recogida</th>
-              <th>Avería</th>
-              <th>Observaciones</th>
-              <th>Estado</th>
-              <th>Acciones</th>
+              <th scope="col">Nº RMA</th>
+              <th scope="col">Producto</th>
+              <th scope="col">Nº serie</th>
+              <th scope="col">Cliente</th>
+              <th scope="col">Fecha recibido</th>
+              <th scope="col">Fecha enviado</th>
+              <th scope="col">Fecha recogida</th>
+              <th scope="col">Avería</th>
+              <th scope="col">Observaciones</th>
+              <th scope="col">Estado</th>
+              <th scope="col">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -832,7 +831,10 @@ function ListadoRMA({
                           onClick={() => {
                             const rmaNum = p['NÂº DE RMA'] ?? p['Nº DE RMA']
                             if (rmaNum != null) {
-                              setNotificarRef({ rma_number: String(rmaNum) })
+                              const first = grupo.items[0] ?? p
+                              setNotificarRef(
+                                buildWholeRmaNotificationReference(first, getSerie, grupo.items.length)
+                              )
                               setNotificarOpen(true)
                             }
                           }}
@@ -860,19 +862,20 @@ function ListadoRMA({
                         <div className="desplegable-detalle">
                           <p className="tabla-desplegable-leyenda">Campos por número de serie (cada línea es un ítem del RMA).</p>
                           <table className="tabla-desplegable">
+                            <caption className="sr-only">Líneas de este RMA por número de serie</caption>
                             <thead>
                               <tr>
-                                <th>Nº RMA</th>
-                                <th>Producto</th>
-                                <th>Nº serie</th>
-                                <th>Cliente</th>
-                                <th>Fecha recibido</th>
-                                <th>Fecha enviado</th>
-                                <th>Fecha recogida</th>
-                                <th>Avería</th>
-                                <th>Observaciones</th>
-                                <th>Estado</th>
-                                <th>Acciones</th>
+                                <th scope="col">Nº RMA</th>
+                                <th scope="col">Producto</th>
+                                <th scope="col">Nº serie</th>
+                                <th scope="col">Cliente</th>
+                                <th scope="col">Fecha recibido</th>
+                                <th scope="col">Fecha enviado</th>
+                                <th scope="col">Fecha recogida</th>
+                                <th scope="col">Avería</th>
+                                <th scope="col">Observaciones</th>
+                                <th scope="col">Estado</th>
+                                <th scope="col">Acciones</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1040,7 +1043,7 @@ function ListadoRMA({
                                           type="button"
                                           className="btn btn-notificar btn-sm"
                                           onClick={() => {
-                                            setNotificarRef({ rma_number: String(rmaNum), serial: serie })
+                                            setNotificarRef(buildRmaNotificationReference(item, getSerie))
                                             setNotificarOpen(true)
                                           }}
                                           title="Notificar este número de serie a un usuario"

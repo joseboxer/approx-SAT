@@ -1,15 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { API_URL, AUTH_STORAGE_KEY } from '../../constants'
+import { API_URL } from '../../constants'
+import { apiFetch } from '../../utils/auth'
 import HelpTip from '../HelpTip'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
+import { useDialogFocus } from '../../hooks/useDialogFocus'
 
 /**
  * Panel de administrador: crear usuarios, listar, editar (email, rol admin), restablecer contraseña y eliminar.
@@ -38,10 +32,25 @@ function AdminPanel() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
+  const editModalPanelRef = useRef(null)
+  const resetModalPanelRef = useRef(null)
+  const deleteModalPanelRef = useRef(null)
+  useDialogFocus(!!editUser, editModalPanelRef, { onClose: () => setEditUser(null) })
+  useDialogFocus(!!resetTarget, resetModalPanelRef, {
+    onClose: () => {
+      if (!resetLoading) setResetTarget(null)
+    },
+  })
+  useDialogFocus(!!deleteTarget, deleteModalPanelRef, {
+    onClose: () => {
+      if (!deleteLoading) setDeleteTarget(null)
+    },
+  })
+
   const loadUsers = useCallback(() => {
     setLoading(true)
     setError(null)
-    fetch(`${API_URL}/api/users/admin`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/users/admin`)
       .then((res) => {
         if (!res.ok) throw new Error(res.status === 403 ? 'No tienes permiso' : 'Error al cargar usuarios')
         return res.json()
@@ -55,18 +64,6 @@ function AdminPanel() {
     loadUsers()
   }, [loadUsers])
 
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        setEditUser(null)
-        setResetTarget(null)
-        setDeleteTarget(null)
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [])
-
   const handleCreateUser = () => {
     const name = (newUsername || '').trim()
     if (!name) {
@@ -76,9 +73,9 @@ function AdminPanel() {
     setCreateError(null)
     setCreateOk(null)
     setCreateLoading(true)
-    fetch(`${API_URL}/api/users`, {
+    apiFetch(`${API_URL}/api/users`, {
       method: 'POST',
-      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: name }),
     })
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
@@ -114,9 +111,9 @@ function AdminPanel() {
       setEditSaving(false)
       return
     }
-    fetch(`${API_URL}/api/users/${editUser.id}`, {
+    apiFetch(`${API_URL}/api/users/${editUser.id}`, {
       method: 'PATCH',
-      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
@@ -135,9 +132,8 @@ function AdminPanel() {
   const handleResetPassword = () => {
     if (!resetTarget) return
     setResetLoading(true)
-    fetch(`${API_URL}/api/users/${resetTarget.id}/reset-password`, {
+    apiFetch(`${API_URL}/api/users/${resetTarget.id}/reset-password`, {
       method: 'POST',
-      headers: getAuthHeaders(),
     })
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok }) => {
@@ -151,9 +147,8 @@ function AdminPanel() {
   const handleDeleteUser = () => {
     if (!deleteTarget) return
     setDeleteLoading(true)
-    fetch(`${API_URL}/api/users/${deleteTarget.id}`, {
+    apiFetch(`${API_URL}/api/users/${deleteTarget.id}`, {
       method: 'DELETE',
-      headers: getAuthHeaders(),
     })
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
@@ -280,7 +275,7 @@ function AdminPanel() {
           aria-modal="true"
           aria-labelledby="edit-user-title"
         >
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div ref={editModalPanelRef} className="modal" onClick={(e) => e.stopPropagation()}>
             <h2 id="edit-user-title" className="modal-titulo">Editar usuario: {editUser.username}</h2>
             <div className="configuracion-field">
               <label htmlFor="edit-email">Email</label>
@@ -326,7 +321,7 @@ function AdminPanel() {
           aria-modal="true"
           aria-labelledby="reset-title"
         >
-          <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
+          <div ref={resetModalPanelRef} className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
             <h2 id="reset-title" className="modal-titulo">Restablecer contraseña</h2>
             <p className="modal-confirm-text">
               ¿Restablecer la contraseña de <strong>{resetTarget.username}</strong> a <strong>approx2026</strong>?
@@ -352,8 +347,7 @@ function AdminPanel() {
           aria-modal="true"
           aria-labelledby="delete-title"
         >
-          <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
-            <h2 id="delete-title" className="modal-titulo">Eliminar usuario</h2>
+          <div ref={deleteModalPanelRef} className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
             <p className="modal-confirm-text">
               ¿Eliminar la cuenta de <strong>{deleteTarget.username}</strong>? Esta acción no se puede deshacer.
             </p>

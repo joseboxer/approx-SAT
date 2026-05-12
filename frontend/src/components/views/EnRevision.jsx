@@ -1,14 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import ModalNotificar from '../ModalNotificar'
-import { API_URL, AUTH_STORAGE_KEY, VISTAS, OPCIONES_ESTADO } from '../../constants'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
+import { API_URL, VISTAS, OPCIONES_ESTADO } from '../../constants'
+import { apiFetch } from '../../utils/auth'
+import { buildRmaNotificationReference } from '../../utils/notificationRef'
 
 function EnRevision({ setVista, setSerialDestacado, setRmaDestacado }) {
   const [list, setList] = useState([])
@@ -21,7 +15,7 @@ function EnRevision({ setVista, setSerialDestacado, setRmaDestacado }) {
   const refetch = useCallback(() => {
     setCargando(true)
     setError(null)
-    fetch(`${API_URL}/api/rmas/en-revision`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/rmas/en-revision`)
       .then((r) => {
         if (!r.ok) throw new Error('Error al cargar')
         return r.json()
@@ -50,11 +44,10 @@ function EnRevision({ setVista, setSerialDestacado, setRmaDestacado }) {
   const handleEstadoChange = (item, newEstado) => {
     if (item.id == null || updatingEstadoItemId != null) return
     setUpdatingEstadoItemId(item.id)
-    fetch(`${API_URL}/api/rmas/items/${item.id}/estado`, {
+    apiFetch(`${API_URL}/api/rmas/items/${item.id}/estado`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        ...getAuthHeaders(),
       },
       body: JSON.stringify({ estado: newEstado }),
     })
@@ -64,13 +57,8 @@ function EnRevision({ setVista, setSerialDestacado, setRmaDestacado }) {
       })
       .then(() => {
         refetch()
-        const rmaNum = item['Nº DE RMA'] ?? item['NÂº DE RMA']
-        const serial = item['Nº DE SERIE'] ?? item['NÂº DE SERIE']
-        setNotificarRef(
-          rmaNum != null
-            ? { rma_number: String(rmaNum), ...(serial ? { serial: String(serial) } : {}) }
-            : null
-        )
+        const ref = buildRmaNotificationReference(item)
+        setNotificarRef(Object.keys(ref).length ? ref : null)
         setNotificarOpen(true)
       })
       .catch((err) => setError(err.message))

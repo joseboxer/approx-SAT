@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { API_URL, TASK_POLL_INTERVAL_MS, VISTAS } from '../../constants'
-import { getAuthHeaders } from '../../utils/auth'
+import { apiFetch } from '../../utils/auth'
 import ProgressBar from '../ProgressBar'
 import HelpTip from '../HelpTip'
+import ConfirmModal from '../ConfirmModal'
+import { useDialogFocus } from '../../hooks/useDialogFocus'
 
 /** Genera el contenido del .bat para añadir www.Approx-SAT.com al archivo hosts (Windows). CRLF al descargar. serverHost debe ser una IP (nunca "localhost" en el archivo hosts). */
 function getHostsBatContent(serverHost) {
@@ -129,7 +131,7 @@ function downloadInstallCertBat() {
 
 function downloadCertPem(onError) {
   if (onError) onError(null)
-  fetch(`${API_URL}/api/settings/certificate`, { headers: getAuthHeaders() })
+  apiFetch(`${API_URL}/api/settings/certificate`)
     .then((res) => {
       if (!res.ok) {
         if (res.status === 404) throw new Error('El servidor no tiene certificado configurado (cert.pem).')
@@ -191,13 +193,21 @@ function Configuracion({ setVista }) {
   const [restoreLoading, setRestoreLoading] = useState(false)
   const [restoreError, setRestoreError] = useState(null)
   const [restoreResult, setRestoreResult] = useState(null)
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false)
   const resetPollRef = useRef(null)
+  const resetConfirmPanelRef = useRef(null)
   const { user } = useAuth()
+
+  useDialogFocus(showResetConfirm, resetConfirmPanelRef, {
+    onClose: () => {
+      if (!resetting) setShowResetConfirm(false)
+    },
+  })
 
   const cargar = useCallback(() => {
     setCargando(true)
     setError(null)
-    fetch(`${API_URL}/api/settings`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/settings`)
       .then((res) => {
         if (!res.ok) throw new Error('Error al cargar configuración')
         return res.json()
@@ -224,7 +234,7 @@ function Configuracion({ setVista }) {
   }, [cargar])
 
   useEffect(() => {
-    fetch(`${API_URL}/api/settings/server-ip`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/settings/server-ip`)
       .then((res) => {
         if (!res.ok) throw new Error('No se pudo obtener la IP del servidor')
         return res.json()
@@ -234,7 +244,7 @@ function Configuracion({ setVista }) {
   }, [])
 
   const cargarEstado = useCallback(() => {
-    fetch(`${API_URL}/api/settings/status`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/settings/status`)
       .then((r) => (r.ok ? r.json() : {}))
       .then((data) => setStatus(data))
       .catch(() => setStatus(null))
@@ -247,9 +257,9 @@ function Configuracion({ setVista }) {
   const comprobarRutas = () => {
     setValidateLoading(true)
     setValidateResult(null)
-    fetch(`${API_URL}/api/settings/validate-paths`, {
+    apiFetch(`${API_URL}/api/settings/validate-paths`, {
       method: 'POST',
-      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         excel_path: excelSyncPath || '',
         catalog_path: productosCatalogPath || '',
@@ -263,7 +273,7 @@ function Configuracion({ setVista }) {
 
   const cargarAuditLog = () => {
     setAuditLoading(true)
-    fetch(`${API_URL}/api/audit-log?limit=30`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/audit-log?limit=30`)
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((data) => setAuditLog(data.items || []))
       .catch(() => setAuditLog([]))
@@ -271,7 +281,7 @@ function Configuracion({ setVista }) {
   }
 
   const descargarExport = (path, filename) => {
-    fetch(`${API_URL}${path}`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}${path}`)
       .then((r) => {
         if (!r.ok) throw new Error('Error al exportar')
         return r.blob()
@@ -289,7 +299,7 @@ function Configuracion({ setVista }) {
 
   const descargarBackupJson = () => {
     setBackupLoading(true)
-    fetch(`${API_URL}/api/backup/json`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/backup/json`)
       .then((r) => {
         if (!r.ok) throw new Error('No se pudo generar el backup JSON')
         return r.blob()
@@ -306,25 +316,26 @@ function Configuracion({ setVista }) {
       .finally(() => setBackupLoading(false))
   }
 
-  const restaurarBackupJson = (e) => {
+  const solicitarRestaurarBackupJson = (e) => {
     e?.preventDefault()
     if (!restoreFile) {
       setRestoreError('Selecciona un archivo JSON de backup.')
       return
     }
-    const confirmText = restoreMode === 'replace'
-      ? 'Esto reemplazará los datos actuales por el contenido del backup. ¿Continuar?'
-      : 'Se fusionarán los datos del backup con los actuales. ¿Continuar?'
-    if (!window.confirm(confirmText)) return
+    setRestoreConfirmOpen(true)
+  }
+
+  const ejecutarRestaurarBackupJson = () => {
+    setRestoreConfirmOpen(false)
+    if (!restoreFile) return
 
     setRestoreLoading(true)
     setRestoreError(null)
     setRestoreResult(null)
     const fd = new FormData()
     fd.append('file', restoreFile)
-    fetch(`${API_URL}/api/restore/json?mode=${encodeURIComponent(restoreMode)}`, {
+    apiFetch(`${API_URL}/api/restore/json?mode=${encodeURIComponent(restoreMode)}`, {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: fd,
     })
       .then(async (r) => {
@@ -372,9 +383,9 @@ function Configuracion({ setVista }) {
     setChangePasswordLoading(true)
     setChangePasswordError(null)
     setChangePasswordOk(null)
-    fetch(`${API_URL}/api/auth/change-password`, {
+    apiFetch(`${API_URL}/api/auth/change-password`, {
       method: 'POST',
-      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         current_password: currentPassword,
         new_password: newPassword,
@@ -400,9 +411,8 @@ function Configuracion({ setVista }) {
     setResetMensaje(null)
     setResetProgress(0)
     setResetProgressMessage('Iniciando...')
-    fetch(`${API_URL}/api/productos/sync-reset`, {
+    apiFetch(`${API_URL}/api/productos/sync-reset`, {
       method: 'POST',
-      headers: getAuthHeaders(),
     })
       .then((res) => {
         if (!res.ok) return parseErrorResponse(res)
@@ -416,7 +426,7 @@ function Configuracion({ setVista }) {
           return
         }
         const poll = () => {
-          fetch(`${API_URL}/api/tasks/${taskId}`, { headers: getAuthHeaders() })
+          apiFetch(`${API_URL}/api/tasks/${taskId}`)
             .then((r) => r.json())
             .then((t) => {
               setResetProgress(t.percent ?? 0)
@@ -454,24 +464,14 @@ function Configuracion({ setVista }) {
     }
   }, [])
 
-  useEffect(() => {
-    if (!showResetConfirm) return
-    const onKey = (e) => {
-      if (e.key === 'Escape' && !resetting) setShowResetConfirm(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [showResetConfirm, resetting])
-
   const guardar = () => {
     setGuardando(true)
     setMensaje(null)
     setError(null)
-    fetch(`${API_URL}/api/settings`, {
+    apiFetch(`${API_URL}/api/settings`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        ...getAuthHeaders(),
       },
       body: JSON.stringify({
         PRODUCTOS_CATALOG_PATH: productosCatalogPath.trim(),
@@ -875,6 +875,12 @@ function Configuracion({ setVista }) {
           <p className="configuracion-desc">
             Crea una copia completa del estado de la app (usuarios, mensajes, RMAs, ajustes, etc.) y permite restaurar en modo fusión o reemplazo.
           </p>
+          <p className="configuracion-desc" style={{ marginTop: '-0.25rem' }}>
+            El servidor también guarda copias automáticas en JSON tras operaciones que modifican datos (carpeta{' '}
+            <code>backups/auto-json/</code> junto a la base de datos). Variables de entorno:{' '}
+            <code>AUTO_BACKUP_JSON=0</code> para desactivar, <code>AUTO_BACKUP_JSON_KEEP</code> (número de ficheros, por defecto 80),{' '}
+            <code>AUTO_BACKUP_JSON_MIN_INTERVAL_SEC</code> (segundos mínimos entre copias, por defecto 3, para no saturar en ráfagas).
+          </p>
           <div className="configuracion-actions">
             <button
               type="button"
@@ -885,7 +891,7 @@ function Configuracion({ setVista }) {
               {backupLoading ? 'Generando backup…' : 'Descargar backup JSON'}
             </button>
           </div>
-          <form onSubmit={restaurarBackupJson}>
+          <form onSubmit={solicitarRestaurarBackupJson}>
             <div className="configuracion-field">
               <label htmlFor="config-restore-file">Archivo backup (.json)</label>
               <input
@@ -981,7 +987,7 @@ function Configuracion({ setVista }) {
           aria-modal="true"
           aria-labelledby="reset-modal-title"
         >
-          <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
+          <div ref={resetConfirmPanelRef} className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
             <h2 id="reset-modal-title" className="modal-titulo">¿Recargar lista RMA?</h2>
             <p className="modal-confirm-text">
               Se borrarán <strong>todos</strong> los registros RMA y se volverán a cargar desde el Excel configurado.
@@ -1016,6 +1022,20 @@ function Configuracion({ setVista }) {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={restoreConfirmOpen}
+        title="Restaurar backup JSON"
+        message={
+          restoreMode === 'replace'
+            ? 'Esto reemplazará los datos actuales por el contenido del backup. ¿Continuar?'
+            : 'Se fusionarán los datos del backup con los actuales. ¿Continuar?'
+        }
+        confirmLabel="Continuar"
+        cancelLabel="Cancelar"
+        onCancel={() => setRestoreConfirmOpen(false)}
+        onConfirm={ejecutarRestaurarBackupJson}
+      />
     </>
   )
 }

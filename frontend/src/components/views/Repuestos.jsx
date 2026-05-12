@@ -1,13 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { API_URL, AUTH_STORAGE_KEY } from '../../constants'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { API_URL } from '../../constants'
+import { apiFetch } from '../../utils/auth'
+import ConfirmModal from '../ConfirmModal'
+import { useDialogFocus } from '../../hooks/useDialogFocus'
 
 /**
  * Vista Repuestos: repuestos vinculados a productos del catálogo, con inventario (cantidad).
@@ -25,13 +20,15 @@ function Repuestos() {
   const [filtroProductoRef, setFiltroProductoRef] = useState('') // búsqueda por nº serie base / referencia
   const [guardando, setGuardando] = useState(false)
   const [editandoCantidad, setEditandoCantidad] = useState(null) // id cuando se edita cantidad inline
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const repuestoModalPanelRef = useRef(null)
 
   const refetch = useCallback(() => {
     setCargando(true)
     setError(null)
     Promise.all([
-      fetch(`${API_URL}/api/repuestos`, { headers: getAuthHeaders() }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${API_URL}/api/productos-catalogo`, { headers: getAuthHeaders() }).then((r) => r.json().then((d) => d.productos || [])),
+      apiFetch(`${API_URL}/api/repuestos`).then((r) => (r.ok ? r.json() : [])),
+      apiFetch(`${API_URL}/api/productos-catalogo`).then((r) => r.json().then((d) => d.productos || [])),
     ])
       .then(([repuestos, productos]) => {
         setList(Array.isArray(repuestos) ? repuestos : [])
@@ -85,13 +82,19 @@ function Repuestos() {
     setGuardando(false)
   }
 
+  useDialogFocus(!!modal, repuestoModalPanelRef, {
+    onClose: () => {
+      if (!guardando) cerrarModal()
+    },
+  })
+
   const guardarCrear = () => {
     const nombre = formNombre.trim()
     if (!nombre) return
     setGuardando(true)
-    fetch(`${API_URL}/api/repuestos`, {
+    apiFetch(`${API_URL}/api/repuestos`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         nombre,
         descripcion: formDescripcion.trim(),
@@ -116,9 +119,9 @@ function Repuestos() {
     if (!nombre || !modal?.repuesto) return
     setGuardando(true)
     const id = modal.repuesto.id
-    fetch(`${API_URL}/api/repuestos/${id}`, {
+    apiFetch(`${API_URL}/api/repuestos/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         nombre,
         descripcion: formDescripcion.trim(),
@@ -139,10 +142,15 @@ function Repuestos() {
   }
 
   const eliminar = (repuesto) => {
-    if (!window.confirm(`¿Eliminar el repuesto "${repuesto.nombre}"?`)) return
-    fetch(`${API_URL}/api/repuestos/${repuesto.id}`, {
+    setDeleteConfirm(repuesto)
+  }
+
+  const confirmarEliminarRepuesto = () => {
+    const repuesto = deleteConfirm
+    setDeleteConfirm(null)
+    if (!repuesto) return
+    apiFetch(`${API_URL}/api/repuestos/${repuesto.id}`, {
       method: 'DELETE',
-      headers: getAuthHeaders(),
     })
       .then((r) => {
         if (!r.ok) return r.json().then((e) => { throw new Error(e.detail || 'Error al eliminar') })
@@ -154,9 +162,9 @@ function Repuestos() {
 
   const actualizarCantidad = (id, nuevaCantidad) => {
     const cant = Math.max(0, parseInt(nuevaCantidad, 10) || 0)
-    fetch(`${API_URL}/api/repuestos/${id}/cantidad`, {
+    apiFetch(`${API_URL}/api/repuestos/${id}/cantidad`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cantidad: cant }),
     })
       .then((r) => {
@@ -278,7 +286,7 @@ function Repuestos() {
           aria-modal="true"
           aria-labelledby="repuesto-modal-title"
         >
-          <div className="modal modal-repuesto" onClick={(e) => e.stopPropagation()}>
+          <div ref={repuestoModalPanelRef} className="modal modal-repuesto" onClick={(e) => e.stopPropagation()}>
             <h2 id="repuesto-modal-title" className="modal-titulo">
               {modal === 'crear' ? 'Nuevo repuesto' : 'Editar repuesto'}
             </h2>
@@ -358,6 +366,17 @@ function Repuestos() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={!!deleteConfirm}
+        title="Eliminar repuesto"
+        message={deleteConfirm ? `¿Eliminar el repuesto "${deleteConfirm.nombre}"?` : ''}
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onCancel={() => setDeleteConfirm(null)}
+        onConfirm={confirmarEliminarRepuesto}
+        danger
+      />
     </div>
   )
 }

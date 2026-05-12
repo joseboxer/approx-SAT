@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { API_URL, TASK_POLL_INTERVAL_MS } from '../constants'
-import { getAuthHeaders } from '../utils/auth'
+import { apiFetch } from '../utils/auth'
 
 const CatalogRefreshContext = createContext(null)
 
@@ -34,9 +34,8 @@ export function CatalogRefreshProvider({ children }) {
     setStatus('running')
     setResult(null)
     setError(null)
-    fetch(`${API_URL}/api/productos-catalogo/refresh`, {
+    apiFetch(`${API_URL}/api/productos-catalogo/refresh`, {
       method: 'POST',
-      headers: getAuthHeaders(),
     })
       .then((res) => {
         if (!res.ok) return res.json().then((e) => { throw new Error(e.detail || 'Error al actualizar') })
@@ -56,7 +55,7 @@ export function CatalogRefreshProvider({ children }) {
   useEffect(() => {
     if (!taskId) return
     const poll = () => {
-      fetch(`${API_URL}/api/tasks/${taskId}`, { headers: getAuthHeaders() })
+      apiFetch(`${API_URL}/api/tasks/${taskId}`)
         .then((r) => r.json())
         .then((t) => {
           setPercent(t.percent ?? 0)

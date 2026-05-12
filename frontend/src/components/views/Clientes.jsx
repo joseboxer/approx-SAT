@@ -1,18 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { useGarantia } from '../../context/GarantiaContext'
-import { POR_PAGINA, COLUMNAS_CLIENTES, API_URL, AUTH_STORAGE_KEY } from '../../constants'
+import { POR_PAGINA, COLUMNAS_CLIENTES, API_URL } from '../../constants'
 import { compararValores } from '../../utils/garantia'
+import { apiFetch } from '../../utils/auth'
 import HerramientasTabla from '../HerramientasTabla'
 import Paginacion from '../Paginacion'
 import ModalNotificar from '../ModalNotificar'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
 
 function norm(s) {
   return (s ?? '').toString().trim()
@@ -35,7 +28,7 @@ function Clientes({ clienteDestacado }) {
 
   const refetchGrupos = useCallback(() => {
     setGruposCargando(true)
-    fetch(`${API_URL}/api/clientes/grupos`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/clientes/grupos`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setClientGroups(Array.isArray(data) ? data : []))
       .catch(() => setClientGroups([]))
@@ -173,11 +166,10 @@ function Clientes({ clienteDestacado }) {
     setUnificarCargando(true)
     try {
       const nombres = Array.from(selectedKeys).map((k) => k.split('|')[0])
-      const res = await fetch(`${API_URL}/api/clientes/unificar`, {
+      const res = await apiFetch(`${API_URL}/api/clientes/unificar`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(),
         },
         body: JSON.stringify({ nombres }),
       })
@@ -199,13 +191,12 @@ function Clientes({ clienteDestacado }) {
 
   const handleSacarDelGrupo = async (groupId, client_name, client_email) => {
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/clientes/grupos/${groupId}/miembros`,
         {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
-            ...getAuthHeaders(),
           },
           body: JSON.stringify({
             client_name: client_name ?? '',
@@ -330,9 +321,10 @@ function Clientes({ clienteDestacado }) {
       />
       <div className="table-wrapper table-wrapper-clientes">
         <table>
+          <caption className="sr-only">Clientes y número de RMA asociados</caption>
           <thead>
             <tr>
-              <th className="col-checkbox">
+              <th scope="col" className="col-checkbox">
                 <input
                   type="checkbox"
                   aria-label="Seleccionar todos de la página"
@@ -340,11 +332,11 @@ function Clientes({ clienteDestacado }) {
                   checked={enPagina.length > 0 && enPagina.every((c) => selectedKeys.has(rowKey(c)))}
                 />
               </th>
-              <th>Cliente</th>
-              <th>Email</th>
-              <th>Teléfono</th>
-              <th>Nº RMAs</th>
-              <th>Acciones</th>
+              <th scope="col">Cliente</th>
+              <th scope="col">Email</th>
+              <th scope="col">Teléfono</th>
+              <th scope="col">Nº RMAs</th>
+              <th scope="col">Acciones</th>
             </tr>
           </thead>
           <tbody>

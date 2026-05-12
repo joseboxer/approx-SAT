@@ -1,12 +1,5 @@
-import { API_URL, AUTH_STORAGE_KEY } from '../constants'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
+import { API_URL } from '../constants'
+import { apiFetch } from './auth'
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -36,7 +29,7 @@ export async function registerPushSubscription() {
     const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
     await reg.update()
 
-    const res = await fetch(`${API_URL}/api/push/vapid-public`, { headers: getAuthHeaders() })
+    const res = await apiFetch(`${API_URL}/api/push/vapid-public`)
     if (!res.ok) return
     const { publicKey } = await res.json()
     if (!publicKey) return
@@ -47,9 +40,9 @@ export async function registerPushSubscription() {
     })
 
     const sub = subscription.toJSON()
-    await fetch(`${API_URL}/api/push/subscribe`, {
+    await apiFetch(`${API_URL}/api/push/subscribe`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         endpoint: sub.endpoint,
         keys: sub.keys,

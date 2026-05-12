@@ -9,23 +9,70 @@ import {
   NOTIFICATIONS_TAB_KEY,
   NOTIFICATIONS_CATEGORY_KEY,
 } from '../../constants'
-import { getAuthHeaders } from '../../utils/auth'
+import { apiFetch } from '../../utils/auth'
+import {
+  parseNotificationReference,
+  getRmaStyleRefRows,
+  formatReferencePlainText,
+} from '../../utils/notificationRef'
 
-function parseRef(ref) {
-  if (!ref) return ''
-  try {
-    if (typeof ref === 'string') return ref
-    const o = typeof ref === 'object' ? ref : JSON.parse(ref)
-    if (o.rma_number && o.serial) return `RMA ${o.rma_number} — ${o.serial}`
-    if (o.rma_number) return `RMA ${o.rma_number}`
-    if (o.serial) return o.serial
-    if (o.brand && o.base_serial) return `${o.brand} — ${o.base_serial}`
-    if (o.product_ref) return o.product_ref.replace(/\|/g, ' — ')
-    if (o.nombre) return `${o.nombre}${o.email ? ` (${o.email})` : ''}`
-    return JSON.stringify(o)
-  } catch {
-    return String(ref)
+function NotificationReferenceSummary({ notification }) {
+  const type = (notification.type || '').toLowerCase()
+  const ref = parseNotificationReference(notification.reference_data)
+
+  if (type === 'rma' || type === 'producto_rma') {
+    const { rows } = getRmaStyleRefRows(ref)
+    if (rows.length > 0) {
+      return (
+        <div className="notificaciones-ref-block">
+          {rows.map((row) => (
+            <div key={row.key} className="notificaciones-ref-row">
+              <span className="notificaciones-ref-label">{row.label}</span>
+              <span className="notificaciones-ref-value">{row.value}</span>
+            </div>
+          ))}
+        </div>
+      )
+    }
   }
+
+  if (type === 'rma_especial') {
+    const rows = []
+    if (ref.rma_number) {
+      rows.push({ key: 'rma', label: 'RMA especial', value: String(ref.rma_number) })
+    }
+    if (ref.line_count != null && ref.line_count !== '') {
+      rows.push({ key: 'lc', label: 'Líneas', value: String(ref.line_count) })
+    }
+    const previews = Array.isArray(ref.line_previews) ? ref.line_previews : []
+    if (rows.length > 0 || previews.length > 0) {
+      return (
+        <div className="notificaciones-ref-block">
+          {rows.map((row) => (
+            <div key={row.key} className="notificaciones-ref-row">
+              <span className="notificaciones-ref-label">{row.label}</span>
+              <span className="notificaciones-ref-value">{row.value}</span>
+            </div>
+          ))}
+          {previews.length > 0 ? (
+            <div className="notificaciones-ref-especial-lines" aria-label="Muestra de líneas">
+              {previews.map((ln, i) => {
+                const head = [ln.ref_proveedor, ln.serial].filter(Boolean).join(' · ')
+                const tail = [ln.fallo, ln.resolucion].filter(Boolean).join(' · ')
+                const line = [head, tail].filter(Boolean).join(' — ')
+                return line ? (
+                  <div key={i} className="notificaciones-ref-preview-line">{line}</div>
+                ) : null
+              })}
+            </div>
+          ) : null}
+        </div>
+      )
+    }
+  }
+
+  const plain = formatReferencePlainText(notification.reference_data)
+  return plain ? <span className="notificaciones-ref-plain">{plain}</span> : null
 }
 
 const BANDEJA_RECIBIDOS = 'recibidos'
@@ -129,7 +176,7 @@ function Notificaciones({
     if (dateTo) params.set('date_to', dateTo)
     if (onlyUnread && bandeja === BANDEJA_RECIBIDOS) params.set('unread_only', '1')
     const url = `${API_URL}/api/notifications/search?${params.toString()}`
-    fetch(url, { headers: getAuthHeaders() })
+    apiFetch(url)
       .then((r) => {
         if (!r.ok) throw new Error('Error al cargar notificaciones')
         return r.json()
@@ -185,9 +232,8 @@ function Notificaciones({
   const handleBorrar = (n) => {
     if (!n.id || actioningId !== null) return
     setActioningId(n.id)
-    fetch(`${API_URL}/api/notifications/${n.id}/delete`, {
+    apiFetch(`${API_URL}/api/notifications/${n.id}/delete`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
     })
       .then((r) => {
         if (!r.ok) return r.json().then((d) => { throw new Error(d.detail || 'Error al borrar') })
@@ -208,9 +254,8 @@ function Notificaciones({
   const handleRestaurar = (n) => {
     if (!n.id || actioningId !== null) return
     setActioningId(n.id)
-    fetch(`${API_URL}/api/notifications/${n.id}/restore`, {
+    apiFetch(`${API_URL}/api/notifications/${n.id}/restore`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
     })
       .then((r) => {
         if (!r.ok) return r.json().then((d) => { throw new Error(d.detail || 'Error al restaurar') })
@@ -261,9 +306,8 @@ function Notificaciones({
     }
 
     if (bandeja === BANDEJA_RECIBIDOS && n.id && !n.read_at) {
-      fetch(`${API_URL}/api/notifications/${n.id}/read`, {
+      apiFetch(`${API_URL}/api/notifications/${n.id}/read`, {
         method: 'PATCH',
-        headers: getAuthHeaders(),
       }).then(() => {
         refetch()
         onMarkRead?.()
@@ -274,11 +318,10 @@ function Notificaciones({
   const handleGeneratePdf = useCallback(() => {
     if (selectedCount === 0 || pdfLoading) return
     setPdfLoading(true)
-    fetch(`${API_URL}/api/notifications/report-pdf`, {
+    apiFetch(`${API_URL}/api/notifications/report-pdf`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...getAuthHeaders(),
       },
       body: JSON.stringify({ ids: Array.from(selectedIds) }),
     })
@@ -308,11 +351,10 @@ function Notificaciones({
     <>
       <h1 className="page-title">Mensajes y avisos</h1>
 
-      <div className="notificaciones-bandejas" role="tablist" aria-label="Bandeja de mensajes">
+      <div className="notificaciones-bandejas" role="group" aria-label="Bandeja de mensajes">
         <button
           type="button"
-          role="tab"
-          aria-selected={bandeja === BANDEJA_RECIBIDOS}
+          aria-pressed={bandeja === BANDEJA_RECIBIDOS}
           className={`notificaciones-tab ${bandeja === BANDEJA_RECIBIDOS ? 'active' : ''}`}
           onClick={() => setBandeja(BANDEJA_RECIBIDOS)}
         >
@@ -320,8 +362,7 @@ function Notificaciones({
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={bandeja === BANDEJA_ENVIADOS}
+          aria-pressed={bandeja === BANDEJA_ENVIADOS}
           className={`notificaciones-tab ${bandeja === BANDEJA_ENVIADOS ? 'active' : ''}`}
           onClick={() => setBandeja(BANDEJA_ENVIADOS)}
         >
@@ -329,8 +370,7 @@ function Notificaciones({
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={bandeja === BANDEJA_BORRADOS}
+          aria-pressed={bandeja === BANDEJA_BORRADOS}
           className={`notificaciones-tab ${bandeja === BANDEJA_BORRADOS ? 'active' : ''}`}
           onClick={() => setBandeja(BANDEJA_BORRADOS)}
         >
@@ -338,13 +378,12 @@ function Notificaciones({
         </button>
       </div>
 
-      <div className="notificaciones-categorias" role="tablist" aria-label="Filtro por categoría">
+      <div className="notificaciones-categorias" role="group" aria-label="Filtro por categoría de mensaje">
         {bandeja === BANDEJA_BORRADOS ? null : NOTIFICATION_CATEGORY_VALUES.map((cat) => (
           <button
             key={cat || 'sin-filtro'}
             type="button"
-            role="tab"
-            aria-selected={categoria === cat}
+            aria-pressed={categoria === cat}
             className={`notificaciones-tab notificaciones-tab-cat ${categoria === cat ? 'active' : ''}`}
             onClick={() => setCategoria(cat)}
           >
@@ -507,7 +546,7 @@ function Notificaciones({
                     )}
                   </div>
                   <div className="notificaciones-item-ref">
-                    {parseRef(n.reference_data)}
+                    <NotificationReferenceSummary notification={n} />
                   </div>
                   {n.message && (
                     <p className="notificaciones-item-message">{n.message}</p>

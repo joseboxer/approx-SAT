@@ -32,6 +32,19 @@ function Layout({
 
   return (
     <div className="app">
+      <a
+        href="#contenido-principal"
+        className="skip-to-content"
+        onClick={(e) => {
+          e.preventDefault()
+          const el = document.getElementById('contenido-principal')
+          if (el) {
+            el.focus({ preventScroll: false })
+          }
+        }}
+      >
+        Saltar al contenido
+      </a>
       <Navbar
         vista={vista}
         setVista={setVista}
@@ -64,7 +77,9 @@ function Layout({
         })}
       </nav>
       <AlertaEstadoSinNotificar setVista={setVista} notifCountKey={notifCountKey} />
-      <main className="main app-view-transition">{children}</main>
+      <main id="contenido-principal" className="main app-view-transition" tabIndex={-1}>
+        {children}
+      </main>
     </div>
   )
 }

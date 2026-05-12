@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react'
+import React, { useRef } from 'react'
 import { registerPushSubscription } from '../utils/pushSubscription'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 
 const STORAGE_KEY = 'garantia-sat-notification-permission-asked'
 
@@ -24,12 +25,8 @@ export function markNotificationPermissionAsked() {
  * Se muestra una sola vez por navegador si el usuario no ha aceptado ni denegado.
  */
 function NotificationPermissionModal({ open, onActivar, onCerrar }) {
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e) => { if (e.key === 'Escape') onCerrar?.() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onCerrar])
+  const panelRef = useRef(null)
+  useDialogFocus(open, panelRef, { onClose: onCerrar })
 
   if (!open) return null
 
@@ -58,7 +55,7 @@ function NotificationPermissionModal({ open, onActivar, onCerrar }) {
       aria-modal="true"
       aria-labelledby="notification-permission-title"
     >
-      <div className="modal modal-notification-permission" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-notification-permission" ref={panelRef} onClick={(e) => e.stopPropagation()}>
         <h2 id="notification-permission-title" className="modal-titulo">
           Notificaciones del navegador
         </h2>

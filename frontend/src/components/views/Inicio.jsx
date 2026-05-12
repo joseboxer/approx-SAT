@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { useGarantia } from '../../context/GarantiaContext'
 import { API_URL, TASK_POLL_INTERVAL_MS, VISTAS } from '../../constants'
 import { getRmaId } from '../../utils/garantia'
-import { getAuthHeaders } from '../../utils/auth'
+import { apiFetch } from '../../utils/auth'
 import ProgressBar from '../ProgressBar'
 
 function Inicio({ setVista, setRmaDestacado }) {
@@ -94,10 +94,8 @@ function Inicio({ setVista, setRmaDestacado }) {
       syncPollRef.current = null
     }
     try {
-      const headers = getAuthHeaders()
-      const res = await fetch(`${API_URL}/api/productos/sync`, {
+      const res = await apiFetch(`${API_URL}/api/productos/sync`, {
         method: 'POST',
-        headers,
         body: archivoManual ? (() => {
           const fd = new FormData()
           fd.append('file', archivoManual)
@@ -116,7 +114,7 @@ function Inicio({ setVista, setRmaDestacado }) {
         return
       }
       const poll = () => {
-        fetch(`${API_URL}/api/tasks/${taskId}`, { headers })
+        apiFetch(`${API_URL}/api/tasks/${taskId}`)
           .then((r) => r.json())
           .then((t) => {
             setSyncProgress(t.percent ?? 0)

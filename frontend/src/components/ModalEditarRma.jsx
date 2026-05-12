@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react'
+import React, { useRef } from 'react'
 import { useGarantia } from '../context/GarantiaContext'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 
 function ModalEditarRma() {
   const {
@@ -12,12 +13,9 @@ function ModalEditarRma() {
     OPCIONES_ESTADO,
   } = useGarantia()
 
-  useEffect(() => {
-    if (editandoRmaId == null) return
-    const onKey = (e) => { if (e.key === 'Escape') setEditandoRmaId(null) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [editandoRmaId, setEditandoRmaId])
+  const panelRef = useRef(null)
+  const open = editandoRmaId != null
+  useDialogFocus(open, panelRef, { onClose: () => setEditandoRmaId(null) })
 
   if (editandoRmaId == null) return null
 
@@ -29,7 +27,7 @@ function ModalEditarRma() {
       aria-modal="true"
       aria-labelledby="modal-titulo"
     >
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div ref={panelRef} className="modal" onClick={(e) => e.stopPropagation()}>
         <h2 id="modal-titulo" className="modal-titulo">
           Editar RMA {editandoRmaId || ''}
         </h2>

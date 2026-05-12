@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react'
-import { API_URL, OPCIONES_ESTADO, AUTH_STORAGE_KEY } from '../constants'
+import { API_URL, OPCIONES_ESTADO } from '../constants'
 import { getRmaId as getRmaIdUtil, getClaveSerieReal, getSerie as getSerieUtil } from '../utils/garantia'
+import { apiFetch } from '../utils/auth'
 
 const GarantiaContext = createContext(null)
 
@@ -8,14 +9,6 @@ export function useGarantia() {
   const ctx = useContext(GarantiaContext)
   if (!ctx) throw new Error('useGarantia debe usarse dentro de GarantiaProvider')
   return ctx
-}
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
 }
 
 export function GarantiaProvider({ children }) {
@@ -27,7 +20,7 @@ export function GarantiaProvider({ children }) {
   const refetchProductos = useCallback(() => {
     setCargando(true)
     setError(null)
-    fetch(`${API_URL}/api/productos`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/productos`)
       .then((res) => {
         if (!res.ok) throw new Error('Error al cargar datos')
         return res.json()
@@ -79,9 +72,9 @@ export function GarantiaProvider({ children }) {
   const guardarEstadoRma = useCallback(
     async (rmaId, value) => {
       const estado = value ? String(value).trim() : ''
-      const res = await fetch(`${API_URL}/api/rmas/${encodeURIComponent(rmaId)}/estado`, {
+      const res = await apiFetch(`${API_URL}/api/rmas/${encodeURIComponent(rmaId)}/estado`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ estado }),
       })
       if (!res.ok) return
@@ -93,11 +86,11 @@ export function GarantiaProvider({ children }) {
   const guardarFechaRecogidaRma = useCallback(
     async (rmaId, value) => {
       const fecha = value ? String(value).trim().slice(0, 10) : ''
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/rmas/${encodeURIComponent(rmaId)}/fecha-recogida`,
         {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fecha_recogida: fecha }),
         }
       )
@@ -111,9 +104,8 @@ export function GarantiaProvider({ children }) {
     async (grupo) => {
       const rmaNumber = grupo?.rmaId ?? getRmaIdUtil(grupo?.items?.[0])
       if (!rmaNumber) return
-      const res = await fetch(`${API_URL}/api/rmas/${encodeURIComponent(rmaNumber)}/ocultar`, {
+      const res = await apiFetch(`${API_URL}/api/rmas/${encodeURIComponent(rmaNumber)}/ocultar`, {
         method: 'PATCH',
-        headers: getAuthHeaders(),
       })
       if (!res.ok) return
       refetchProductos()
@@ -125,9 +117,8 @@ export function GarantiaProvider({ children }) {
     async (rma) => {
       const rmaNumber = getRmaIdUtil(rma)
       if (!rmaNumber) return
-      const res = await fetch(`${API_URL}/api/rmas/${encodeURIComponent(rmaNumber)}/desocultar`, {
+      const res = await apiFetch(`${API_URL}/api/rmas/${encodeURIComponent(rmaNumber)}/desocultar`, {
         method: 'PATCH',
-        headers: getAuthHeaders(),
       })
       if (!res.ok) return
       refetchProductos()

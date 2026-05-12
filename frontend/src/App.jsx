@@ -23,17 +23,10 @@ import Notificaciones from './components/views/Notificaciones'
 import ModalEditarRma from './components/ModalEditarRma'
 import NotificationPermissionModal, { shouldShowNotificationPermissionPrompt } from './components/NotificationPermissionModal'
 import TourRecorrido from './components/TourRecorrido'
-import { VISTAS, VISTAS_ATAJOS, API_URL, AUTH_STORAGE_KEY } from './constants'
+import { VISTAS, VISTAS_ATAJOS, API_URL } from './constants'
+import { apiFetch } from './utils/auth'
 import { ensurePushSubscription } from './utils/pushSubscription'
 import './App.css'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
 
 /**
  * App principal: Gestión de garantías.
@@ -55,7 +48,7 @@ function AppContent() {
   useEffect(() => {
     if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') return
     const fetchCount = () => {
-      fetch(`${API_URL}/api/notifications/unread-count`, { headers: getAuthHeaders() })
+      apiFetch(`${API_URL}/api/notifications/unread-count`)
         .then((r) => (r.ok ? r.json() : { count: 0 }))
         .then((data) => {
           const c = data.count ?? 0

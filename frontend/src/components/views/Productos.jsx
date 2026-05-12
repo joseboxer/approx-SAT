@@ -1,18 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, POR_PAGINA } from '../../constants'
+import { API_URL, POR_PAGINA } from '../../constants'
+import { apiFetch } from '../../utils/auth'
 import { compararValores } from '../../utils/garantia'
 import Paginacion from '../Paginacion'
 import ProgressBar from '../ProgressBar'
 import ModalNotificar from '../ModalNotificar'
+import ConfirmModal from '../ConfirmModal'
 import { useCatalogRefresh } from '../../context/CatalogRefreshContext'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
 
 // Para mostrar la marca sin el prefijo redundante "PRODUCTOS "
 function formatBrand(brand) {
@@ -55,6 +49,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   const [dragging, setDragging] = useState(false)
   const [dragStart, setDragStart] = useState(null)
   const [dragRect, setDragRect] = useState(null)
+  const [bulkDeleteLista, setBulkDeleteLista] = useState(null)
   const [dragMode, setDragMode] = useState('add') // 'add' | 'remove'
   const [dragContext, setDragContext] = useState(null) // 'productos' | 'tipos'
   const dragBaseSelectionRef = useRef(new Set())
@@ -75,7 +70,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     setCargando(true)
     setError(null)
     setCatalogError(null)
-    fetch(`${API_URL}/api/productos-catalogo`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/productos-catalogo`)
       .then((res) => {
         if (!res.ok) throw new Error('Error al cargar catálogo')
         return res.json()
@@ -102,7 +97,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
 
   // Cargar lista de tipos de producto (existentes + extra configurables)
   useEffect(() => {
-    fetch(`${API_URL}/api/productos-catalogo/tipos`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/productos-catalogo/tipos`)
       .then((r) => (r.ok ? r.json() : { tipos: [] }))
       .then((data) => {
         setTiposProducto(Array.isArray(data.tipos) ? data.tipos : [])
@@ -219,9 +214,9 @@ function Productos({ productoDestacado, setProductoDestacado }) {
   const handleCrearTipo = () => {
     const nombre = (nuevoTipo || '').trim()
     if (!nombre) return
-    fetch(`${API_URL}/api/productos-catalogo/tipos`, {
+    apiFetch(`${API_URL}/api/productos-catalogo/tipos`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nombre }),
     })
       .then((r) => (r.ok ? r.json() : r.json().then((d) => { throw new Error(d.detail || 'Error al crear tipo') })))
@@ -236,9 +231,9 @@ function Productos({ productoDestacado, setProductoDestacado }) {
     const tipo = (tipoBulk || '').trim()
     if (!tipo || selectedRefs.size === 0) return
     setBulkLoading(true)
-    fetch(`${API_URL}/api/productos-catalogo/tipos/asignar`, {
+    apiFetch(`${API_URL}/api/productos-catalogo/tipos/asignar`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tipo, product_refs: Array.from(selectedRefs) }),
     })
       .then((r) => (r.ok ? r.json() : r.json().then((d) => { throw new Error(d.detail || 'Error al asignar tipo') })))
@@ -262,19 +257,17 @@ function Productos({ productoDestacado, setProductoDestacado }) {
 
   const handleBorrarTipos = () => {
     if (!tiposSeleccionados.size) return
-    const lista = Array.from(tiposSeleccionados)
-    // Aviso importante al usuario
-    // eslint-disable-next-line no-alert
-    const ok = window.confirm(
-      `Vas a borrar estos tipos:\n\n${lista.join(
-        ', '
-      )}\n\nTodos los productos que tengan alguno de esos tipos se quedarán sin tipo.\n\n¿Quieres continuar?`
-    )
-    if (!ok) return
+    setBulkDeleteLista(Array.from(tiposSeleccionados))
+  }
+
+  const ejecutarBorrarTipos = () => {
+    const lista = bulkDeleteLista
+    setBulkDeleteLista(null)
+    if (!lista || lista.length === 0) return
     setBulkLoading(true)
-    fetch(`${API_URL}/api/productos-catalogo/tipos/borrar`, {
+    apiFetch(`${API_URL}/api/productos-catalogo/tipos/borrar`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tipos: lista }),
     })
       .then((r) => (r.ok ? r.json() : r.json().then((d) => { throw new Error(d.detail || 'Error al borrar tipos') })))
@@ -309,9 +302,9 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       return
     }
     setBulkLoading(true)
-    fetch(`${API_URL}/api/productos-catalogo/tipos/renombrar`, {
+    apiFetch(`${API_URL}/api/productos-catalogo/tipos/renombrar`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ antiguo, nuevo }),
     })
       .then((r) => (r.ok ? r.json() : r.json().then((d) => { throw new Error(d.detail || 'Error al renombrar tipo') })))
@@ -542,11 +535,10 @@ function Productos({ productoDestacado, setProductoDestacado }) {
       </p>
 
       <div className="productos-catalogo-actions">
-        <div className="productos-catalogo-vista-toggle" role="tablist" aria-label="Tipo de vista">
+        <div className="productos-catalogo-vista-toggle" role="group" aria-label="Tipo de vista del catálogo">
           <button
             type="button"
-            role="tab"
-            aria-selected={vistaCatalogo === 'lista'}
+            aria-pressed={vistaCatalogo === 'lista'}
             className={`btn ${vistaCatalogo === 'lista' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => { setVistaCatalogo('lista'); setMarcaExpandida(null); }}
           >
@@ -554,8 +546,7 @@ function Productos({ productoDestacado, setProductoDestacado }) {
           </button>
           <button
             type="button"
-            role="tab"
-            aria-selected={vistaCatalogo === 'marcas'}
+            aria-pressed={vistaCatalogo === 'marcas'}
             className={`btn ${vistaCatalogo === 'marcas' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => { setVistaCatalogo('marcas'); setMarcaExpandida(null); }}
           >
@@ -1072,6 +1063,21 @@ function Productos({ productoDestacado, setProductoDestacado }) {
           }}
         />
       )}
+
+      <ConfirmModal
+        open={!!bulkDeleteLista?.length}
+        title="Borrar tipos de producto"
+        message={
+          bulkDeleteLista?.length
+            ? `Vas a borrar estos tipos:\n\n${bulkDeleteLista.join(', ')}\n\nTodos los productos que tengan alguno de esos tipos se quedarán sin tipo.\n\n¿Quieres continuar?`
+            : ''
+        }
+        confirmLabel="Sí, borrar"
+        cancelLabel="Cancelar"
+        onCancel={() => setBulkDeleteLista(null)}
+        onConfirm={ejecutarBorrarTipos}
+        danger
+      />
 
       <ModalNotificar
         open={notificarOpen}

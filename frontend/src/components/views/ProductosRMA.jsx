@@ -1,17 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, POR_PAGINA, COLUMNAS_PRODUCTOS_RMA, VISTAS } from '../../constants'
+import { API_URL, POR_PAGINA, COLUMNAS_PRODUCTOS_RMA, VISTAS } from '../../constants'
 import { compararValores } from '../../utils/garantia'
+import { apiFetch } from '../../utils/auth'
+import { buildRmaNotificationReference } from '../../utils/notificationRef'
 import Paginacion from '../Paginacion'
 import ProgressBar from '../ProgressBar'
 import ModalNotificar from '../ModalNotificar'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
+import ConfirmModal from '../ConfirmModal'
 
 function formatDate(s) {
   if (!s) return '-'
@@ -30,11 +25,28 @@ function parseDateInput(s) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+function refForProductoRmaRow(row) {
+  const items = Array.isArray(row.items) ? row.items : []
+  const serialW = String(row.serial || '').trim()
+  let item = null
+  if (serialW) {
+    const matches = items.filter((it) => {
+      const s = String(it['Nº DE SERIE'] ?? it['NÂº DE SERIE'] ?? '').trim()
+      return s && s === serialW
+    })
+    if (matches.length) item = matches[matches.length - 1]
+  }
+  if (!item && items.length) item = items[items.length - 1]
+  if (item) return buildRmaNotificationReference(item)
+  if (serialW) return { serial: serialW }
+  return {}
+}
+
 function renderFilaProductoRma(
   row,
   serialExpandido,
   setSerialExpandido,
-  handleGarantiaChange,
+  onRequestGarantiaChange,
   formatDate,
   setVista,
   setSerialDestacado,
@@ -122,22 +134,24 @@ function renderFilaProductoRma(
             : '-'}
         </td>
         <td>
-          <label className="productos-rma-garantia-label">
+          <div className="productos-rma-garantia-label">
             <input
               type="checkbox"
               checked={!!row.garantia_vigente}
-              onChange={(e) => {
-                const v = e.target.checked
-                const msg = v
-                  ? '¿Marcar la garantía como vigente?'
-                  : '¿Marcar la garantía como no vigente?'
-                if (!window.confirm(msg)) return
-                handleGarantiaChange(row.serial, v)
+              onMouseDown={(e) => {
+                e.preventDefault()
+                onRequestGarantiaChange?.(row.serial, !row.garantia_vigente)
               }}
-              aria-label={`Garantía vigente: ${row.serial}`}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault()
+                  onRequestGarantiaChange?.(row.serial, !row.garantia_vigente)
+                }
+              }}
+              aria-label={`Garantía vigente para ${row.serial}: ${row.garantia_vigente ? 'sí' : 'no'}. Pulsa para cambiar.`}
             />
-            <span>{row.garantia_vigente ? 'Sí' : 'No'}</span>
-          </label>
+            <span aria-hidden>{row.garantia_vigente ? 'Sí' : 'No'}</span>
+          </div>
         </td>
         <td>
           <div className="productos-rma-acciones">
@@ -154,7 +168,7 @@ function renderFilaProductoRma(
               <button
                 type="button"
                 className="btn btn-notificar btn-sm"
-                onClick={() => onNotificar({ serial: row.serial })}
+                onClick={() => onNotificar(refForProductoRmaRow(row))}
                 title="Notificar a un usuario (compartir este producto RMA)"
               >
                 Notificar
@@ -168,16 +182,17 @@ function renderFilaProductoRma(
           <td colSpan={8} className="td-desplegable">
             <div className="desplegable-detalle">
               <table className="tabla-desplegable">
+                <caption className="sr-only">Historial RMA de este número de serie</caption>
                 <thead>
                   <tr>
-                    <th>Nº RMA</th>
-                    <th>Producto</th>
-                    <th>Nº serie</th>
-                    <th>Cliente</th>
-                    <th>Fecha recibido</th>
-                    <th>Avería</th>
-                    <th>Observaciones</th>
-                    <th>Estado</th>
+                    <th scope="col">Nº RMA</th>
+                    <th scope="col">Producto</th>
+                    <th scope="col">Nº serie</th>
+                    <th scope="col">Cliente</th>
+                    <th scope="col">Fecha recibido</th>
+                    <th scope="col">Avería</th>
+                    <th scope="col">Observaciones</th>
+                    <th scope="col">Estado</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -271,7 +286,7 @@ function ProductosRMA(props) {
     setError(null)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 60000)
-    fetch(`${API_URL}/api/productos-rma`, { headers: getAuthHeaders(), signal: controller.signal })
+    apiFetch(`${API_URL}/api/productos-rma`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error(res.status === 401 ? 'Sesión expirada' : 'Error al cargar productos RMA')
         return res.json()
@@ -420,13 +435,12 @@ function ProductosRMA(props) {
   const handleGarantiaChange = useCallback(
     async (serial, vigente) => {
       const encoded = encodeURIComponent(serial)
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/productos-rma/${encoded}/garantia`,
         {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
-            ...getAuthHeaders(),
           },
           body: JSON.stringify({ vigente }),
         }
@@ -435,6 +449,17 @@ function ProductosRMA(props) {
     },
     [refetch]
   )
+
+  const [garantiaConfirm, setGarantiaConfirm] = useState(null)
+  const solicitarCambioGarantia = useCallback((serial, next) => {
+    setGarantiaConfirm({ serial, next })
+  }, [])
+  const confirmarCambioGarantia = useCallback(() => {
+    if (!garantiaConfirm) return
+    const { serial, next } = garantiaConfirm
+    setGarantiaConfirm(null)
+    handleGarantiaChange(serial, next)
+  }, [garantiaConfirm, handleGarantiaChange])
 
   const limpiarFiltros = useCallback(() => {
     setFiltroSerial('')
@@ -736,16 +761,17 @@ function ProductosRMA(props) {
         </h2>
         <div className="table-wrapper table-wrapper-productos-rma tabla-productos-rma">
           <table>
+            <caption className="sr-only">Productos con RMA, con fecha válida</caption>
             <thead>
               <tr>
-                <th>Nº de serie</th>
-                <th>Producto</th>
-                <th>Nº líneas</th>
-                <th>Primera fecha</th>
-                <th>Última fecha</th>
-                <th>Clientes (muestra)</th>
-                <th>Garantía vigente</th>
-                <th>Acciones</th>
+                <th scope="col">Nº de serie</th>
+                <th scope="col">Producto</th>
+                <th scope="col">Nº líneas</th>
+                <th scope="col">Primera fecha</th>
+                <th scope="col">Última fecha</th>
+                <th scope="col">Clientes (muestra)</th>
+                <th scope="col">Garantía vigente</th>
+                <th scope="col">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -753,7 +779,7 @@ function ProductosRMA(props) {
                 row,
                 serialExpandido,
                 setSerialExpandido,
-                handleGarantiaChange,
+                solicitarCambioGarantia,
                 formatDate,
                 setVista,
                 setSerialDestacado,
@@ -789,16 +815,17 @@ function ProductosRMA(props) {
           </h2>
           <div className="table-wrapper table-wrapper-productos-rma tabla-productos-rma">
             <table>
+              <caption className="sr-only">Productos con RMA, sin fecha válida</caption>
               <thead>
                 <tr>
-                  <th>Nº de serie</th>
-                  <th>Producto</th>
-                  <th>Nº líneas</th>
-                  <th>Primera fecha</th>
-                  <th>Última fecha</th>
-                  <th>Clientes (muestra)</th>
-                  <th>Garantía vigente</th>
-                  <th>Acciones</th>
+                  <th scope="col">Nº de serie</th>
+                  <th scope="col">Producto</th>
+                  <th scope="col">Nº líneas</th>
+                  <th scope="col">Primera fecha</th>
+                  <th scope="col">Última fecha</th>
+                  <th scope="col">Clientes (muestra)</th>
+                  <th scope="col">Garantía vigente</th>
+                  <th scope="col">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -806,7 +833,7 @@ function ProductosRMA(props) {
                   row,
                   serialExpandido,
                   setSerialExpandido,
-                  handleGarantiaChange,
+                  solicitarCambioGarantia,
                   formatDate,
                   setVista,
                   setSerialDestacado,
@@ -828,6 +855,19 @@ function ProductosRMA(props) {
           />
         </section>
       )}
+      <ConfirmModal
+        open={!!garantiaConfirm}
+        title="Cambiar garantía"
+        message={
+          garantiaConfirm?.next
+            ? '¿Marcar la garantía como vigente?'
+            : '¿Marcar la garantía como no vigente?'
+        }
+        confirmLabel="Continuar"
+        cancelLabel="Cancelar"
+        onCancel={() => setGarantiaConfirm(null)}
+        onConfirm={confirmarCambioGarantia}
+      />
       <ModalNotificar
         open={notificarOpen}
         onClose={() => { setNotificarOpen(false); setNotificarRef(null); }}

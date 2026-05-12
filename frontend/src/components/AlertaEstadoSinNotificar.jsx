@@ -1,13 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, VISTAS } from '../constants'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
+import { API_URL, VISTAS } from '../constants'
+import { apiFetch } from '../utils/auth'
 
 /**
  * Banner de alerta: productos Lista RMA y líneas de RMA especiales con estado asignado
@@ -19,7 +12,7 @@ function AlertaEstadoSinNotificar({ setVista, notifCountKey }) {
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
-    fetch(`${API_URL}/api/rmas/estado-sin-notificar`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/rmas/estado-sin-notificar`)
       .then((r) => (r.ok ? r.json() : { count_rma_items: 0, count_rma_especial_lineas: 0 }))
       .then((data) => {
         setCountRma(data.count_rma_items ?? (Array.isArray(data.items) ? data.items.length : 0))

@@ -1,7 +1,13 @@
 import React, { useEffect, useRef } from 'react'
 import { useTour, TOUR_STEPS } from '../context/TourContext'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 
 const TOUR_HIGHLIGHT_CLASS = 'tour-step-target'
+
+function prefersReducedMotion() {
+  if (typeof window === 'undefined' || !window.matchMedia) return false
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
 
 /**
  * Overlay del recorrido guiado. Muestra el paso actual, resalta el elemento explicado y permite Siguiente / Anterior / Cerrar.
@@ -9,6 +15,8 @@ const TOUR_HIGHLIGHT_CLASS = 'tour-step-target'
 function TourRecorrido({ setVista }) {
   const { tourActive, currentStep, isFirstStep, isLastStep, nextStep, prevStep, closeTour } = useTour()
   const highlightedElRef = useRef(null)
+  const panelRef = useRef(null)
+  useDialogFocus(tourActive, panelRef, { onClose: closeTour })
 
   useEffect(() => {
     if (tourActive && currentStep?.vista) {
@@ -36,7 +44,11 @@ function TourRecorrido({ setVista }) {
       if (el) {
         el.classList.add(TOUR_HIGHLIGHT_CLASS)
         highlightedElRef.current = el
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+        el.scrollIntoView({
+          behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+          block: 'nearest',
+          inline: 'nearest',
+        })
       }
     }, delay)
     return () => {
@@ -53,7 +65,7 @@ function TourRecorrido({ setVista }) {
   return (
     <div className="tour-overlay" role="dialog" aria-modal="true" aria-labelledby="tour-title">
       <div className="tour-backdrop" onClick={closeTour} aria-hidden />
-      <div className="tour-card">
+      <div className="tour-card" ref={panelRef}>
         <div className="tour-header">
           <h2 id="tour-title" className="tour-title">
             Guía de la aplicación

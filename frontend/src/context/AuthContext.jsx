@@ -1,5 +1,12 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import { API_URL, AUTH_STORAGE_KEY, AUTH_USER_KEY } from '../constants'
+import {
+  AUTH_SESSION_EXPIRED_EVENT,
+  apiFetchWithTimeout,
+  clearStoredAuth,
+  getStoredTokenExpiresAtMs,
+  notifySessionExpired,
+} from '../utils/auth'
 
 const FETCH_TIMEOUT_MS = 30000 // 30 s; evita carga infinita si el backend no responde
 
@@ -114,8 +121,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem(AUTH_STORAGE_KEY)
-    localStorage.removeItem(AUTH_USER_KEY)
+    clearStoredAuth()
     setUser(null)
   }, [])
 
@@ -124,9 +130,7 @@ export function AuthProvider({ children }) {
     const t = localStorage.getItem(AUTH_STORAGE_KEY)
     if (!t || user?.isAdmin !== undefined) return
     try {
-      const res = await fetchWithTimeout(`${API_URL}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${t}` },
-      })
+      const res = await apiFetchWithTimeout(`${API_URL}/api/auth/me`, {})
       if (!res.ok) return
       const data = await res.json().catch(() => ({}))
       const payload = { username: data.username, is_admin: data.is_admin === true }
@@ -138,6 +142,28 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     refreshUser()
   }, [refreshUser])
+
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null)
+      setAuthError('Tu sesión ha caducado o el token ya no es válido. Inicia sesión de nuevo.')
+    }
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, onExpired)
+    return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, onExpired)
+  }, [])
+
+  /** Si el JWT expira mientras la pestaña sigue abierta, cerrar sesión sin esperar al siguiente fetch. */
+  useEffect(() => {
+    const tick = () => {
+      const exp = getStoredTokenExpiresAtMs()
+      if (exp != null && Date.now() >= exp - 2000) {
+        notifySessionExpired()
+      }
+    }
+    tick()
+    const id = setInterval(tick, 15000)
+    return () => clearInterval(id)
+  }, [])
 
   const value = {
     user,

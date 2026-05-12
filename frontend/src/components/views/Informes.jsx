@@ -1,13 +1,6 @@
 import React, { useState } from 'react'
-import { API_URL, AUTH_STORAGE_KEY } from '../../constants'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
+import { API_URL } from '../../constants'
+import { apiFetch } from '../../utils/auth'
 
 /**
  * Apartado Informes: genera informes (Atractor, etc.) y opción de descarga.
@@ -29,9 +22,9 @@ function Informes() {
     setAtractorError(null)
     setAtractorDatos(null)
     setAtractorCargando(true)
-    fetch(`${API_URL}/api/atractor/informe-ventas`, {
+    apiFetch(`${API_URL}/api/atractor/informe-ventas`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ desde, hasta }),
     })
       .then((res) => res.json().catch(() => ({})))

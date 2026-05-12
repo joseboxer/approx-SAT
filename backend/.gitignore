@@ -1,4 +1,5 @@
 garantia.db
+backups/auto-json/
 __pycache__/
 *.pyc
 .venv/

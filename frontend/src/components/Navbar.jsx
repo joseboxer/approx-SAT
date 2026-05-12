@@ -2,14 +2,10 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useGarantia } from '../context/GarantiaContext'
 import { useAuth } from '../context/AuthContext'
 import { useTour } from '../context/TourContext'
-import { VISTAS, ATAJO_POR_VISTA, API_URL, AUTH_STORAGE_KEY } from '../constants'
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
+import { VISTAS, ATAJO_POR_VISTA, API_URL } from '../constants'
+import { apiFetch } from '../utils/auth'
+import { useDialogFocus } from '../hooks/useDialogFocus'
+import ShortcutsHelpModal from './ShortcutsHelpModal'
 
 function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSerialDestacado, notifCountKey, refreshNotifCount }) {
   const { hiddenRmas } = useGarantia()
@@ -17,6 +13,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
   const tour = useTour()
   const startTour = tour?.startTour
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
   const [showRmaMenu, setShowRmaMenu] = useState(false)
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -36,6 +33,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
 
   const [showProductosMenu, setShowProductosMenu] = useState(false)
   const productosMenuRef = useRef(null)
+  const logoutModalPanelRef = useRef(null)
 
   const rmaVistas = [
     { key: VISTAS.RMA, label: 'Lista RMA' },
@@ -64,7 +62,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
   }, [])
 
   useEffect(() => {
-    fetch(`${API_URL}/api/notifications/unread-count`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/notifications/unread-count`)
       .then((r) => (r.ok ? r.json() : { count: 0 }))
       .then((data) => setUnreadCount(data.count ?? 0))
       .catch(() => setUnreadCount(0))
@@ -79,6 +77,22 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
     logout()
   }
   const handleLogoutCancel = () => setShowLogoutConfirm(false)
+
+  useDialogFocus(showLogoutConfirm, logoutModalPanelRef, {
+    onClose: handleLogoutCancel,
+  })
+
+  useEffect(() => {
+    if (!showRmaMenu && !showProductosMenu && !showHamburgerMenu) return
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      setShowRmaMenu(false)
+      setShowProductosMenu(false)
+      setShowHamburgerMenu(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [showRmaMenu, showProductosMenu, showHamburgerMenu])
 
   const handleSerialSubmit = (e) => {
     if (e && e.preventDefault) e.preventDefault()
@@ -165,7 +179,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
           autoComplete="off"
           aria-label="Número de serie (escanear código de barras o escribir)"
         />
-        <button type="submit" className="nav-serial-btn" title="Ir a productos en reparación con este número de serie">
+        <button type="submit" className="nav-serial-btn" aria-label="Ir a productos con RMA con este número de serie" title="Ir a productos en reparación con este número de serie">
           Ir
         </button>
       </form>
@@ -316,6 +330,17 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
             <button
               type="button"
               role="menuitem"
+              className="nav-hamburger-item"
+              onClick={() => {
+                setShowHamburgerMenu(false)
+                setShowShortcutsHelp(true)
+              }}
+            >
+              Atajos de teclado
+            </button>
+            <button
+              type="button"
+              role="menuitem"
               className="nav-hamburger-item nav-hamburger-tour"
               onClick={() => {
                 setShowHamburgerMenu(false)
@@ -348,7 +373,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
         aria-modal="true"
         aria-labelledby="logout-title"
       >
-        <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
+        <div ref={logoutModalPanelRef} className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
           <h2 id="logout-title" className="modal-titulo">Cerrar sesión</h2>
           <p className="modal-confirm-text">¿Quieres cerrar sesión?</p>
           <div className="modal-pie modal-pie-actions">
@@ -362,6 +387,7 @@ function Navbar({ vista, setVista, onClienteDestacado, onProductoDestacado, onSe
         </div>
       </div>
     )}
+    <ShortcutsHelpModal open={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
     </>
   )
 }

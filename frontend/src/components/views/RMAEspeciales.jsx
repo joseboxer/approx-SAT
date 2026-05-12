@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { API_URL, OPCIONES_ESTADO, TASK_POLL_INTERVAL_MS } from '../../constants'
-import { getAuthHeaders } from '../../utils/auth'
+import { apiFetch } from '../../utils/auth'
 import ProgressBar from '../ProgressBar'
 import ModalNotificar from '../ModalNotificar'
+import { buildRmaEspecialNotificationReference } from '../../utils/notificationRef'
+import ConfirmModal from '../ConfirmModal'
+import { useDialogFocus } from '../../hooks/useDialogFocus'
 
 /** Nombres de mes (completos y abreviados) a número "01"-"12" para directorios tipo "Enero", "Febrero". */
 const MES_NOMBRE_A_NUM = {
@@ -128,6 +131,9 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   const [uploadYear, setUploadYear] = useState(() => String(new Date().getFullYear()))
   const [uploadFile, setUploadFile] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [lineaDeleteConfirmId, setLineaDeleteConfirmId] = useState(null)
+  const uploadModalPanelRef = useRef(null)
+  const asignarModalPanelRef = useRef(null)
   const [viewMode, setViewMode] = useState('lista') // 'lista' | 'carpetas'
   const [folderNav, setFolderNav] = useState(null)   // null | { year } | { year, month }
   // Filtros y ordenación para la vista de detalle (líneas de un RMA especial concreto)
@@ -137,7 +143,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   const [detalleOrdenAsc, setDetalleOrdenAsc] = useState(true)
 
   const fetchEstadoSinNotificarEspeciales = useCallback(() => {
-    fetch(`${API_URL}/api/rmas/estado-sin-notificar`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/rmas/estado-sin-notificar`)
       .then((r) => (r.ok ? r.json() : { rma_especial_lineas: [] }))
       .then((data) => {
         const lines = Array.isArray(data.rma_especial_lineas) ? data.rma_especial_lineas : []
@@ -153,7 +159,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   const refetch = useCallback(() => {
     setCargando(true)
     setError(null)
-    fetch(`${API_URL}/api/rma-especiales`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/rma-especiales`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Error al cargar'))))
       .then((data) => setList(Array.isArray(data) ? data : []))
       .catch((err) => setError(err.message))
@@ -176,7 +182,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
     setAsignarPreviewError(null)
     const path = encodeURIComponent(asignarFile.path)
     const sheetParam = asignarSheet !== undefined && asignarSheet !== null ? `&sheet=${encodeURIComponent(asignarSheet)}` : ''
-    fetch(`${API_URL}/api/rma-especiales/excel-preview?path=${path}${sheetParam}`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/rma-especiales/excel-preview?path=${path}${sheetParam}`)
       .then(async (r) => {
         const data = await r.json().catch(() => ({}))
         if (!r.ok) {
@@ -202,12 +208,19 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
     setAsignarOpen(false)
   }, [importando])
 
+  useDialogFocus(uploadOpen, uploadModalPanelRef, {
+    onClose: () => {
+      if (!uploading) setUploadOpen(false)
+    },
+  })
+  useDialogFocus(asignarOpen && !!asignarFile, asignarModalPanelRef, { onClose: cerrarModalAsignar })
+
   const handleEscanear = () => {
     setError(null)
     setScanResult(null)
     setScanProgress(0)
     setScanMessage('Iniciando...')
-    fetch(`${API_URL}/api/rma-especiales/scan`, { method: 'POST', headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/rma-especiales/scan`, { method: 'POST' })
       .then((r) => (r.ok ? r.json() : r.json().then((d) => Promise.reject(new Error(d.detail || 'Error al escanear')))))
       .then((data) => {
         if (data.task_id) setScanTaskId(data.task_id)
@@ -219,7 +232,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   useEffect(() => {
     if (!scanTaskId) return
     const poll = () => {
-      fetch(`${API_URL}/api/tasks/${scanTaskId}`, { headers: getAuthHeaders() })
+      apiFetch(`${API_URL}/api/tasks/${scanTaskId}`)
         .then((r) => (r.ok ? r.json() : {}))
         .then((data) => {
           setScanProgress(data.percent ?? 0)
@@ -258,9 +271,8 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
       const formData = new FormData()
       formData.append('file', uploadFile)
       formData.append('year', uploadYear)
-      const res = await fetch(`${API_URL}/api/rma-especiales/upload`, {
+      const res = await apiFetch(`${API_URL}/api/rma-especiales/upload`, {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: formData,
       })
       const data = await res.json()
@@ -295,9 +307,9 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
     setImportando(true)
     setError(null)
     try {
-      const res = await fetch(`${API_URL}/api/rma-especiales/import`, {
+      const res = await apiFetch(`${API_URL}/api/rma-especiales/import`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: item.path, rma_number: item.rma_number }),
       })
       const data = await res.json()
@@ -352,9 +364,9 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
           column_fallo: asignarColFallo || null,
           column_resolucion: asignarColResolucion || null,
         }
-    fetch(`${API_URL}/api/rma-especiales/import`, {
+    apiFetch(`${API_URL}/api/rma-especiales/import`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
@@ -368,7 +380,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
           if (desdeDetalle) {
             setDetalle(null)
             setDetalleId(data.id)
-            fetch(`${API_URL}/api/rma-especiales/${data.id}`, { headers: getAuthHeaders() })
+            apiFetch(`${API_URL}/api/rma-especiales/${data.id}`)
               .then((r) => (r.ok ? r.json() : Promise.reject()))
               .then(setDetalle)
               .catch(() => setDetalle(null))
@@ -380,9 +392,9 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
               .filter((i) => i.missing && i.missing.length > 0)
               .map((i) => i.path)
             if (recheckPaths.length > 0) {
-              fetch(`${API_URL}/api/rma-especiales/recheck`, {
+              apiFetch(`${API_URL}/api/rma-especiales/recheck`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths: recheckPaths }),
               })
                 .then((res) => (res.ok ? res.json() : { items: [] }))
@@ -405,7 +417,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   const handleVerDetalle = (id) => {
     setDetalle(null)
     setDetalleId(id)
-    fetch(`${API_URL}/api/rma-especiales/${id}`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/rma-especiales/${id}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setDetalle)
       .catch(() => setDetalle(null))
@@ -440,9 +452,9 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
 
   const handleLineaEstadoChange = (lineaId, estado) => {
     setUpdatingLineaEstadoId(lineaId)
-    fetch(`${API_URL}/api/rma-especiales/lineas/${lineaId}/estado`, {
+    apiFetch(`${API_URL}/api/rma-especiales/lineas/${lineaId}/estado`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ estado }),
     })
       .then((r) => {
@@ -475,9 +487,9 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   const handleGuardarLinea = () => {
     if (editingLineaId == null || !editingLineaData) return
     setSavingLineaId(editingLineaId)
-    fetch(`${API_URL}/api/rma-especiales/lineas/${editingLineaId}`, {
+    apiFetch(`${API_URL}/api/rma-especiales/lineas/${editingLineaId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ref_proveedor: editingLineaData.ref_proveedor || null,
         serial: editingLineaData.serial || null,
@@ -509,10 +521,16 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
     setEditingLineaData(null)
   }
 
-  const handleEliminarLinea = (lineaId) => {
-    if (!window.confirm('¿Eliminar esta fila? No se modifica el Excel original.')) return
+  const solicitarEliminarLinea = (lineaId) => {
+    setLineaDeleteConfirmId(lineaId)
+  }
+
+  const ejecutarEliminarLinea = () => {
+    const lineaId = lineaDeleteConfirmId
+    setLineaDeleteConfirmId(null)
+    if (lineaId == null) return
     setDeletingLineaId(lineaId)
-    fetch(`${API_URL}/api/rma-especiales/lineas/${lineaId}`, { method: 'DELETE', headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/rma-especiales/lineas/${lineaId}`, { method: 'DELETE' })
       .then((r) => {
         if (r.ok && detalle && detalle.lineas) {
           setDetalle({
@@ -668,7 +686,16 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
                       <button
                         type="button"
                         className="btn btn-sm btn-primary"
-                        onClick={() => { setNotificarRef({ id: r.id, rma_number: r.rma_number }); setNotificarOpen(true) }}
+                        onClick={() => {
+                          setNotificarRef(
+                            buildRmaEspecialNotificationReference({
+                              id: r.id,
+                              rma_number: r.rma_number,
+                              line_count: r.line_count,
+                            })
+                          )
+                          setNotificarOpen(true)
+                        }}
                       >
                         Notificar
                       </button>
@@ -704,6 +731,25 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
             ← Volver al listado
           </button>
           <h1 className="page-title">RMA {detalle.rma_number}</h1>
+          <div className="rma-especiales-detalle-header-actions">
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={() => {
+                setNotificarRef(
+                  buildRmaEspecialNotificationReference({
+                    id: detalle.id,
+                    rma_number: detalle.rma_number,
+                    line_count: Array.isArray(detalle.lineas) ? detalle.lineas.length : 0,
+                    lineas: detalle.lineas,
+                  })
+                )
+                setNotificarOpen(true)
+              }}
+              title="Enviar aviso con resumen de este RMA especial"
+            >
+              Notificar
+            </button>
           {detalle.source_path?.trim() ? (
             <button
               type="button"
@@ -715,6 +761,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
               Corregir cabecera y hoja (reimportar)
             </button>
           ) : null}
+          </div>
         </div>
         <p className="rma-especiales-detalle-desc">
           Puedes editar o eliminar filas vacías o erróneas. Los Excel originales no se modifican.
@@ -875,7 +922,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
                           <button type="button" className="btn btn-sm btn-secondary" onClick={handleCancelarEditarLinea} disabled={savingLineaId === lin.id}>
                             Cancelar
                           </button>
-                          <button type="button" className="btn btn-sm btn-danger" onClick={() => handleEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
+                          <button type="button" className="btn btn-sm btn-danger" onClick={() => solicitarEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
                             {deletingLineaId === lin.id ? '…' : 'Eliminar'}
                           </button>
                         </div>
@@ -904,7 +951,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
                           <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleEditarLinea(lin)}>
                             Editar
                           </button>
-                          <button type="button" className="btn btn-sm btn-danger" onClick={() => handleEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
+                          <button type="button" className="btn btn-sm btn-danger" onClick={() => solicitarEliminarLinea(lin.id)} disabled={deletingLineaId === lin.id}>
                             {deletingLineaId === lin.id ? '…' : 'Eliminar'}
                           </button>
                         </div>
@@ -964,9 +1011,15 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
       </div>
 
       {uploadOpen && (
-        <div className="modal-overlay" onClick={() => !uploading && setUploadOpen(false)} role="dialog" aria-modal="true">
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-titulo">Subir Excel manualmente</h2>
+        <div
+          className="modal-overlay"
+          onClick={() => !uploading && setUploadOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rma-especiales-upload-title"
+        >
+          <div ref={uploadModalPanelRef} className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 id="rma-especiales-upload-title" className="modal-titulo">Subir Excel manualmente</h2>
             <p className="modal-notificar-desc">
               Elige el año y el archivo Excel. Se guardará en la carpeta RMA especiales y se intentará importar automáticamente.
             </p>
@@ -1099,7 +1152,13 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
                         type="button"
                         className="btn btn-sm btn-primary"
                         onClick={() => {
-                          setNotificarRef({ id: r.id, rma_number: r.rma_number })
+                          setNotificarRef(
+                            buildRmaEspecialNotificationReference({
+                              id: r.id,
+                              rma_number: r.rma_number,
+                              line_count: r.line_count,
+                            })
+                          )
                           setNotificarOpen(true)
                         }}
                       >
@@ -1120,9 +1179,10 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
           onClick={cerrarModalAsignar}
           role="dialog"
           aria-modal="true"
+          aria-labelledby="rma-especiales-asignar-title"
         >
-          <div className="modal rma-especiales-asignar-modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-titulo">{reimportAbiertoDesdeDetalle ? 'Corregir cabecera y hoja del Excel' : 'Asignar celdas del Excel'}</h2>
+          <div ref={asignarModalPanelRef} className="modal rma-especiales-asignar-modal" onClick={(e) => e.stopPropagation()}>
+            <h2 id="rma-especiales-asignar-title" className="modal-titulo">{reimportAbiertoDesdeDetalle ? 'Corregir cabecera y hoja del Excel' : 'Asignar celdas del Excel'}</h2>
             <p className="modal-notificar-desc">
               Archivo: <strong>{asignarFile.path}</strong>. Indica la <strong>fila de cabecera</strong> y qué <strong>columna</strong> corresponde a cada concepto. Si otro archivo tiene las mismas celdas, se reconocerá automáticamente.
             </p>
@@ -1315,11 +1375,22 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
         </div>
       )}
 
+      <ConfirmModal
+        open={lineaDeleteConfirmId != null}
+        title="Eliminar fila"
+        message="¿Eliminar esta fila? No se modifica el Excel original."
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onCancel={() => setLineaDeleteConfirmId(null)}
+        onConfirm={ejecutarEliminarLinea}
+        danger
+      />
+
       <ModalNotificar
         open={notificarOpen}
         onClose={() => { setNotificarOpen(false); setNotificarRef(null) }}
         type="rma_especial"
-        referenceData={notificarRef ? { rma_number: notificarRef.rma_number, id: notificarRef.id } : {}}
+        referenceData={notificarRef && typeof notificarRef === 'object' ? notificarRef : {}}
         onSuccess={() => refetch()}
       />
     </>

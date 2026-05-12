@@ -1,15 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_SIN_FILTRO, LAST_NOTIFICATION_TO_USER_KEY, NOTIFICATIONS_CATEGORY_KEY } from '../constants'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { API_URL, NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_SIN_FILTRO, LAST_NOTIFICATION_TO_USER_KEY, NOTIFICATIONS_CATEGORY_KEY } from '../constants'
+import { apiFetch } from '../utils/auth'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 
 const CATEGORIAS_ENVIO = ['abono', 'envio', 'sin_categoria', 'fuera_garantia']
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
 
 /**
  * Modal para enviar una notificación a otro usuario (compartir una fila de RMA, Catálogo, Productos RMA o Clientes).
@@ -23,11 +17,13 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
   const [cargando, setCargando] = useState(false)
   const [cargandoUsers, setCargandoUsers] = useState(false)
   const [error, setError] = useState(null)
+  const panelRef = useRef(null)
+  useDialogFocus(open, panelRef, { onClose })
 
   const refetchUsers = useCallback(() => {
     setCargandoUsers(true)
     setError(null)
-    fetch(`${API_URL}/api/users`, { headers: getAuthHeaders() })
+    apiFetch(`${API_URL}/api/users`)
       .then((r) => {
         if (!r.ok) throw new Error('Error al cargar usuarios')
         return r.json()
@@ -56,13 +52,6 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
     }
   }, [open, refetchUsers])
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
   const handleSubmit = (e) => {
     e.preventDefault()
     const uid = toUserId === '' ? null : parseInt(toUserId, 10)
@@ -72,11 +61,10 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
     }
     setCargando(true)
     setError(null)
-    fetch(`${API_URL}/api/notifications`, {
+    apiFetch(`${API_URL}/api/notifications`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...getAuthHeaders(),
       },
       body: JSON.stringify({
         to_user_id: uid,
@@ -114,7 +102,7 @@ function ModalNotificar({ open, onClose, type, referenceData, onSuccess }) {
       aria-modal="true"
       aria-labelledby="modal-notificar-title"
     >
-      <div className="modal modal-notificar" onClick={(e) => e.stopPropagation()}>
+      <div ref={panelRef} className="modal modal-notificar" onClick={(e) => e.stopPropagation()}>
         <h2 id="modal-notificar-title" className="modal-titulo">
           Notificar a un usuario
         </h2>
