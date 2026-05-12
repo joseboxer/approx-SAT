@@ -910,6 +910,51 @@ def get_rma_items_estado_sin_notificar(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
+def get_rma_especial_lineas_estado_sin_notificar(conn: sqlite3.Connection) -> list[dict]:
+    """
+    Líneas de RMA especiales con estado asignado (estado_assigned_at) sin notificación que las cubra.
+    Cubre una línea una notificación type='rma_especial' con reference_data.id = rma_especial_id,
+    o si id no viene en el JSON, con rma_number coincidente; y serial en el mensaje vacío o igual al de la línea.
+    """
+    cur = conn.execute(
+        """SELECT l.id AS linea_id, l.rma_especial_id, e.rma_number, l.serial, l.estado, l.estado_assigned_at
+           FROM rma_especial_lineas l
+           INNER JOIN rma_especiales e ON e.id = l.rma_especial_id
+           WHERE TRIM(COALESCE(l.estado, '')) != ''
+             AND l.estado_assigned_at IS NOT NULL AND l.estado_assigned_at != ''
+             AND NOT EXISTS (
+               SELECT 1 FROM notifications n
+               WHERE n.type = 'rma_especial'
+                 AND (n.deleted_by_sender_at IS NULL OR n.deleted_by_sender_at = '')
+                 AND (
+                   CAST(json_extract(n.reference_data, '$.id') AS INTEGER) = l.rma_especial_id
+                   OR (
+                     TRIM(COALESCE(CAST(json_extract(n.reference_data, '$.id') AS TEXT), '')) = ''
+                     AND json_extract(n.reference_data, '$.rma_number') IS NOT NULL
+                     AND TRIM(CAST(json_extract(n.reference_data, '$.rma_number') AS TEXT)) = e.rma_number
+                   )
+                 )
+                 AND (
+                   json_extract(n.reference_data, '$.serial') IS NULL
+                   OR TRIM(COALESCE(CAST(json_extract(n.reference_data, '$.serial') AS TEXT), '')) = ''
+                   OR json_extract(n.reference_data, '$.serial') = COALESCE(l.serial, '')
+                 )
+             )
+           ORDER BY l.estado_assigned_at DESC"""
+    )
+    return [
+        {
+            "linea_id": row["linea_id"],
+            "rma_especial_id": row["rma_especial_id"],
+            "rma_number": row["rma_number"] or "",
+            "serial": row["serial"] or "",
+            "estado": row["estado"] or "",
+            "estado_assigned_at": row["estado_assigned_at"],
+        }
+        for row in cur.fetchall()
+    ]
+
+
 def set_hidden_by_rma_number(
     conn: sqlite3.Connection,
     rma_number: str,
@@ -1659,3 +1704,570 @@ def delete_repuesto(conn: sqlite3.Connection, repuesto_id: int) -> bool:
     """Elimina un repuesto. Devuelve True si existía."""
     cur = conn.execute("DELETE FROM repuestos WHERE id = ?", (repuesto_id,))
     return cur.rowcount > 0
+
+
+# --- Notificaciones: búsqueda avanzada y reporte ---
+
+
+def search_notifications(
+    conn: sqlite3.Connection,
+    user_id: int,
+    box: str = "recibidos",
+    category: str | None = None,
+    type_filter: str | None = None,
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    unread_only: bool = False,
+) -> list[dict]:
+    """
+    Busca notificaciones del usuario con filtros combinables.
+    box: recibidos | enviados | borrados
+    """
+    box_norm = (box or "recibidos").strip().lower()
+    if box_norm not in {"recibidos", "enviados", "borrados"}:
+        box_norm = "recibidos"
+
+    if box_norm == "recibidos":
+        select_sql = """
+            SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.category, n.reference_data, n.message,
+                   n.created_at, n.read_at, n.deleted_by_sender_at,
+                   uf.username AS from_username,
+                   ut.username AS to_username
+            FROM notifications n
+            JOIN users uf ON uf.id = n.from_user_id
+            JOIN users ut ON ut.id = n.to_user_id
+            WHERE n.to_user_id = ?
+        """
+        params: list = [user_id]
+    else:
+        select_sql = """
+            SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.category, n.reference_data, n.message,
+                   n.created_at, n.read_at, n.deleted_by_sender_at,
+                   uf.username AS from_username,
+                   ut.username AS to_username
+            FROM notifications n
+            JOIN users uf ON uf.id = n.from_user_id
+            JOIN users ut ON ut.id = n.to_user_id
+            WHERE n.from_user_id = ?
+        """
+        params = [user_id]
+        if box_norm == "borrados":
+            select_sql += " AND n.deleted_by_sender_at IS NOT NULL AND n.deleted_by_sender_at != ''"
+        else:
+            select_sql += " AND (n.deleted_by_sender_at IS NULL OR n.deleted_by_sender_at = '')"
+
+    if category and category.strip():
+        select_sql += " AND n.category = ?"
+        params.append(category.strip())
+    if type_filter and type_filter.strip():
+        select_sql += " AND n.type = ?"
+        params.append(type_filter.strip())
+    if unread_only and box_norm == "recibidos":
+        select_sql += " AND n.read_at IS NULL"
+    if date_from and date_from.strip():
+        select_sql += " AND n.created_at >= ?"
+        params.append(f"{date_from.strip()} 00:00:00")
+    if date_to and date_to.strip():
+        select_sql += " AND n.created_at <= ?"
+        params.append(f"{date_to.strip()} 23:59:59")
+    if q and q.strip():
+        q_like = f"%{q.strip().lower()}%"
+        select_sql += """
+            AND (
+                LOWER(COALESCE(n.message, '')) LIKE ?
+                OR LOWER(COALESCE(n.reference_data, '')) LIKE ?
+                OR LOWER(COALESCE(uf.username, '')) LIKE ?
+                OR LOWER(COALESCE(ut.username, '')) LIKE ?
+                OR LOWER(COALESCE(n.type, '')) LIKE ?
+                OR LOWER(COALESCE(n.category, '')) LIKE ?
+            )
+        """
+        params.extend([q_like, q_like, q_like, q_like, q_like, q_like])
+
+    select_sql += " ORDER BY n.created_at DESC"
+    cur = conn.execute(select_sql, params)
+    return [
+        {
+            "id": row["id"],
+            "from_user_id": row["from_user_id"],
+            "from_username": row["from_username"],
+            "to_user_id": row["to_user_id"],
+            "to_username": row["to_username"],
+            "type": row["type"],
+            "category": row["category"] if row["category"] else "sin_categoria",
+            "reference_data": row["reference_data"],
+            "message": row["message"] or "",
+            "created_at": row["created_at"],
+            "read_at": row["read_at"],
+            "deleted_by_sender_at": row["deleted_by_sender_at"],
+        }
+        for row in cur.fetchall()
+    ]
+
+
+def get_notifications_by_ids_for_user(
+    conn: sqlite3.Connection,
+    user_id: int,
+    ids: list[int],
+) -> list[dict]:
+    """Devuelve notificaciones por ids donde el usuario sea remitente o destinatario."""
+    ids_clean = [int(x) for x in ids if x is not None]
+    if not ids_clean:
+        return []
+    placeholders = ",".join(["?"] * len(ids_clean))
+    cur = conn.execute(
+        f"""
+        SELECT n.id, n.from_user_id, n.to_user_id, n.type, n.category, n.reference_data, n.message,
+               n.created_at, n.read_at, n.deleted_by_sender_at,
+               uf.username AS from_username,
+               ut.username AS to_username
+        FROM notifications n
+        JOIN users uf ON uf.id = n.from_user_id
+        JOIN users ut ON ut.id = n.to_user_id
+        WHERE n.id IN ({placeholders})
+          AND (n.from_user_id = ? OR n.to_user_id = ?)
+        ORDER BY n.created_at DESC
+        """,
+        [*ids_clean, user_id, user_id],
+    )
+    return [
+        {
+            "id": row["id"],
+            "from_user_id": row["from_user_id"],
+            "from_username": row["from_username"],
+            "to_user_id": row["to_user_id"],
+            "to_username": row["to_username"],
+            "type": row["type"],
+            "category": row["category"] if row["category"] else "sin_categoria",
+            "reference_data": row["reference_data"],
+            "message": row["message"] or "",
+            "created_at": row["created_at"],
+            "read_at": row["read_at"],
+            "deleted_by_sender_at": row["deleted_by_sender_at"],
+        }
+        for row in cur.fetchall()
+    ]
+
+
+# --- Backup/Restore JSON global ---
+
+BACKUP_SCHEMA_VERSION = 1
+
+
+def _table_rows(conn: sqlite3.Connection, table: str, order_by: str = "id") -> list[dict]:
+    """Lee una tabla completa y devuelve filas como dict."""
+    order_clause = f" ORDER BY {order_by}" if order_by else ""
+    try:
+        cur = conn.execute(f"SELECT * FROM {table}{order_clause}")
+    except sqlite3.OperationalError:
+        # Algunas tablas no tienen columna id (PK compuesta o clave natural).
+        cur = conn.execute(f"SELECT * FROM {table}")
+    return [dict(row) for row in cur.fetchall()]
+
+
+def export_app_backup(conn: sqlite3.Connection) -> dict:
+    """Exporta el estado relevante de la app en formato serializable JSON."""
+    data = {
+        "users": _table_rows(conn, "users"),
+        "rma_items": _table_rows(conn, "rma_items"),
+        "client_groups": _table_rows(conn, "client_groups"),
+        "client_group_members": _table_rows(conn, "client_group_members"),
+        "product_warranty": _table_rows(conn, "product_warranty", order_by="product_name"),
+        "serial_warranty": _table_rows(conn, "serial_warranty", order_by="serial"),
+        "settings": _table_rows(conn, "settings", order_by="key"),
+        "catalog_cache": _table_rows(conn, "catalog_cache", order_by="key"),
+        "repuestos": _table_rows(conn, "repuestos"),
+        "repuestos_productos": _table_rows(conn, "repuestos_productos", order_by="repuesto_id, product_ref"),
+        "notifications": _table_rows(conn, "notifications"),
+        "push_subscriptions": _table_rows(conn, "push_subscriptions"),
+        "audit_log": _table_rows(conn, "audit_log"),
+        "rma_especiales": _table_rows(conn, "rma_especiales"),
+        "rma_especial_lineas": _table_rows(conn, "rma_especial_lineas"),
+        "rma_especial_formats": _table_rows(conn, "rma_especial_formats"),
+    }
+    return {
+        "meta": {
+            "schema_version": BACKUP_SCHEMA_VERSION,
+            "exported_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        },
+        "data": data,
+    }
+
+
+def _insert_row(conn: sqlite3.Connection, table: str, row: dict) -> None:
+    cols = list(row.keys())
+    placeholders = ",".join(["?"] * len(cols))
+    conn.execute(
+        f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
+        [row.get(c) for c in cols],
+    )
+
+
+def _delete_all_for_replace(conn: sqlite3.Connection) -> None:
+    # Ordenado por dependencias para evitar conflictos de FK.
+    for table in (
+        "notifications",
+        "push_subscriptions",
+        "repuestos_productos",
+        "repuestos",
+        "rma_especial_lineas",
+        "rma_especial_formats",
+        "rma_especiales",
+        "client_group_members",
+        "client_groups",
+        "rma_items",
+        "product_warranty",
+        "serial_warranty",
+        "catalog_cache",
+        "settings",
+        "audit_log",
+        "users",
+    ):
+        conn.execute(f"DELETE FROM {table}")
+
+
+def _new_summary() -> dict:
+    return {"inserted": 0, "skipped": 0, "updated": 0}
+
+
+def _merge_by_id(conn: sqlite3.Connection, table: str, rows: list[dict]) -> dict:
+    summary = _new_summary()
+    for row in rows:
+        row_id = row.get("id")
+        if row_id is None:
+            _insert_row(conn, table, row)
+            summary["inserted"] += 1
+            continue
+        exists = conn.execute(f"SELECT 1 FROM {table} WHERE id = ?", (row_id,)).fetchone()
+        if exists:
+            summary["skipped"] += 1
+            continue
+        _insert_row(conn, table, row)
+        summary["inserted"] += 1
+    return summary
+
+
+def restore_app_backup(conn: sqlite3.Connection, payload: dict, mode: str) -> dict:
+    """
+    Restaura un backup JSON global.
+    mode:
+      - replace: borra estado actual y carga backup completo.
+      - merge: fusión híbrida (claves naturales donde aplica; por id/fingerprint en resto).
+    """
+    data = (payload or {}).get("data") or {}
+    if not isinstance(data, dict):
+        raise ValueError("El backup no contiene un objeto data válido.")
+
+    result: dict[str, dict] = {}
+    mode_norm = (mode or "").strip().lower()
+    if mode_norm not in {"replace", "merge"}:
+        raise ValueError("Modo inválido. Usa replace o merge.")
+
+    users = data.get("users") or []
+    rma_items = data.get("rma_items") or []
+    client_groups = data.get("client_groups") or []
+    client_group_members = data.get("client_group_members") or []
+    product_warranty = data.get("product_warranty") or []
+    serial_warranty = data.get("serial_warranty") or []
+    settings = data.get("settings") or []
+    catalog_cache = data.get("catalog_cache") or []
+    repuestos = data.get("repuestos") or []
+    repuestos_productos = data.get("repuestos_productos") or []
+    rma_especiales = data.get("rma_especiales") or []
+    rma_especial_lineas = data.get("rma_especial_lineas") or []
+    rma_especial_formats = data.get("rma_especial_formats") or []
+    notifications = data.get("notifications") or []
+    push_subscriptions = data.get("push_subscriptions") or []
+    audit_log = data.get("audit_log") or []
+
+    if mode_norm == "replace":
+        _delete_all_for_replace(conn)
+        for table_name, rows in (
+            ("users", users),
+            ("settings", settings),
+            ("catalog_cache", catalog_cache),
+            ("rma_items", rma_items),
+            ("client_groups", client_groups),
+            ("client_group_members", client_group_members),
+            ("product_warranty", product_warranty),
+            ("serial_warranty", serial_warranty),
+            ("repuestos", repuestos),
+            ("repuestos_productos", repuestos_productos),
+            ("rma_especiales", rma_especiales),
+            ("rma_especial_formats", rma_especial_formats),
+            ("rma_especial_lineas", rma_especial_lineas),
+            ("notifications", notifications),
+            ("push_subscriptions", push_subscriptions),
+            ("audit_log", audit_log),
+        ):
+            summary = _new_summary()
+            for row in rows:
+                _insert_row(conn, table_name, row)
+                summary["inserted"] += 1
+            result[table_name] = summary
+        return result
+
+    # merge híbrido
+    user_id_map: dict[int, int] = {}
+    user_summary = _new_summary()
+    for row in users:
+        username = (row.get("username") or "").strip()
+        email = (row.get("email") or "").strip().lower()
+        old_id = int(row.get("id")) if row.get("id") is not None else None
+        existing = None
+        if username:
+            existing = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+        if existing is None and email:
+            existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            if old_id is not None:
+                user_id_map[old_id] = int(existing["id"])
+            user_summary["skipped"] += 1
+            continue
+        _insert_row(conn, "users", row)
+        inserted_id = int(row["id"]) if row.get("id") is not None else conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        if old_id is not None:
+            user_id_map[old_id] = inserted_id
+        user_summary["inserted"] += 1
+    result["users"] = user_summary
+
+    # Clave natural
+    settings_summary = _new_summary()
+    for row in settings:
+        key = row.get("key")
+        if key is None:
+            settings_summary["skipped"] += 1
+            continue
+        existing = conn.execute("SELECT 1 FROM settings WHERE key = ?", (key,)).fetchone()
+        if existing:
+            settings_summary["skipped"] += 1
+            continue
+        _insert_row(conn, "settings", row)
+        settings_summary["inserted"] += 1
+    result["settings"] = settings_summary
+
+    catalog_summary = _new_summary()
+    for row in catalog_cache:
+        key = row.get("key")
+        if key is None:
+            catalog_summary["skipped"] += 1
+            continue
+        existing = conn.execute("SELECT 1 FROM catalog_cache WHERE key = ?", (key,)).fetchone()
+        if existing:
+            catalog_summary["skipped"] += 1
+            continue
+        _insert_row(conn, "catalog_cache", row)
+        catalog_summary["inserted"] += 1
+    result["catalog_cache"] = catalog_summary
+
+    rma_summary = _new_summary()
+    for row in rma_items:
+        key_rma = (row.get("rma_number") or "").strip()
+        key_serial = (row.get("serial") or "").strip()
+        existing = conn.execute(
+            "SELECT 1 FROM rma_items WHERE rma_number = ? AND COALESCE(serial, '') = ?",
+            (key_rma, key_serial),
+        ).fetchone()
+        if existing:
+            rma_summary["skipped"] += 1
+            continue
+        _insert_row(conn, "rma_items", row)
+        rma_summary["inserted"] += 1
+    result["rma_items"] = rma_summary
+
+    rma_especial_map: dict[int, int] = {}
+    rmae_summary = _new_summary()
+    for row in rma_especiales:
+        old_id = row.get("id")
+        rma_number = (row.get("rma_number") or "").strip()
+        existing = conn.execute("SELECT id FROM rma_especiales WHERE rma_number = ?", (rma_number,)).fetchone()
+        if existing:
+            if old_id is not None:
+                rma_especial_map[int(old_id)] = int(existing["id"])
+            rmae_summary["skipped"] += 1
+            continue
+        _insert_row(conn, "rma_especiales", row)
+        new_id = int(row["id"]) if row.get("id") is not None else conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        if old_id is not None:
+            rma_especial_map[int(old_id)] = new_id
+        rmae_summary["inserted"] += 1
+    result["rma_especiales"] = rmae_summary
+
+    # Tablas por id o PK compuesta
+    result["client_groups"] = _merge_by_id(conn, "client_groups", client_groups)
+
+    cgm_summary = _new_summary()
+    for row in client_group_members:
+        existing = conn.execute(
+            "SELECT 1 FROM client_group_members WHERE client_name = ? AND COALESCE(client_email, '') = COALESCE(?, '')",
+            (row.get("client_name"), row.get("client_email")),
+        ).fetchone()
+        if existing:
+            cgm_summary["skipped"] += 1
+            continue
+        group_id = row.get("group_id")
+        if group_id is not None:
+            group_exists = conn.execute("SELECT 1 FROM client_groups WHERE id = ?", (group_id,)).fetchone()
+            if not group_exists:
+                cgm_summary["skipped"] += 1
+                continue
+        _insert_row(conn, "client_group_members", row)
+        cgm_summary["inserted"] += 1
+    result["client_group_members"] = cgm_summary
+
+    pw_summary = _new_summary()
+    for row in product_warranty:
+        product_name = row.get("product_name")
+        existing = conn.execute("SELECT 1 FROM product_warranty WHERE product_name = ?", (product_name,)).fetchone()
+        if existing:
+            pw_summary["skipped"] += 1
+            continue
+        _insert_row(conn, "product_warranty", row)
+        pw_summary["inserted"] += 1
+    result["product_warranty"] = pw_summary
+
+    sw_summary = _new_summary()
+    for row in serial_warranty:
+        serial = row.get("serial")
+        existing = conn.execute("SELECT 1 FROM serial_warranty WHERE serial = ?", (serial,)).fetchone()
+        if existing:
+            sw_summary["skipped"] += 1
+            continue
+        _insert_row(conn, "serial_warranty", row)
+        sw_summary["inserted"] += 1
+    result["serial_warranty"] = sw_summary
+
+    result["repuestos"] = _merge_by_id(conn, "repuestos", repuestos)
+
+    rp_summary = _new_summary()
+    for row in repuestos_productos:
+        repuesto_id = row.get("repuesto_id")
+        product_ref = row.get("product_ref")
+        if repuesto_id is None or not product_ref:
+            rp_summary["skipped"] += 1
+            continue
+        rep_exists = conn.execute("SELECT 1 FROM repuestos WHERE id = ?", (repuesto_id,)).fetchone()
+        if not rep_exists:
+            rp_summary["skipped"] += 1
+            continue
+        existing = conn.execute(
+            "SELECT 1 FROM repuestos_productos WHERE repuesto_id = ? AND product_ref = ?",
+            (repuesto_id, product_ref),
+        ).fetchone()
+        if existing:
+            rp_summary["skipped"] += 1
+            continue
+        _insert_row(conn, "repuestos_productos", row)
+        rp_summary["inserted"] += 1
+    result["repuestos_productos"] = rp_summary
+
+    fmt_summary = _new_summary()
+    for row in rma_especial_formats:
+        if row.get("id") is not None:
+            exists = conn.execute("SELECT 1 FROM rma_especial_formats WHERE id = ?", (row["id"],)).fetchone()
+            if exists:
+                fmt_summary["skipped"] += 1
+                continue
+        _insert_row(conn, "rma_especial_formats", row)
+        fmt_summary["inserted"] += 1
+    result["rma_especial_formats"] = fmt_summary
+
+    lineas_summary = _new_summary()
+    for row in rma_especial_lineas:
+        parent_old = row.get("rma_especial_id")
+        parent_new = rma_especial_map.get(int(parent_old)) if parent_old is not None else None
+        if parent_old is not None and parent_new is None:
+            parent_exists = conn.execute("SELECT 1 FROM rma_especiales WHERE id = ?", (parent_old,)).fetchone()
+            parent_new = int(parent_old) if parent_exists else None
+        if parent_new is None:
+            lineas_summary["skipped"] += 1
+            continue
+        row_copy = dict(row)
+        row_copy["rma_especial_id"] = parent_new
+        if row_copy.get("id") is not None:
+            exists = conn.execute("SELECT 1 FROM rma_especial_lineas WHERE id = ?", (row_copy["id"],)).fetchone()
+            if exists:
+                lineas_summary["skipped"] += 1
+                continue
+        _insert_row(conn, "rma_especial_lineas", row_copy)
+        lineas_summary["inserted"] += 1
+    result["rma_especial_lineas"] = lineas_summary
+
+    notif_summary = _new_summary()
+    for row in notifications:
+        from_id_old = row.get("from_user_id")
+        to_id_old = row.get("to_user_id")
+        from_id = user_id_map.get(int(from_id_old), from_id_old) if from_id_old is not None else None
+        to_id = user_id_map.get(int(to_id_old), to_id_old) if to_id_old is not None else None
+        if from_id is None or to_id is None:
+            notif_summary["skipped"] += 1
+            continue
+        from_exists = conn.execute("SELECT 1 FROM users WHERE id = ?", (from_id,)).fetchone()
+        to_exists = conn.execute("SELECT 1 FROM users WHERE id = ?", (to_id,)).fetchone()
+        if not from_exists or not to_exists:
+            notif_summary["skipped"] += 1
+            continue
+        fingerprint_exists = conn.execute(
+            """
+            SELECT 1 FROM notifications
+            WHERE from_user_id = ? AND to_user_id = ? AND type = ? AND category = ?
+              AND COALESCE(reference_data, '') = COALESCE(?, '')
+              AND COALESCE(message, '') = COALESCE(?, '')
+              AND created_at = ?
+            """,
+            (
+                from_id,
+                to_id,
+                row.get("type"),
+                row.get("category") or "sin_categoria",
+                row.get("reference_data"),
+                row.get("message"),
+                row.get("created_at"),
+            ),
+        ).fetchone()
+        if fingerprint_exists:
+            notif_summary["skipped"] += 1
+            continue
+        row_copy = dict(row)
+        row_copy["from_user_id"] = from_id
+        row_copy["to_user_id"] = to_id
+        if row_copy.get("id") is not None:
+            id_exists = conn.execute("SELECT 1 FROM notifications WHERE id = ?", (row_copy["id"],)).fetchone()
+            if id_exists:
+                row_copy.pop("id", None)
+        _insert_row(conn, "notifications", row_copy)
+        notif_summary["inserted"] += 1
+    result["notifications"] = notif_summary
+
+    push_summary = _new_summary()
+    for row in push_subscriptions:
+        endpoint = (row.get("endpoint") or "").strip()
+        if not endpoint:
+            push_summary["skipped"] += 1
+            continue
+        user_old = row.get("user_id")
+        user_new = user_id_map.get(int(user_old), user_old) if user_old is not None else None
+        if user_new is None:
+            push_summary["skipped"] += 1
+            continue
+        user_exists = conn.execute("SELECT 1 FROM users WHERE id = ?", (user_new,)).fetchone()
+        if not user_exists:
+            push_summary["skipped"] += 1
+            continue
+        existing = conn.execute("SELECT 1 FROM push_subscriptions WHERE endpoint = ?", (endpoint,)).fetchone()
+        if existing:
+            push_summary["skipped"] += 1
+            continue
+        row_copy = dict(row)
+        row_copy["user_id"] = user_new
+        if row_copy.get("id") is not None:
+            id_exists = conn.execute("SELECT 1 FROM push_subscriptions WHERE id = ?", (row_copy["id"],)).fetchone()
+            if id_exists:
+                row_copy.pop("id", None)
+        _insert_row(conn, "push_subscriptions", row_copy)
+        push_summary["inserted"] += 1
+    result["push_subscriptions"] = push_summary
+
+    result["audit_log"] = _merge_by_id(conn, "audit_log", audit_log)
+    return result

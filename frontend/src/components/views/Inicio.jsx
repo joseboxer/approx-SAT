@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { useGarantia } from '../../context/GarantiaContext'
-import { API_URL, VISTAS } from '../../constants'
+import { API_URL, TASK_POLL_INTERVAL_MS, VISTAS } from '../../constants'
 import { getRmaId } from '../../utils/garantia'
+import { getAuthHeaders } from '../../utils/auth'
 import ProgressBar from '../ProgressBar'
 
 function Inicio({ setVista, setRmaDestacado }) {
@@ -93,8 +94,7 @@ function Inicio({ setVista, setRmaDestacado }) {
       syncPollRef.current = null
     }
     try {
-      const token = localStorage.getItem('garantia-sat-token')
-      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const headers = getAuthHeaders()
       const res = await fetch(`${API_URL}/api/productos/sync`, {
         method: 'POST',
         headers,
@@ -149,7 +149,7 @@ function Inicio({ setVista, setRmaDestacado }) {
           })
       }
       poll()
-      syncPollRef.current = setInterval(poll, 500)
+      syncPollRef.current = setInterval(poll, TASK_POLL_INTERVAL_MS)
     } catch (err) {
       setSyncError(err.message)
       setSyncLoading(false)

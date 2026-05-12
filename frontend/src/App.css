@@ -2436,6 +2436,20 @@
 .alerta-estado-sin-notificar-text { flex: 1; min-width: 12rem; }
 .alerta-estado-sin-notificar-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
 
+/* Resaltar filas con estado asignado y sin notificación enviada */
+.rma-row-sin-notificar td,
+.rma-linea-sin-notificar td,
+.rma-especiales-row-sin-notificar td,
+.rma-especiales-linea-sin-notificar td {
+  box-shadow: inset 4px 0 0 0 #d35400;
+}
+.rma-row-sin-notificar,
+.rma-linea-sin-notificar,
+.rma-especiales-row-sin-notificar,
+.rma-especiales-linea-sin-notificar {
+  background-color: rgba(211, 84, 0, 0.08);
+}
+
 /* Avisos "no encontrado" al navegar entre vistas (RMA, Productos RMA, Catálogo) */
 .rma-no-encontrado {
   margin-bottom: 1rem;
@@ -3145,6 +3159,14 @@
   flex-wrap: wrap;
 }
 .rma-especiales-detalle-header .btn-back {
+  flex-shrink: 0;
+}
+.rma-especiales-detalle-header .page-title {
+  flex: 1;
+  min-width: 140px;
+  margin: 0;
+}
+.rma-especiales-reimport-btn {
   flex-shrink: 0;
 }
 .rma-especiales-detalle-desc {

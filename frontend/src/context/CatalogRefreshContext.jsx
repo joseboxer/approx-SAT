@@ -1,19 +1,12 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
-import { API_URL, AUTH_STORAGE_KEY } from '../constants'
+import { API_URL, TASK_POLL_INTERVAL_MS } from '../constants'
+import { getAuthHeaders } from '../utils/auth'
 
 const CatalogRefreshContext = createContext(null)
 
 export function useCatalogRefresh() {
   const ctx = useContext(CatalogRefreshContext)
   return ctx
-}
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
 }
 
 /**
@@ -85,7 +78,7 @@ export function CatalogRefreshProvider({ children }) {
         .catch(() => {})
     }
     poll()
-    pollRef.current = setInterval(poll, 400)
+    pollRef.current = setInterval(poll, TASK_POLL_INTERVAL_MS)
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }

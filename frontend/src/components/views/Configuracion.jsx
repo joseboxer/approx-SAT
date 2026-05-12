@@ -1,16 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { API_URL, AUTH_STORAGE_KEY, VISTAS } from '../../constants'
+import { API_URL, TASK_POLL_INTERVAL_MS, VISTAS } from '../../constants'
+import { getAuthHeaders } from '../../utils/auth'
 import ProgressBar from '../ProgressBar'
 import HelpTip from '../HelpTip'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
 
 /** Genera el contenido del .bat para añadir www.Approx-SAT.com al archivo hosts (Windows). CRLF al descargar. serverHost debe ser una IP (nunca "localhost" en el archivo hosts). */
 function getHostsBatContent(serverHost) {
@@ -192,6 +185,12 @@ function Configuracion({ setVista }) {
   const [validateLoading, setValidateLoading] = useState(false)
   const [auditLog, setAuditLog] = useState([])
   const [auditLoading, setAuditLoading] = useState(false)
+  const [backupLoading, setBackupLoading] = useState(false)
+  const [restoreFile, setRestoreFile] = useState(null)
+  const [restoreMode, setRestoreMode] = useState('merge') // merge | replace
+  const [restoreLoading, setRestoreLoading] = useState(false)
+  const [restoreError, setRestoreError] = useState(null)
+  const [restoreResult, setRestoreResult] = useState(null)
   const resetPollRef = useRef(null)
   const { user } = useAuth()
 
@@ -288,13 +287,67 @@ function Configuracion({ setVista }) {
       .catch(() => {})
   }
 
+  const descargarBackupJson = () => {
+    setBackupLoading(true)
+    fetch(`${API_URL}/api/backup/json`, { headers: getAuthHeaders() })
+      .then((r) => {
+        if (!r.ok) throw new Error('No se pudo generar el backup JSON')
+        return r.blob()
+      })
+      .then((blob) => {
+        const u = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = u
+        a.download = `garantia-backup-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+        a.click()
+        URL.revokeObjectURL(u)
+      })
+      .catch((err) => setRestoreError(err.message))
+      .finally(() => setBackupLoading(false))
+  }
+
+  const restaurarBackupJson = (e) => {
+    e?.preventDefault()
+    if (!restoreFile) {
+      setRestoreError('Selecciona un archivo JSON de backup.')
+      return
+    }
+    const confirmText = restoreMode === 'replace'
+      ? 'Esto reemplazará los datos actuales por el contenido del backup. ¿Continuar?'
+      : 'Se fusionarán los datos del backup con los actuales. ¿Continuar?'
+    if (!window.confirm(confirmText)) return
+
+    setRestoreLoading(true)
+    setRestoreError(null)
+    setRestoreResult(null)
+    const fd = new FormData()
+    fd.append('file', restoreFile)
+    fetch(`${API_URL}/api/restore/json?mode=${encodeURIComponent(restoreMode)}`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: fd,
+    })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(data.detail || 'Error al restaurar backup')
+        return data
+      })
+      .then((data) => {
+        setRestoreResult(data)
+        cargarEstado()
+      })
+      .catch((err) => setRestoreError(err.message))
+      .finally(() => setRestoreLoading(false))
+  }
+
   const parseErrorResponse = (res) =>
     res.text().then((text) => {
       let detail = 'Error al recargar'
       try {
         const j = JSON.parse(text)
         if (j.detail) detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)
-      } catch (_) {
+      } catch (err) {
+        void err
         if (text) detail = text
       }
       throw new Error(detail)
@@ -387,7 +440,7 @@ function Configuracion({ setVista }) {
             .catch(() => {})
         }
         poll()
-        resetPollRef.current = setInterval(poll, 400)
+        resetPollRef.current = setInterval(poll, TASK_POLL_INTERVAL_MS)
       })
       .catch((err) => {
         setResetError(err.message)
@@ -815,6 +868,74 @@ function Configuracion({ setVista }) {
           </button>
         </div>
       </section>
+
+      {user?.isAdmin && (
+        <section className="configuracion-form" aria-label="Backup y restauración JSON global">
+          <h2 className="configuracion-subtitle">Backup y restauración JSON global</h2>
+          <p className="configuracion-desc">
+            Crea una copia completa del estado de la app (usuarios, mensajes, RMAs, ajustes, etc.) y permite restaurar en modo fusión o reemplazo.
+          </p>
+          <div className="configuracion-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={descargarBackupJson}
+              disabled={backupLoading}
+            >
+              {backupLoading ? 'Generando backup…' : 'Descargar backup JSON'}
+            </button>
+          </div>
+          <form onSubmit={restaurarBackupJson}>
+            <div className="configuracion-field">
+              <label htmlFor="config-restore-file">Archivo backup (.json)</label>
+              <input
+                id="config-restore-file"
+                type="file"
+                accept="application/json,.json"
+                onChange={(ev) => setRestoreFile(ev.target.files?.[0] ?? null)}
+                className="configuracion-input"
+                disabled={restoreLoading}
+              />
+            </div>
+            <div className="configuracion-field">
+              <label htmlFor="config-restore-mode">Modo de restauración</label>
+              <select
+                id="config-restore-mode"
+                value={restoreMode}
+                onChange={(ev) => setRestoreMode(ev.target.value)}
+                className="configuracion-input"
+                disabled={restoreLoading}
+              >
+                <option value="merge">Fusionar (omite duplicados, añade nuevos)</option>
+                <option value="replace">Reemplazar desde cero</option>
+              </select>
+              <span className="configuracion-hint">
+                Reemplazar borra el estado actual antes de importar. Fusión mantiene lo actual y añade lo faltante.
+              </span>
+            </div>
+            <div className="configuracion-actions">
+              <button
+                type="submit"
+                className="btn btn-danger"
+                disabled={restoreLoading || !restoreFile}
+              >
+                {restoreLoading ? 'Restaurando…' : 'Restaurar backup JSON'}
+              </button>
+            </div>
+          </form>
+          {restoreError && <p className="error-msg">{restoreError}</p>}
+          {restoreResult?.summary && (
+            <div className="configuracion-validate-result">
+              <p><strong>Restauración completada.</strong> Modo: {restoreResult.mode}</p>
+              {Object.entries(restoreResult.summary).map(([entity, stats]) => (
+                <p key={entity} className="configuracion-hint">
+                  {entity}: insertados {stats.inserted ?? 0}, omitidos {stats.skipped ?? 0}, actualizados {stats.updated ?? 0}
+                </p>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="configuracion-form" aria-label="Registro de actividad">
         <h2 className="configuracion-subtitle">Registro de actividad</h2>

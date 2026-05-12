@@ -115,6 +115,7 @@ function AppContent() {
             serialDestacado={serialDestacado}
             setRmaDestacado={setRmaDestacado}
             refreshNotifCount={refreshNotifCount}
+            notifCountKey={notifCountKey}
           />
         )
       case VISTAS.CLIENTES:
@@ -154,6 +155,7 @@ function AppContent() {
             setVista={setVista}
             rmaEspecialDestacadoId={rmaEspecialDestacadoId}
             setRmaEspecialDestacadoId={setRmaEspecialDestacadoId}
+            notifCountKey={notifCountKey}
           />
         )
       case VISTAS.INFORMES:

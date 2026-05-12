@@ -40,7 +40,7 @@ cd ..
 echo.
 
 :: 3. Backend: entorno virtual y dependencias
-echo [4/5] Preparando backend...
+echo [4/6] Preparando backend...
 cd backend
 if not exist "venv\Scripts\activate.bat" (
   echo Creando entorno virtual Python...
@@ -62,8 +62,16 @@ if errorlevel 1 (
 )
 echo.
 
-:: 4. Arrancar servidor (HTTPS si hay certificados, si no HTTP)
-echo [5/5] Iniciando servidor...
+:: 4. Backup local de la base de datos (no bloqueante)
+echo [5/6] Creando backup local de la base de datos...
+python backup_db.py --quiet
+if errorlevel 1 (
+  echo AVISO: no se pudo crear backup automatico.
+)
+echo.
+
+:: 5. Arrancar servidor (HTTPS si hay certificados, si no HTTP)
+echo [6/6] Iniciando servidor...
 if exist "key.pem" if exist "cert.pem" (
   echo   Modo HTTPS ^(puerto 443, por defecto^). Certificados encontrados.
   echo   IMPORTANTE: Ejecuta este script como administrador para usar el puerto 443.

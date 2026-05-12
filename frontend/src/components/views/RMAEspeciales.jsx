@@ -1,15 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, OPCIONES_ESTADO } from '../../constants'
+import { API_URL, OPCIONES_ESTADO, TASK_POLL_INTERVAL_MS } from '../../constants'
+import { getAuthHeaders } from '../../utils/auth'
 import ProgressBar from '../ProgressBar'
 import ModalNotificar from '../ModalNotificar'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
 
 /** Nombres de mes (completos y abreviados) a número "01"-"12" para directorios tipo "Enero", "Febrero". */
 const MES_NOMBRE_A_NUM = {
@@ -86,7 +79,7 @@ function formatRmaFecha(r) {
   return formatCreatedAt(r.file_date || r.created_at)
 }
 
-function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestacadoId }) {
+function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestacadoId, notifCountKey = 0 }) {
   const [list, setList] = useState([])
   const [detalle, setDetalle] = useState(null)
   const [scanResult, setScanResult] = useState(null)
@@ -114,6 +107,9 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   const [deletingLineaId, setDeletingLineaId] = useState(null)
   const [notificarOpen, setNotificarOpen] = useState(false)
   const [notificarRef, setNotificarRef] = useState(null)
+  const [reimportAbiertoDesdeDetalle, setReimportAbiertoDesdeDetalle] = useState(false)
+  const [lineasSinNotificarIds, setLineasSinNotificarIds] = useState(() => new Set())
+  const [rmaEspecialIdsPendiente, setRmaEspecialIdsPendiente] = useState(() => new Set())
   const [asignarOpen, setAsignarOpen] = useState(false)
   const [asignarFile, setAsignarFile] = useState(null)
   const [asignarColSerial, setAsignarColSerial] = useState('')
@@ -140,6 +136,20 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   const [detalleOrdenColumna, setDetalleOrdenColumna] = useState('serial')
   const [detalleOrdenAsc, setDetalleOrdenAsc] = useState(true)
 
+  const fetchEstadoSinNotificarEspeciales = useCallback(() => {
+    fetch(`${API_URL}/api/rmas/estado-sin-notificar`, { headers: getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : { rma_especial_lineas: [] }))
+      .then((data) => {
+        const lines = Array.isArray(data.rma_especial_lineas) ? data.rma_especial_lineas : []
+        setLineasSinNotificarIds(new Set(lines.map((x) => x.linea_id).filter((id) => id != null)))
+        setRmaEspecialIdsPendiente(new Set(lines.map((x) => x.rma_especial_id).filter((id) => id != null)))
+      })
+      .catch(() => {
+        setLineasSinNotificarIds(new Set())
+        setRmaEspecialIdsPendiente(new Set())
+      })
+  }, [])
+
   const refetch = useCallback(() => {
     setCargando(true)
     setError(null)
@@ -147,8 +157,15 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Error al cargar'))))
       .then((data) => setList(Array.isArray(data) ? data : []))
       .catch((err) => setError(err.message))
-      .finally(() => setCargando(false))
-  }, [])
+      .finally(() => {
+        setCargando(false)
+        fetchEstadoSinNotificarEspeciales()
+      })
+  }, [fetchEstadoSinNotificarEspeciales])
+
+  useEffect(() => {
+    fetchEstadoSinNotificarEspeciales()
+  }, [notifCountKey, fetchEstadoSinNotificarEspeciales])
 
   useEffect(() => {
     refetch()
@@ -178,6 +195,12 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
         setAsignarGrid([])
       })
   }, [asignarOpen, asignarFile?.path, asignarSheet])
+
+  const cerrarModalAsignar = useCallback(() => {
+    if (importando) return
+    setReimportAbiertoDesdeDetalle(false)
+    setAsignarOpen(false)
+  }, [importando])
 
   const handleEscanear = () => {
     setError(null)
@@ -215,7 +238,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
         .catch(() => {})
     }
     poll()
-    scanPollRef.current = setInterval(poll, 500)
+    scanPollRef.current = setInterval(poll, TASK_POLL_INTERVAL_MS)
     return () => {
       if (scanPollRef.current) clearInterval(scanPollRef.current)
     }
@@ -337,9 +360,19 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
       .then((r) => r.json())
       .then((data) => {
         if (data.id) {
+          const desdeDetalle = reimportAbiertoDesdeDetalle
+          setReimportAbiertoDesdeDetalle(false)
           setAsignarOpen(false)
           setAsignarFile(null)
           refetch()
+          if (desdeDetalle) {
+            setDetalle(null)
+            setDetalleId(data.id)
+            fetch(`${API_URL}/api/rma-especiales/${data.id}`, { headers: getAuthHeaders() })
+              .then((r) => (r.ok ? r.json() : Promise.reject()))
+              .then(setDetalle)
+              .catch(() => setDetalle(null))
+          }
           // Recomprobar el resto de Excels con los nuevos aliases: los que tengan las mismas columnas pasan a "Importar"
           if (scanResult && scanResult.items) {
             const itemsWithoutImported = scanResult.items.filter((i) => i.path !== pathJustImported)
@@ -379,9 +412,30 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
   }
 
   const handleVolverListado = () => {
+    setReimportAbiertoDesdeDetalle(false)
     setDetalleId(null)
     setDetalle(null)
     refetch()
+  }
+
+  const handleAbrirReimportarDesdeExcel = () => {
+    const path = (detalle?.source_path || '').trim()
+    if (!path) {
+      setError('Este RMA no tiene guardada la ruta del Excel. Vuelve a escanear o subir el archivo.')
+      return
+    }
+    setError(null)
+    setReimportAbiertoDesdeDetalle(true)
+    setAsignarFile({ path, rma_number: detalle.rma_number })
+    setAsignarGrid(null)
+    setAsignarSheetNames([])
+    setAsignarSheet(0)
+    setAsignarPreviewError(null)
+    setAsignarHeaderRow(0)
+    setAsignarColSerialIdx(0)
+    setAsignarColFalloIdx(0)
+    setAsignarColResolucionIdx(0)
+    setAsignarOpen(true)
   }
 
   const handleLineaEstadoChange = (lineaId, estado) => {
@@ -401,7 +455,10 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
           })
         }
       })
-      .finally(() => setUpdatingLineaEstadoId(null))
+      .finally(() => {
+        setUpdatingLineaEstadoId(null)
+        fetchEstadoSinNotificarEspeciales()
+      })
   }
 
   const handleEditarLinea = (lin) => {
@@ -441,7 +498,10 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
           setEditingLineaData(null)
         }
       })
-      .finally(() => setSavingLineaId(null))
+      .finally(() => {
+        setSavingLineaId(null)
+        fetchEstadoSinNotificarEspeciales()
+      })
   }
 
   const handleCancelarEditarLinea = () => {
@@ -596,7 +656,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
             </thead>
             <tbody>
               {rmasInMonth.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id} className={rmaEspecialIdsPendiente.has(r.id) ? 'rma-especiales-row-sin-notificar' : undefined}>
                   <td>{r.rma_number}</td>
                   <td>{r.line_count ?? 0}</td>
                   <td>{formatRmaFecha(r)}</td>
@@ -644,8 +704,22 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
             ← Volver al listado
           </button>
           <h1 className="page-title">RMA {detalle.rma_number}</h1>
+          {detalle.source_path?.trim() ? (
+            <button
+              type="button"
+              className="btn btn-secondary rma-especiales-reimport-btn"
+              onClick={handleAbrirReimportarDesdeExcel}
+              disabled={importando}
+              title="Elegir de nuevo la hoja y la fila de cabecera del Excel (se volverán a leer las filas; el archivo en disco no cambia)."
+            >
+              Corregir cabecera y hoja (reimportar)
+            </button>
+          ) : null}
         </div>
-        <p className="rma-especiales-detalle-desc">Puedes editar o eliminar filas vacías o erróneas. Los Excel originales no se modifican.</p>
+        <p className="rma-especiales-detalle-desc">
+          Puedes editar o eliminar filas vacías o erróneas. Los Excel originales no se modifican.
+          Si las columnas salieron mal al importar, usa «Corregir cabecera y hoja» para elegir otra hoja o fila de cabecera del mismo Excel.
+        </p>
         <div className="rma-especiales-detalle-filtros">
           <div className="rma-especiales-detalle-filtro">
             <label>
@@ -744,7 +818,10 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
             </thead>
             <tbody>
               {lineasDetalleFiltradasOrdenadas.map((lin) => (
-                <tr key={lin.id}>
+                <tr
+                  key={lin.id}
+                  className={lineasSinNotificarIds.has(lin.id) ? 'rma-especiales-linea-sin-notificar' : undefined}
+                >
                   {editingLineaId === lin.id && editingLineaData ? (
                     <>
                       <td>
@@ -867,21 +944,23 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
             Carpetas
           </button>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={handleEscanear}
-          disabled={escaneando}
-        >
-          {escaneando ? 'Escaneando…' : 'Escanear carpeta'}
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => { setUploadOpen(true); setUploadFile(null); setUploadYear(String(new Date().getFullYear())) }}
-        >
-          Subir Excel
-        </button>
+        <div className="rma-especiales-actions" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleEscanear}
+            disabled={escaneando}
+          >
+            {escaneando ? 'Escaneando…' : 'Escanear carpeta'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => { setUploadOpen(true); setUploadFile(null); setUploadYear(String(new Date().getFullYear())) }}
+          >
+            Subir Excel
+          </button>
+        </div>
       </div>
 
       {uploadOpen && (
@@ -1007,7 +1086,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
             </thead>
             <tbody>
               {list.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id} className={rmaEspecialIdsPendiente.has(r.id) ? 'rma-especiales-row-sin-notificar' : undefined}>
                   <td>{r.rma_number}</td>
                   <td>{r.line_count ?? 0}</td>
                   <td>{formatRmaFecha(r)}</td>
@@ -1036,9 +1115,14 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
       )}
 
       {asignarOpen && asignarFile && (
-        <div className="modal-overlay" onClick={() => !importando && setAsignarOpen(false)} role="dialog" aria-modal="true">
+        <div
+          className="modal-overlay"
+          onClick={cerrarModalAsignar}
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="modal rma-especiales-asignar-modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-titulo">Asignar celdas del Excel</h2>
+            <h2 className="modal-titulo">{reimportAbiertoDesdeDetalle ? 'Corregir cabecera y hoja del Excel' : 'Asignar celdas del Excel'}</h2>
             <p className="modal-notificar-desc">
               Archivo: <strong>{asignarFile.path}</strong>. Indica la <strong>fila de cabecera</strong> y qué <strong>columna</strong> corresponde a cada concepto. Si otro archivo tiene las mismas celdas, se reconocerá automáticamente.
             </p>
@@ -1078,7 +1162,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
                   </select>
                 </div>
                 <div className="modal-pie modal-pie-actions">
-                  <button type="button" className="btn btn-secondary" onClick={() => !importando && setAsignarOpen(false)} disabled={importando}>Cancelar</button>
+                  <button type="button" className="btn btn-secondary" onClick={cerrarModalAsignar} disabled={importando}>Cancelar</button>
                   <button type="button" className="btn btn-primary" onClick={handleAsignarSubmit} disabled={importando}>{importando ? 'Importando…' : 'Importar'}</button>
                 </div>
               </>
@@ -1174,7 +1258,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
                       })()}
                     </div>
                     <div className="modal-pie modal-pie-actions">
-                      <button type="button" className="btn btn-secondary" onClick={() => !importando && setAsignarOpen(false)} disabled={importando}>
+                      <button type="button" className="btn btn-secondary" onClick={cerrarModalAsignar} disabled={importando}>
                         Cancelar
                       </button>
                       <button type="button" className="btn btn-primary" onClick={handleAsignarSubmit} disabled={importando}>
@@ -1185,7 +1269,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
                 )}
                 {asignarGrid.length === 0 && (
                   <div className="modal-pie modal-pie-actions">
-                    <button type="button" className="btn btn-secondary" onClick={() => !importando && setAsignarOpen(false)}>Cancelar</button>
+                    <button type="button" className="btn btn-secondary" onClick={cerrarModalAsignar}>Cancelar</button>
                   </div>
                 )}
               </>
@@ -1222,7 +1306,7 @@ function RMAEspeciales({ setVista, rmaEspecialDestacadoId, setRmaEspecialDestaca
                   </select>
                 </div>
                 <div className="modal-pie modal-pie-actions">
-                  <button type="button" className="btn btn-secondary" onClick={() => !importando && setAsignarOpen(false)} disabled={importando}>Cancelar</button>
+                  <button type="button" className="btn btn-secondary" onClick={cerrarModalAsignar} disabled={importando}>Cancelar</button>
                   <button type="button" className="btn btn-primary" onClick={handleAsignarSubmit} disabled={importando}>{importando ? 'Importando…' : 'Importar'}</button>
                 </div>
               </>

@@ -25,7 +25,7 @@ cd ..
 echo ""
 
 # 3. Backend: entorno virtual y dependencias
-echo "[4/5] Preparando backend..."
+echo "[4/6] Preparando backend..."
 cd backend
 if [[ ! -f venv/bin/activate ]]; then
   echo "Creando entorno virtual Python..."
@@ -35,8 +35,13 @@ source venv/bin/activate
 pip install -r requirements.txt
 echo ""
 
-# 4. Arrancar servidor (HTTPS si hay certificados, si no HTTP)
-echo "[5/5] Iniciando servidor..."
+# 4. Backup local de la base de datos (no bloqueante)
+echo "[5/6] Creando backup local de la base de datos..."
+python backup_db.py --quiet || echo "AVISO: no se pudo crear backup automatico."
+echo ""
+
+# 5. Arrancar servidor (HTTPS si hay certificados, si no HTTP)
+echo "[6/6] Iniciando servidor..."
 if [[ -f key.pem && -f cert.pem ]]; then
   echo "  Modo HTTPS (puerto 443, por defecto). Certificados encontrados."
   echo "  IMPORTANTE: Ejecuta este script con sudo para usar el puerto 443."

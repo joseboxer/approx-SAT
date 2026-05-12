@@ -3,6 +3,7 @@
  */
 
 export const POR_PAGINA = 20
+export const TASK_POLL_INTERVAL_MS = 1500
 
 // En desarrollo usa el backend en localhost. En producción, si el backend sirve el frontend, usa misma origen ('').
 // Para frontend y backend en puertos/servidores distintos, define VITE_API_URL al compilar (ej: VITE_API_URL=http://192.168.1.10:8000 npm run build).

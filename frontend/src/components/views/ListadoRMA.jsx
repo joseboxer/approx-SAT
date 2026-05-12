@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useGarantia } from '../../context/GarantiaContext'
-import { POR_PAGINA, OPCIONES_ESTADO, API_URL, AUTH_STORAGE_KEY, VISTAS } from '../../constants'
+import { POR_PAGINA, OPCIONES_ESTADO, API_URL, TASK_POLL_INTERVAL_MS, VISTAS } from '../../constants'
 import {
   getRmaId,
   getValorOrden,
@@ -9,6 +9,7 @@ import {
   getColumnasFiltroRma,
   compararValores,
 } from '../../utils/garantia'
+import { getAuthHeaders } from '../../utils/auth'
 import HerramientasTabla from '../HerramientasTabla'
 import Paginacion from '../Paginacion'
 import ModalNotificar from '../ModalNotificar'
@@ -31,14 +32,6 @@ function getFirstUrl(text) {
   return url
 }
 
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
-
 function ListadoRMA({
   setVista,
   setClienteDestacado,
@@ -48,6 +41,7 @@ function ListadoRMA({
   serialDestacado,
   setRmaDestacado,
   refreshNotifCount,
+  notifCountKey,
 }) {
   const {
     productosVisibles,
@@ -81,12 +75,13 @@ function ListadoRMA({
         if (res.ok) {
           refetchProductos()
           refreshNotifCount?.()
+          fetchEstadoSinNotificar()
         }
       } finally {
         setUpdatingEstadoItemId(null)
       }
     },
-    [refetchProductos, refreshNotifCount]
+    [refetchProductos, refreshNotifCount, fetchEstadoSinNotificar]
   )
 
   const [pagina, setPagina] = useState(1)
@@ -119,6 +114,25 @@ function ListadoRMA({
   })
   const [toast, setToast] = useState(null) // { type: 'ok' | 'error', text: string }
   const syncPollRef = useRef(null)
+  const [sinNotificarItemIds, setSinNotificarItemIds] = useState(() => new Set())
+
+  const fetchEstadoSinNotificar = useCallback(() => {
+    fetch(`${API_URL}/api/rmas/estado-sin-notificar`, { headers: getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((data) => {
+        const ids = new Set(
+          (Array.isArray(data.items) ? data.items : [])
+            .map((it) => it.id)
+            .filter((x) => x != null)
+        )
+        setSinNotificarItemIds(ids)
+      })
+      .catch(() => setSinNotificarItemIds(new Set()))
+  }, [])
+
+  useEffect(() => {
+    if (!cargando) fetchEstadoSinNotificar()
+  }, [cargando, notifCountKey, fetchEstadoSinNotificar])
 
   const marcarEnRevision = useCallback((itemId) => {
     if (!itemId || enRevisionItemId != null) return
@@ -190,7 +204,7 @@ function ListadoRMA({
         })
     }
     poll()
-    syncPollRef.current = setInterval(poll, 500)
+    syncPollRef.current = setInterval(poll, TASK_POLL_INTERVAL_MS)
   }, [clearSyncPoll, refetchProductos, pushToast])
 
   const handleSyncListado = useCallback(async () => {
@@ -410,11 +424,12 @@ function ListadoRMA({
         setSelectedRmaIds(new Set())
         refetchProductos()
         refreshNotifCount?.()
+        fetchEstadoSinNotificar()
       }
     } finally {
       setAplicandoMasivo(false)
     }
-  }, [selectedRmaIds, estadoMasivo, refetchProductos, refreshNotifCount, aplicandoMasivo])
+  }, [selectedRmaIds, estadoMasivo, refetchProductos, refreshNotifCount, aplicandoMasivo, fetchEstadoSinNotificar])
 
   const selectedCount = selectedRmaIds.size
   const puedeAplicarMasivo = selectedCount > 0 && !aplicandoMasivo
@@ -608,10 +623,14 @@ function ListadoRMA({
                 ? (p.estado ?? '').trim() !== ''
                 : grupo.items.every((it) => (it.estado ?? '').trim() !== '')
               const tieneAlgunoEnRevision = grupo.items.some((it) => it.en_revision_at)
+              const algunoSinNotificar = grupo.items.some(
+                (it) => it.id != null && sinNotificarItemIds.has(it.id)
+              )
               const rowClass = [
                 isSelected && 'row-selected',
                 tieneAlgunoEnRevision && 'rma-row-revision',
                 todosConEstado && 'rma-row-resuelto',
+                algunoSinNotificar && 'rma-row-sin-notificar',
               ].filter(Boolean).join(' ')
               return (
                 <React.Fragment key={key}>
@@ -860,8 +879,9 @@ function ListadoRMA({
                               {grupo.items.map((item, j) => {
                                 const rmaNum = item['NÂº DE RMA'] ?? item['Nº DE RMA'] ?? p['NÂº DE RMA'] ?? p['Nº DE RMA']
                                 const serie = getSerie(item)
+                                const lineaSinNotif = item.id != null && sinNotificarItemIds.has(item.id)
                                 return (
-                                <tr key={j}>
+                                <tr key={j} className={lineaSinNotif ? 'rma-linea-sin-notificar' : undefined}>
                                   <td>
                                     {item['NÂº DE RMA'] ??
                                       item['Nº DE RMA'] ??

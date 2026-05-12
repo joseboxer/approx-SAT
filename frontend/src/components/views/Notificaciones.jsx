@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { API_URL, AUTH_STORAGE_KEY, VISTAS, NOTIFICATION_TYPES, NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_VALUES, NOTIFICATION_CATEGORY_SIN_FILTRO, NOTIFICATIONS_TAB_KEY, NOTIFICATIONS_CATEGORY_KEY } from '../../constants'
-
-function getAuthHeaders() {
-  try {
-    const token = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (token) return { Authorization: `Bearer ${token}` }
-  } catch {}
-  return {}
-}
+import {
+  API_URL,
+  VISTAS,
+  NOTIFICATION_TYPES,
+  NOTIFICATION_CATEGORIES,
+  NOTIFICATION_CATEGORY_VALUES,
+  NOTIFICATION_CATEGORY_SIN_FILTRO,
+  NOTIFICATIONS_TAB_KEY,
+  NOTIFICATIONS_CATEGORY_KEY,
+} from '../../constants'
+import { getAuthHeaders } from '../../utils/auth'
 
 function parseRef(ref) {
   if (!ref) return ''
@@ -92,32 +94,41 @@ function Notificaciones({
   const [list, setList] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
+  const [searchText, setSearchText] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [onlyUnread, setOnlyUnread] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
 
   useEffect(() => {
     try {
       localStorage.setItem(NOTIFICATIONS_TAB_KEY, bandeja)
-    } catch (_) {}
+    } catch (err) {
+      void err
+    }
   }, [bandeja])
   useEffect(() => {
     try {
       localStorage.setItem(NOTIFICATIONS_CATEGORY_KEY, categoria)
-    } catch (_) {}
+    } catch (err) {
+      void err
+    }
   }, [categoria])
 
   const refetch = useCallback(() => {
     setCargando(true)
     setError(null)
-    let base
-    if (bandeja === BANDEJA_BORRADOS) {
-      base = `${API_URL}/api/notifications/sent?deleted=1`
-    } else if (bandeja === BANDEJA_ENVIADOS) {
-      base = `${API_URL}/api/notifications/sent`
-    } else {
-      base = `${API_URL}/api/notifications`
-    }
-    const url = categoria && bandeja !== BANDEJA_BORRADOS
-      ? `${base}${base.includes('?') ? '&' : '?'}category=${encodeURIComponent(categoria)}`
-      : base
+    const params = new URLSearchParams()
+    params.set('box', bandeja)
+    if (categoria && bandeja !== BANDEJA_BORRADOS) params.set('category', categoria)
+    if (searchText.trim()) params.set('q', searchText.trim())
+    if (typeFilter) params.set('type', typeFilter)
+    if (dateFrom) params.set('date_from', dateFrom)
+    if (dateTo) params.set('date_to', dateTo)
+    if (onlyUnread && bandeja === BANDEJA_RECIBIDOS) params.set('unread_only', '1')
+    const url = `${API_URL}/api/notifications/search?${params.toString()}`
     fetch(url, { headers: getAuthHeaders() })
       .then((r) => {
         if (!r.ok) throw new Error('Error al cargar notificaciones')
@@ -126,13 +137,50 @@ function Notificaciones({
       .then((data) => setList(Array.isArray(data) ? data : []))
       .catch((err) => setError(err.message))
       .finally(() => setCargando(false))
-  }, [bandeja, categoria])
+  }, [bandeja, categoria, searchText, typeFilter, dateFrom, dateTo, onlyUnread])
 
   useEffect(() => {
     refetch()
   }, [refetch])
 
   const groupedList = useMemo(() => groupByDate(list), [list])
+  const visibleIds = useMemo(() => list.map((n) => n.id).filter((x) => x != null), [list])
+  const selectedCount = selectedIds.size
+  const selectedVisibleCount = useMemo(
+    () => visibleIds.reduce((acc, id) => acc + (selectedIds.has(id) ? 1 : 0), 0),
+    [visibleIds, selectedIds]
+  )
+  const typeValues = useMemo(() => ['', ...Object.keys(NOTIFICATION_TYPES)], [])
+
+  const toggleSelect = useCallback((id) => {
+    if (id == null) return
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const selectVisible = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      visibleIds.forEach((id) => next.add(id))
+      return next
+    })
+  }, [visibleIds])
+
+  const deselectVisible = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      visibleIds.forEach((id) => next.delete(id))
+      return next
+    })
+  }, [visibleIds])
+
+  const clearSelected = useCallback(() => {
+    setSelectedIds(new Set())
+  }, [])
 
   const handleBorrar = (n) => {
     if (!n.id || actioningId !== null) return
@@ -145,7 +193,14 @@ function Notificaciones({
         if (!r.ok) return r.json().then((d) => { throw new Error(d.detail || 'Error al borrar') })
         return r.json()
       })
-      .then(() => refetch())
+      .then(() => {
+        setSelectedIds((prev) => {
+          const next = new Set(prev)
+          next.delete(n.id)
+          return next
+        })
+        refetch()
+      })
       .catch((err) => setError(err.message))
       .finally(() => setActioningId(null))
   }
@@ -161,7 +216,14 @@ function Notificaciones({
         if (!r.ok) return r.json().then((d) => { throw new Error(d.detail || 'Error al restaurar') })
         return r.json()
       })
-      .then(() => refetch())
+      .then(() => {
+        setSelectedIds((prev) => {
+          const next = new Set(prev)
+          next.delete(n.id)
+          return next
+        })
+        refetch()
+      })
       .catch((err) => setError(err.message))
       .finally(() => setActioningId(null))
   }
@@ -208,6 +270,36 @@ function Notificaciones({
       })
     }
   }
+
+  const handleGeneratePdf = useCallback(() => {
+    if (selectedCount === 0 || pdfLoading) return
+    setPdfLoading(true)
+    fetch(`${API_URL}/api/notifications/report-pdf`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ ids: Array.from(selectedIds) }),
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}))
+          throw new Error(d.detail || 'No se pudo generar el PDF.')
+        }
+        return r.blob()
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `reporte-mensajes-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.pdf`
+        a.click()
+        URL.revokeObjectURL(url)
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setPdfLoading(false))
+  }, [selectedCount, pdfLoading, selectedIds])
 
   if (cargando) return <p className="loading">Cargando notificaciones...</p>
   if (error) return <div className="error-msg">Error: {error}</div>
@@ -269,6 +361,107 @@ function Notificaciones({
             : `Enviados${categoria ? ` · Filtro: ${NOTIFICATION_CATEGORIES[categoria]}` : ''}. Solo tú puedes borrarlos; pasarán a la bandeja Borrados.`}
       </p>
 
+      <section className="configuracion-form" aria-label="Buscador de mensajes">
+        <div className="configuracion-field">
+          <label htmlFor="notif-search-text">Buscar texto (RMA, referencia, usuario, mensaje)</label>
+          <input
+            id="notif-search-text"
+            type="text"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="configuracion-input"
+            placeholder="Ej. RMA 24001, serie, usuario..."
+          />
+        </div>
+        <div className="configuracion-estado-grid">
+          <div className="configuracion-field">
+            <label htmlFor="notif-search-type">Tipo</label>
+            <select
+              id="notif-search-type"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="configuracion-input"
+            >
+              <option value="">Todos</option>
+              {typeValues.filter(Boolean).map((t) => (
+                <option key={t} value={t}>{NOTIFICATION_TYPES[t] || t}</option>
+              ))}
+            </select>
+          </div>
+          <div className="configuracion-field">
+            <label htmlFor="notif-search-date-from">Fecha desde</label>
+            <input
+              id="notif-search-date-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="configuracion-input"
+            />
+          </div>
+          <div className="configuracion-field">
+            <label htmlFor="notif-search-date-to">Fecha hasta</label>
+            <input
+              id="notif-search-date-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="configuracion-input"
+            />
+          </div>
+        </div>
+        {bandeja === BANDEJA_RECIBIDOS && (
+          <label className="configuracion-hint" style={{ display: 'inline-flex', gap: '0.4rem', alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={onlyUnread}
+              onChange={(e) => setOnlyUnread(e.target.checked)}
+            />
+            Solo no leídos
+          </label>
+        )}
+        <div className="configuracion-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              setSearchText('')
+              setTypeFilter('')
+              setDateFrom('')
+              setDateTo('')
+              setOnlyUnread(false)
+            }}
+          >
+            Limpiar filtros
+          </button>
+        </div>
+      </section>
+
+      <section className="configuracion-form" aria-label="Selección y reporte">
+        <p className="configuracion-desc">
+          Seleccionados: <strong>{selectedCount}</strong>
+          {selectedVisibleCount > 0 && <> · visibles seleccionados: <strong>{selectedVisibleCount}</strong></>}
+        </p>
+        <div className="configuracion-actions">
+          <button type="button" className="btn btn-secondary" onClick={selectVisible}>
+            Seleccionar visibles
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={deselectVisible}>
+            Deseleccionar visibles
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={clearSelected}>
+            Limpiar selección
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleGeneratePdf}
+            disabled={selectedCount === 0 || pdfLoading}
+          >
+            {pdfLoading ? 'Generando PDF…' : `Generar PDF (${selectedCount})`}
+          </button>
+        </div>
+      </section>
+
       {list.length === 0 ? (
         <p className="notificaciones-empty">
           {bandeja === BANDEJA_RECIBIDOS
@@ -290,6 +483,15 @@ function Notificaciones({
                   className={`notificaciones-item ${bandeja === BANDEJA_RECIBIDOS && !n.read_at ? 'notificaciones-item-unread' : ''}`}
                 >
                   <div className="notificaciones-item-header">
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(n.id)}
+                        onChange={() => toggleSelect(n.id)}
+                        aria-label={`Seleccionar mensaje ${n.id}`}
+                      />
+                      <span className="configuracion-hint">#{n.id}</span>
+                    </label>
                     <span className="notificaciones-item-from">
                       {bandeja === BANDEJA_RECIBIDOS ? n.from_username : n.to_username}
                       {bandeja === BANDEJA_RECIBIDOS && !n.read_at && <span className="notificaciones-badge">Nueva</span>}

@@ -25,7 +25,7 @@ from urllib.parse import urlencode, unquote
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -64,6 +64,7 @@ from database import (
     update_estado_by_rma_numbers,
     update_estado_by_item_id,
     get_rma_items_estado_sin_notificar,
+    get_rma_especial_lineas_estado_sin_notificar,
     update_fecha_recogida_by_rma_number,
     set_hidden_by_rma_number,
     set_serial_warranty,
@@ -96,6 +97,11 @@ from database import (
     mark_notification_read,
     soft_delete_notification_by_sender,
     restore_notification_by_sender,
+    search_notifications,
+    get_notifications_by_ids_for_user,
+    export_app_backup,
+    restore_app_backup,
+    BACKUP_SCHEMA_VERSION,
     get_all_rma_especiales,
     get_rma_especial_by_id,
     get_rma_especial_by_rma_number,
@@ -1789,6 +1795,73 @@ def eliminar_rma_especial(rma_especial_id: int, username: str = Depends(get_curr
     return {"mensaje": "RMA especial eliminado"}
 
 
+# --- Backup/Restore JSON global ---
+
+
+@app.get("/api/backup/json")
+def descargar_backup_json(username: str = Depends(get_current_username)):
+    """Descarga una copia de seguridad JSON global del estado de la aplicación."""
+    with get_connection() as conn:
+        if not user_is_admin(conn, username):
+            raise HTTPException(status_code=403, detail="Solo administradores pueden crear backups globales.")
+        payload = export_app_backup(conn)
+        insert_audit_log(conn, username, "backup_json_exported", "backup", "", "Backup global JSON")
+    raw = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    filename = f"garantia-backup-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.json"
+    return StreamingResponse(
+        iter([raw]),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/restore/json")
+def restaurar_backup_json(
+    mode: str = Query(default="merge"),
+    file: UploadFile = File(...),
+    username: str = Depends(get_current_username),
+):
+    """Restaura una copia JSON global. mode=replace|merge."""
+    mode_norm = (mode or "").strip().lower()
+    if mode_norm not in {"replace", "merge"}:
+        raise HTTPException(status_code=400, detail="Modo inválido. Usa replace o merge.")
+    try:
+        raw = file.file.read()
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="No se pudo leer el JSON de backup.")
+
+    meta = payload.get("meta") if isinstance(payload, dict) else None
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(meta, dict) or not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Backup inválido: faltan meta/data.")
+    schema_version = meta.get("schema_version")
+    if schema_version is None or int(schema_version) > BACKUP_SCHEMA_VERSION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Versión de backup no compatible. Esperada <= {BACKUP_SCHEMA_VERSION}.",
+        )
+
+    with get_connection() as conn:
+        if not user_is_admin(conn, username):
+            raise HTTPException(status_code=403, detail="Solo administradores pueden restaurar backups globales.")
+        summary = restore_app_backup(conn, payload, mode_norm)
+        insert_audit_log(
+            conn,
+            username,
+            "backup_json_restored",
+            "backup",
+            "",
+            f"mode={mode_norm}",
+        )
+    return {
+        "mensaje": "Restauración completada.",
+        "mode": mode_norm,
+        "schema_version": schema_version,
+        "summary": summary,
+    }
+
+
 # --- Exportación (datos y trazabilidad) ---
 
 
@@ -2416,6 +2489,181 @@ def eliminar_usuario(user_id: int, username: str = Depends(get_current_username)
     return {"mensaje": "Usuario eliminado"}
 
 
+def _validate_iso_date(value: str | None, field_name: str) -> str | None:
+    if not value:
+        return None
+    txt = value.strip()
+    if not txt:
+        return None
+    try:
+        datetime.strptime(txt, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{field_name} debe tener formato YYYY-MM-DD")
+    return txt
+
+
+def _notification_reference_summary(raw: str | dict | None) -> str:
+    if raw is None:
+        return ""
+    try:
+        obj = raw if isinstance(raw, dict) else json.loads(raw)
+    except Exception:
+        return str(raw)
+    if not isinstance(obj, dict):
+        return str(obj)
+    if obj.get("rma_number") and obj.get("serial"):
+        return f"RMA {obj['rma_number']} - {obj['serial']}"
+    if obj.get("rma_number"):
+        return f"RMA {obj['rma_number']}"
+    if obj.get("serial"):
+        return str(obj["serial"])
+    if obj.get("product_ref"):
+        return str(obj["product_ref"]).replace("|", " - ")
+    if obj.get("brand") and obj.get("base_serial"):
+        return f"{obj['brand']} - {obj['base_serial']}"
+    if obj.get("nombre"):
+        return f"{obj['nombre']} ({obj.get('email', '')})".strip()
+    return json.dumps(obj, ensure_ascii=False)
+
+
+@app.get("/api/notifications/search")
+def buscar_notificaciones(
+    box: str = "recibidos",
+    category: str | None = None,
+    type_filter: str | None = Query(default=None, alias="type"),
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    unread_only: bool = False,
+    username: str = Depends(get_current_username),
+):
+    """Búsqueda avanzada de notificaciones por bandeja y múltiples filtros."""
+    date_from_v = _validate_iso_date(date_from, "date_from")
+    date_to_v = _validate_iso_date(date_to, "date_to")
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        return search_notifications(
+            conn,
+            user_id=user["id"],
+            box=box,
+            category=category,
+            type_filter=type_filter,
+            q=q,
+            date_from=date_from_v,
+            date_to=date_to_v,
+            unread_only=unread_only,
+        )
+
+
+class NotificationReportBody(BaseModel):
+    ids: list[int]
+
+
+@app.post("/api/notifications/report-pdf")
+def generar_reporte_notificaciones_pdf(
+    body: NotificationReportBody,
+    username: str = Depends(get_current_username),
+):
+    """Genera un PDF con las notificaciones seleccionadas."""
+    ids = [int(x) for x in (body.ids or []) if x is not None]
+    if not ids:
+        raise HTTPException(status_code=400, detail="Debes enviar al menos una notificación.")
+    ids_unique = sorted(set(ids))
+    with get_connection() as conn:
+        user = get_user_by_username(conn, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        rows = get_notifications_by_ids_for_user(conn, user["id"], ids_unique)
+    if len(rows) != len(ids_unique):
+        raise HTTPException(status_code=403, detail="Hay notificaciones no accesibles para este usuario.")
+
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo cargar el generador PDF: {exc}")
+
+    type_labels = {
+        "rma": "Lista RMA",
+        "rma_especial": "RMA especial",
+        "catalogo": "Catalogo",
+        "producto_rma": "Productos RMA",
+        "cliente": "Clientes",
+    }
+    category_labels = {
+        "abono": "Abono",
+        "envio": "Envio",
+        "sin_categoria": "Sin categoria",
+        "fuera_garantia": "Fuera garantia",
+    }
+
+    buff = io.BytesIO()
+    pdf = canvas.Canvas(buff, pagesize=A4)
+    w, h = A4
+    margin_x = 36
+    y = h - 48
+
+    def new_page():
+        nonlocal y
+        pdf.showPage()
+        y = h - 48
+
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawString(margin_x, y, "Reporte de mensajes y avisos")
+    y -= 18
+    pdf.setFont("Helvetica", 9)
+    pdf.drawString(margin_x, y, f"Generado: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    y -= 12
+    pdf.drawString(margin_x, y, f"Usuario: {username}")
+    y -= 20
+
+    for idx, n in enumerate(rows, start=1):
+        if y < 110:
+            new_page()
+        type_txt = type_labels.get((n.get("type") or "").strip(), n.get("type") or "—")
+        category_txt = category_labels.get((n.get("category") or "").strip(), n.get("category") or "—")
+        ref_txt = _notification_reference_summary(n.get("reference_data"))
+        msg_txt = (n.get("message") or "").strip()
+        from_user = n.get("from_username") or "—"
+        to_user = n.get("to_username") or "—"
+        created = n.get("created_at") or ""
+
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(margin_x, y, f"{idx}. [{n.get('id')}] {type_txt} · {category_txt}")
+        y -= 12
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(margin_x, y, f"Fecha: {created}")
+        y -= 11
+        pdf.drawString(margin_x, y, f"De: {from_user}   Para: {to_user}")
+        y -= 11
+        pdf.drawString(margin_x, y, f"Referencia: {ref_txt[:120] if ref_txt else '—'}")
+        y -= 11
+        if msg_txt:
+            max_len = 120
+            remaining = msg_txt
+            while remaining:
+                line = remaining[:max_len]
+                remaining = remaining[max_len:]
+                pdf.drawString(margin_x, y, f"Mensaje: {line}" if not remaining and line == msg_txt[:max_len] else line)
+                y -= 11
+                if y < 80 and remaining:
+                    new_page()
+        y -= 5
+        pdf.line(margin_x, y, w - margin_x, y)
+        y -= 10
+
+    pdf.save()
+    pdf_bytes = buff.getvalue()
+    filename = f"reporte-mensajes-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.pdf"
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/notifications")
 def listar_notificaciones(
     category: str | None = None,
@@ -2462,11 +2710,20 @@ def contar_notificaciones_no_leidas(username: str = Depends(get_current_username
 
 @app.get("/api/rmas/estado-sin-notificar")
 def listar_productos_estado_sin_notificar(username: str = Depends(get_current_username)):
-    """Productos con estado asignado (desde ahora) que no tienen ninguna notificación.
+    """Productos Lista RMA y líneas RMA especiales con estado asignado (desde ahora) sin notificación que los cubra.
     Alerta: hay que notificar a alguien sobre estos cambios. No retroactivo."""
     with get_connection() as conn:
         items = get_rma_items_estado_sin_notificar(conn)
-    return {"items": items, "count": len(items)}
+        lineas_esp = get_rma_especial_lineas_estado_sin_notificar(conn)
+    n_rma = len(items)
+    n_esp = len(lineas_esp)
+    return {
+        "items": items,
+        "rma_especial_lineas": lineas_esp,
+        "count": n_rma + n_esp,
+        "count_rma_items": n_rma,
+        "count_rma_especial_lineas": n_esp,
+    }
 
 
 # --- Web Push (notificaciones aunque el navegador esté cerrado) ---
@@ -2581,7 +2838,13 @@ def crear_notificacion(body: NotificationBody, username: str = Depends(get_curre
             message=body.message.strip() or None,
             category=cat,
         )
-    type_labels = {"rma": "Lista RMA", "catalogo": "Catálogo", "producto_rma": "Productos RMA", "cliente": "Clientes"}
+    type_labels = {
+        "rma": "Lista RMA",
+        "rma_especial": "RMA especial",
+        "catalogo": "Catálogo",
+        "producto_rma": "Productos RMA",
+        "cliente": "Clientes",
+    }
     ref_summary = (body.reference_data.get("rma_number") or body.reference_data.get("serial") or
                    body.reference_data.get("product_ref") or body.reference_data.get("nombre") or "")
     if isinstance(ref_summary, str) and len(ref_summary) > 40:
